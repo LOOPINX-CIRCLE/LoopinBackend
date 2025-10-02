@@ -518,24 +518,93 @@ When contributing to this project, please:
 4. **Update documentation**: Keep README and docstrings current
 5. **Use Docker**: Run all commands within containers for consistency
 
-### Example Contribution Workflow
+### Git Branching Strategy
+
+This project follows a **staging-based branching workflow** for safe development and deployment:
+
+```
+main (production) ← staging ← feature/your-feature
+```
+
+#### Development Workflow
+
+**1. Always cut new branches from staging:**
 ```bash
-# 1. Create feature branch
+# Switch to staging branch
+git checkout staging
+
+# Pull latest changes from staging
+git pull origin staging
+
+# Create new feature branch from staging
 git checkout -b feature/new-api-endpoint
 
-# 2. Make changes following project structure
-# Add router: api/routers/new_feature.py
-# Add tests: tests/fastapi/test_new_feature.py
+# OR for bug fixes:
+git checkout -b bugfix/fix-authentication
 
-# 3. Test your changes
+# OR for updates:
+git checkout -b update/dependency-upgrade
+```
+
+**2. Make your changes following project structure:**
+```bash
+# Add your code (following the established patterns):
+# - New router: api/routers/new_feature.py
+# - New tests: tests/fastapi/test_new_feature.py
+# - Update serializers: users/serializers/new_serializers.py
+```
+
+**3. Test your changes:**
+```bash
+# Run tests to ensure everything works
 docker-compose exec web python -m pytest tests/fastapi/test_new_feature.py
+docker-compose exec web python manage.py test
+```
 
-# 4. Commit and push
+**4. Commit and push your feature branch:**
+```bash
 git add .
-git commit -m "Add new API endpoint for feature X"
-git push origin feature/new-api-endpoint
+git commit -m "Add new API endpoint for feature X
 
-# 5. Create pull request
+- Implement new endpoint in api/routers/new_feature.py
+- Add comprehensive tests in tests/fastapi/test_new_feature.py
+- Update documentation with new endpoint usage"
+
+# Push to your feature branch
+git push origin feature/new-api-endpoint
+```
+
+**5. Create Pull Request:**
+- **Target**: `staging` branch (NOT main)
+- **Source**: Your feature branch
+- **Review**: Wait for code review and approval
+- **Merge**: Merge into staging for testing
+
+**6. After staging validation, merge staging → main:**
+```bash
+# Once staging is stable and tested:
+git checkout main
+git pull origin main
+git merge staging
+git push origin main
+```
+
+### Branch Naming Conventions
+
+Use descriptive branch names with prefixes:
+
+```bash
+feature/user-authentication    # New features
+feature/api-pagination        # API improvements
+feature/mobile-push-notifications
+
+bugfix/jwt-token-expiry       # Bug fixes
+bugfix/user-profile-upload    # Critical fixes
+
+update/django-5-3             # Dependency updates
+update/security-patches       # Security updates
+
+hotfix/production-login-bug   # Emergency production fixes
 ```
 
 ---
