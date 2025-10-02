@@ -41,8 +41,8 @@ A comprehensive mobile backend built with Django + FastAPI, featuring JWT authen
 #### 1. Clone and Navigate to Project
 
 ```bash
-git clone <repository-url>
-cd loopin_backend
+git clone https://github.com/LOOPINX-CIRCLE/LoopinBackend.git
+cd LoopinBackend
 ```
 
 #### 2. Environment Configuration
