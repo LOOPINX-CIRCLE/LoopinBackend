@@ -1,0 +1,3 @@
+"""
+FastAPI-specific tests.
+"""

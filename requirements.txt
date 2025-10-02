@@ -1,0 +1,26 @@
+# Django and related packages
+Django==5.2.0
+djangorestframework==3.15.2
+django-cors-headers==4.5.0
+
+# FastAPI and ASGI server
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+gunicorn==23.0.0
+
+# Database
+psycopg2-binary==2.9.7
+
+# Authentication and security
+PyJWT==2.9.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.12
+
+# Environment and configuration
+python-decouple==3.8
+python-dotenv==1.0.1
+dj-database-url==2.2.0
+
+# Utilities
+pydantic==2.10.2
+pydantic-settings==2.6.1
