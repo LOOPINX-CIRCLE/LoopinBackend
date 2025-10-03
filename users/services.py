@@ -14,10 +14,10 @@ class TwilioService:
     """Service for sending SMS via Twilio"""
     
     def __init__(self):
-        self.account_sid = os.getenv('TWILIO_ACCOUNT_SID', 'your-twilio-account-sid')
-        self.auth_token = os.getenv('TWILIO_AUTH_TOKEN', '834ea7d012464f9b5e8879cc333e8ee2')
-        self.verify_sid = os.getenv('TWILIO_VERIFY_SID', '0fbfHcx8N8KIFeDPDsML7ax3Ib8uKPz1')
-        self.verify_secret = os.getenv('TWILIO_VERIFY_SECRET', '0fbfHcx8N8KIFeDPDsML7ax3Ib8uKPz1')
+        self.account_sid = os.getenv('TWILIO_ACCOUNT_SID')
+        self.auth_token = os.getenv('TWILIO_AUTH_TOKEN')
+        self.verify_sid = os.getenv('TWILIO_VERIFY_SID')
+        self.verify_secret = os.getenv('TWILIO_VERIFY_SECRET')
         
         try:
             self.client = Client(self.account_sid, self.auth_token)

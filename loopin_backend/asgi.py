@@ -24,6 +24,14 @@ django_asgi_app = get_asgi_application()
 from django.conf import settings
 from api.main import app as fastapi_app
 
+# Import phone auth router after Django is set up
+try:
+    from users.auth_router import router as auth_router
+    fastapi_app.include_router(auth_router, tags=["Phone Authentication"])
+    print("Phone authentication router loaded successfully")
+except ImportError as e:
+    print(f"Warning: Could not import phone auth router: {e}")
+
 # Get Django WSGI application for admin interface
 from django.core.wsgi import get_wsgi_application
 django_wsgi_app = get_wsgi_application()
