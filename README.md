@@ -22,6 +22,7 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
 
 ## 🏗️ Architecture
 
+### System Overview
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Mobile Apps   │────│   FastAPI API    │────│   Supabase      │
@@ -38,6 +39,21 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
                        │   OTP Service    │
                        └──────────────────┘
 ```
+
+### 📱 Phone Authentication System
+
+The system implements a comprehensive phone number-based authentication flow with OTP verification, lead tracking, and profile management.
+
+**📋 For detailed documentation, flowcharts, and API examples, see:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
+
+#### Key Components:
+- **🔐 OTP Verification**: 4-digit SMS OTP via Twilio
+- **🎯 Lead Tracking**: Unverified users stored as leads for business analytics
+- **👤 Profile Management**: Comprehensive user profile with validation
+- **🎪 Event Interests**: Dynamic interest management system
+- **📸 Profile Pictures**: URL-based image validation (1-6 images)
+- **🛡️ Security**: JWT tokens, input validation, age verification (18+)
 
 ## 🛠️ Development Setup
 
@@ -482,87 +498,17 @@ docker-compose exec db psql -U postgres loopin_db
 - **Django Admin**: `http://localhost:8000/django/admin/`
 - **API Root**: `http://localhost:8000/api/`
 
-### 📱 Phone Authentication Flow
+### 📱 Phone Authentication API
 
-#### Complete Signup Flow
-```bash
-# 1. Send OTP for signup
-curl -X POST "http://localhost:8000/api/auth/signup" \
-  -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376"}'
+**📋 Complete API documentation, testing commands, and examples:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
 
-# 2. Verify OTP (check logs for 4-digit code)
-curl -X POST "http://localhost:8000/api/auth/verify-otp" \
-  -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
-
-# 3. Get Event Interests (optional, for frontend)
-curl -X GET "http://localhost:8000/api/auth/event-interests"
-
-# 4. Complete Profile (use JWT token from step 2)
-curl -X POST "http://localhost:8000/api/auth/complete-profile" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -d '{
-    "phone_number": "+916205829376",
-    "name": "Gaurav Kumar",
-    "birth_date": "1995-01-01",
-    "gender": "male",
-    "event_interests": [1, 2, 3],
-    "profile_pictures": ["https://example.com/pic1.jpg", "https://example.com/pic2.jpg"]
-  }'
-```
-
-#### Complete Login Flow
-```bash
-# 1. Send OTP for login
-curl -X POST "http://localhost:8000/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376"}'
-
-# 2. Verify OTP (4-digit code)
-curl -X POST "http://localhost:8000/api/auth/verify-login" \
-  -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
-```
-
-#### Get User Profile
-```bash
-# Get user profile (use JWT token from login)
-curl -X GET "http://localhost:8000/api/auth/profile" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-### 🔧 Debug Commands
-
-#### Check OTP Status
-```bash
-docker exec loopinbackend-web-1 python -c "
-import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings.dev')
-import django; django.setup()
-from users.models import PhoneOTP
-otp = PhoneOTP.objects.filter(phone_number='+916205829376').first()
-print(f'OTP: {otp.otp_code if otp else None}')
-print(f'Expires: {otp.expires_at if otp else None}')
-print(f'Verified: {otp.is_verified if otp else None}')
-"
-```
-
-#### Check User Status
-```bash
-docker exec loopinbackend-web-1 python -c "
-import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings.dev')
-import django; django.setup()
-from django.contrib.auth.models import User
-from users.models import UserProfile
-user = User.objects.filter(username='+916205829376').first()
-if user:
-    profile = UserProfile.objects.filter(user=user).first()
-    print(f'User: {user.username}')
-    print(f'Profile: {profile.name if profile else None}')
-    print(f'Verified: {profile.is_verified if profile else None}')
-"
-```
+#### Quick Start:
+1. **Send OTP**: `POST /api/auth/signup` or `POST /api/auth/login`
+2. **Verify OTP**: `POST /api/auth/verify-otp` or `POST /api/auth/verify-login`
+3. **Complete Profile**: `POST /api/auth/complete-profile`
+4. **Get Profile**: `GET /api/auth/profile`
+5. **Event Interests**: `GET /api/auth/event-interests`
 
 ## 🧪 Testing Strategy
 
@@ -754,14 +700,17 @@ This project structure is designed for **long-term maintainability** and **team 
 
 **Remember**: Consistency is key. Follow this structured approach religiously to maintain a professional, enterprise-grade codebase that scales with your team and requirements.
 
-### 📱 Key Features Summary
+### 📱 System Features
 
-- ✅ **Phone Authentication**: 4-digit OTP via Twilio SMS
-- ✅ **Lead Tracking**: Unverified users stored as leads
-- ✅ **Profile Management**: Comprehensive validation and data management
-- ✅ **Event Interests**: Dynamic interest system
-- ✅ **Admin Interface**: Enhanced Django admin with lead management
-- ✅ **Security**: JWT tokens, input validation, secure credentials
-- ✅ **Documentation**: Comprehensive API documentation
+**📋 For complete feature details, validation rules, and implementation specifics:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
+
+**Core Features:**
+- ✅ **Phone Authentication** with 4-digit OTP
+- ✅ **Lead Tracking** for business analytics
+- ✅ **Profile Management** with comprehensive validation
+- ✅ **Event Interests** dynamic system
+- ✅ **Admin Interface** with lead management
+- ✅ **Security** with JWT and input validation
 
 Happy coding! 🚀
