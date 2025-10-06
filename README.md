@@ -22,6 +22,7 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
 
 ## 🏗️ Architecture
 
+### System Overview
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Mobile Apps   │────│   FastAPI API    │────│   Supabase      │
@@ -37,6 +38,180 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
                        │   Twilio SMS     │
                        │   OTP Service    │
                        └──────────────────┘
+```
+
+### 📱 Complete Phone Authentication Flow
+
+```mermaid
+graph TD
+    A[📱 User Opens App] --> B[Enter Phone Number]
+    B --> C{Existing User?}
+    
+    C -->|No| D[📤 POST /api/auth/signup]
+    C -->|Yes| E[📤 POST /api/auth/login]
+    
+    D --> F[🔐 Generate 4-digit OTP]
+    E --> F
+    F --> G[💾 Store OTP in Database<br/>is_verified = false]
+    G --> H[📱 Send SMS via Twilio]
+    H --> I[👤 User Receives OTP]
+    I --> J[📝 User Enters OTP]
+    J --> K{Signup or Login?}
+    
+    K -->|Signup| L[📤 POST /api/auth/verify-otp]
+    K -->|Login| M[📤 POST /api/auth/verify-login]
+    
+    L --> N{OTP Valid?}
+    M --> N
+    
+    N -->|❌ No| O[❌ Return Error]
+    N -->|✅ Yes| P[✅ Mark is_verified = true]
+    
+    P --> Q{New User?}
+    Q -->|Yes| R[👤 Create User Account]
+    Q -->|No| S[🔄 Update Existing User]
+    
+    R --> T[🎫 Generate JWT Token]
+    S --> T
+    T --> U{Profile Complete?}
+    
+    U -->|No| V[📋 GET /api/auth/event-interests]
+    V --> W[📝 Complete Profile Form]
+    W --> X[📤 POST /api/auth/complete-profile]
+    X --> Y{Validation OK?}
+    
+    Y -->|❌ No| Z[❌ Return Validation Errors]
+    Y -->|✅ Yes| AA[💾 Save Profile Data]
+    
+    U -->|Yes| BB[🎉 Login Successful]
+    AA --> BB
+    
+    BB --> CC[🔒 Access Protected Resources]
+    
+    style A fill:#e1f5fe
+    style F fill:#fff3e0
+    style G fill:#e8f5e8
+    style H fill:#f3e5f5
+    style P fill:#e8f5e8
+    style T fill:#fff3e0
+    style BB fill:#e8f5e8
+    style O fill:#ffebee
+    style Z fill:#ffebee
+```
+
+### 🎯 Lead Management Flow
+
+```mermaid
+graph TD
+    A[📞 User Requests OTP] --> B[💾 PhoneOTP Record Created]
+    B --> C[🏷️ Mark as Lead<br/>is_verified = false]
+    C --> D[📊 Lead Stored in Database]
+    D --> E[👨‍💼 Admin Views Lead Dashboard]
+    
+    E --> F{User Verifies OTP?}
+    F -->|✅ Yes| G[✅ Mark is_verified = true]
+    F -->|❌ No| H[⏳ Lead Remains Unverified]
+    
+    G --> I[👤 Lead Converted to User]
+    H --> J[📈 Lead Available for Follow-up]
+    
+    J --> K[📞 Sales Team Can Contact]
+    K --> L[🤝 Manual Verification Possible]
+    L --> M[✅ Mark as Verified in Admin]
+    M --> I
+    
+    I --> N[🎉 User Can Complete Profile]
+    N --> O[💼 Full User Experience]
+    
+    style D fill:#e1f5fe
+    style H fill:#fff3e0
+    style I fill:#e8f5e8
+    style J fill:#fff3e0
+    style O fill:#e8f5e8
+```
+
+### 🔄 Database Operations Flow
+
+```mermaid
+graph TD
+    A[📱 API Request] --> B{Request Type}
+    
+    B -->|Signup| C[📝 Create PhoneOTP Record]
+    B -->|Login| D[🔄 Update Existing PhoneOTP]
+    B -->|Verify OTP| E[✅ Update is_verified Flag]
+    B -->|Complete Profile| F[👤 Create/Update UserProfile]
+    
+    C --> G[🎲 Generate 4-digit OTP]
+    D --> G
+    G --> H[⏰ Set 10-minute Expiration]
+    H --> I[💾 Save to Database]
+    
+    E --> J{OTP Matches?}
+    J -->|✅ Yes| K[✅ Mark Verified]
+    J -->|❌ No| L[📈 Increment Attempts]
+    
+    K --> M{User Exists?}
+    M -->|No| N[👤 Create New User]
+    M -->|Yes| O[🔄 Update Existing User]
+    
+    L --> P{Attempt Limit?}
+    P -->|Yes| Q[🚫 Block Further Attempts]
+    P -->|No| R[⏳ Allow Retry]
+    
+    F --> S[🔍 Validate Event Interests]
+    S --> T[📸 Save Profile Pictures]
+    T --> U[💾 Update Database]
+    
+    N --> V[🎫 Generate JWT Token]
+    O --> V
+    U --> V
+    
+    style I fill:#e1f5fe
+    style K fill:#e8f5e8
+    style L fill:#fff3e0
+    style V fill:#fff3e0
+    style Q fill:#ffebee
+```
+
+### 🛡️ Security & Validation Flow
+
+```mermaid
+graph TD
+    A[📱 API Request] --> B{Authentication Required?}
+    
+    B -->|No| C[🔍 Input Validation]
+    B -->|Yes| D[🎫 JWT Token Validation]
+    
+    D --> E{Token Valid?}
+    E -->|❌ No| F[❌ Return 401 Unauthorized]
+    E -->|✅ Yes| C
+    
+    C --> G{Phone Number Format?}
+    G -->|❌ Invalid| H[❌ Return Validation Error]
+    G -->|✅ Valid| I{OTP Format?}
+    
+    I -->|❌ Not 4 digits| H
+    I -->|✅ Valid| J{Age Validation?}
+    
+    J -->|❌ Under 18| H
+    J -->|✅ Valid| K{Event Interests?}
+    
+    K -->|❌ Not 1-5| H
+    K -->|✅ Valid| L{Profile Pictures?}
+    
+    L -->|❌ Not 1-6 URLs| H
+    L -->|✅ Valid| M{Gender Valid?}
+    
+    M -->|❌ Invalid| H
+    M -->|✅ Valid| N[✅ Process Request]
+    
+    N --> O[💾 Database Operations]
+    O --> P[📤 Return Success Response]
+    
+    style F fill:#ffebee
+    style H fill:#ffebee
+    style N fill:#e8f5e8
+    style P fill:#e8f5e8
 ```
 
 ## 🛠️ Development Setup
