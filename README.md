@@ -1,30 +1,41 @@
 # Loopin Backend
 
-A comprehensive mobile backend built with Django + FastAPI, featuring JWT authentication, PostgreSQL database, and Docker containerization. This project combines the power of Django's ORM and admin interface with FastAPI's high-performance API endpoints in a clean, modular architecture.
+A comprehensive mobile backend built with Django + FastAPI, featuring **phone number-based authentication with OTP verification**, PostgreSQL database, and Docker containerization. This project combines the power of Django's ORM and admin interface with FastAPI's high-performance API endpoints in a clean, modular architecture.
 
 ## 🚀 Features
 
 - **Django 5.2** for ORM, migrations, and admin interface
 - **FastAPI** for high-performance API endpoints
+- **📱 Phone Authentication** with 4-digit SMS OTP verification via Twilio
 - **JWT Authentication** with secure token-based auth
-- **PostgreSQL** database with persistent storage
+- **PostgreSQL** database with persistent storage (Supabase cloud)
 - **Docker & Docker Compose** for containerization
 - **Swagger UI** for API documentation
 - **CORS** support for mobile clients
 - **Async/Await** support with proper Django ORM integration
 - **Modular Architecture** with clean separation of concerns
+- **🎯 Lead Tracking** for unverified users
+- **👤 Profile Management** with comprehensive validation
+- **🎪 Event Interests** with dynamic data management
+- **📸 Profile Pictures** with URL validation
+- **🌏 India Timezone** support (Asia/Kolkata)
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Mobile Apps   │────│   FastAPI API    │────│   PostgreSQL   │
-│  (iOS/Android)  │    │   (/api/*)       │    │   Database      │
+│   Mobile Apps   │────│   FastAPI API    │────│   Supabase      │
+│  (iOS/Android)  │    │   (/api/*)       │    │   PostgreSQL    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                               │
                        ┌──────────────────┐
                        │   Django Admin   │
                        │   (/django/*)    │
+                       └──────────────────┘
+                              │
+                       ┌──────────────────┐
+                       │   Twilio SMS     │
+                       │   OTP Service    │
                        └──────────────────┘
 ```
 
@@ -34,6 +45,7 @@ A comprehensive mobile backend built with Django + FastAPI, featuring JWT authen
 
 - **Docker** and **Docker Compose** installed
 - **Git** for version control
+- **Twilio Account** for SMS OTP (free trial available)
 - Basic understanding of Django and FastAPI
 
 ### Step-by-Step Setup for New Developers
@@ -47,18 +59,40 @@ cd LoopinBackend
 
 #### 2. Environment Configuration
 
-The project includes a pre-configured `.env` file for development. For production, create your own:
+**⚠️ Important**: The project requires a `.env` file with sensitive credentials. Create it from the example:
 
 ```bash
-# Development (default .env works out of the box)
-cat .env
+# Copy the example file
+cp .env.example .env
 
-# For production, update these critical variables:
+# Edit with your actual credentials
+nano .env
+```
+
+**Required Environment Variables**:
+```bash
+# Django Settings
 SECRET_KEY=your-very-long-and-secure-secret-key
+DEBUG=True
+DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev
+
+# Database Configuration (Supabase)
+DATABASE_URL=postgresql://username:password@host:port/database
+
+# JWT Settings
 JWT_SECRET_KEY=your-jwt-secret-key
-DEBUG=False
-ALLOWED_HOSTS=yourdomain.com,api.yourdomain.com
-DB_PASSWORD=your-secure-database-password
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Twilio Configuration (Get from Twilio Console)
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_PHONE_NUMBER=+15005550006
+TWILIO_TEST_MODE=true  # Set to false for production
+
+# CORS Settings
+ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 #### 3. Build and Start Docker Containers
@@ -73,11 +107,11 @@ docker-compose ps
 
 This command will:
 - Build the Python/Django/FastAPI application container
-- Start PostgreSQL database container
+- Connect to external Supabase PostgreSQL database
 - Set up networking between containers
 - Mount volumes for persistent data
 
-**Note**: The database will be ready when the health check passes, then you can run setup commands.
+**Note**: The application will connect to Supabase database automatically when ready.
 
 #### 4. Run Database Migrations
 
@@ -86,7 +120,7 @@ This command will:
 docker-compose exec web python manage.py migrate
 
 # Create database tables for all apps
-# This sets up User tables, UserProfile, and other models
+# This sets up User tables, UserProfile, PhoneOTP, EventInterest, and other models
 ```
 
 #### 5. Create Django Superuser
@@ -110,14 +144,32 @@ else:
 "
 ```
 
-#### 6. Collect Static Files
+#### 6. Load Event Interests Data
+
+```bash
+# Load default event interests for the application
+docker-compose exec web python manage.py shell -c "
+from users.models import EventInterest
+interests = [
+    'Music & Concerts', 'Sports & Fitness', 'Food & Dining',
+    'Art & Culture', 'Technology', 'Travel & Adventure',
+    'Business & Networking', 'Health & Wellness',
+    'Education & Learning', 'Entertainment'
+]
+for interest in interests:
+    EventInterest.objects.get_or_create(name=interest)
+print('Event interests loaded successfully')
+"
+```
+
+#### 7. Collect Static Files
 
 ```bash
 # Collect all static files for production serving
 docker-compose exec web python manage.py collectstatic --noinput
 ```
 
-#### 7. Verify Installation
+#### 8. Verify Installation
 
 ```bash
 # Test API health endpoint
@@ -127,9 +179,10 @@ curl http://localhost:8000/api/health
 # - FastAPI Swagger UI: http://localhost:8000/api/docs
 # - Django Admin: http://localhost:8000/django/admin/
 # - API Root: http://localhost:8000/api/
+# - Phone Auth Documentation: http://localhost:8000/PHONE_AUTHENTICATION.md
 ```
 
-#### 8. Run Tests
+#### 9. Run Tests
 
 ```bash
 # Run Django tests
@@ -163,12 +216,18 @@ loopin_backend/
 │       └── prod.py             # Production-specific settings
 │
 ├── 👥 Django App (users/)
-│   ├── models.py               # User and UserProfile models
-│   ├── admin.py                # Django admin configuration
+│   ├── models.py               # UserProfile, PhoneOTP, EventInterest models
+│   ├── admin.py                # Django admin configuration with lead tracking
 │   ├── apps.py                 # App configuration
+│   ├── auth_router.py          # 📱 Phone authentication endpoints (FastAPI)
+│   ├── services.py             # 🔐 Twilio SMS service
+│   ├── schemas.py              # 📋 Pydantic request/response models with validation
 │   ├── migrations/             # Database schema migrations
 │   │   ├── __init__.py
-│   │   └── 0001_initial.py
+│   │   ├── 0001_initial.py
+│   │   ├── 0004_auto_20251006_1649.py
+│   │   ├── 0005_eventinterest_userprofile_gender_and_more.py
+│   │   └── 0006_remove_userprofile_avatar_remove_userprofile_email.py
 │   ├── serializers/            # 📦 Modular DRF serializers
 │   │   ├── __init__.py         # Clean imports from serializers
 │   │   └── user_serializers.py # User-related serializers
@@ -183,7 +242,7 @@ loopin_backend/
 │   ├── main.py                 # FastAPI app initialization and configuration
 │   └── routers/                # 📡 Feature-based API routes
 │       ├── __init__.py         # Router module initialization
-│       ├── auth.py             # 🔐 Authentication endpoints (JWT)
+│       ├── auth.py             # 🔐 Legacy authentication endpoints
 │       └── users.py            # 👥 User management endpoints
 │
 ├── 🧪 Unified Testing (tests/)
@@ -202,8 +261,11 @@ loopin_backend/
 │
 └── 📋 Configuration Files
     ├── manage.py               # Django management commands
-    ├── requirements.txt        # Python dependencies
-    └── README.md              # This comprehensive guide
+    ├── requirements.txt        # Python dependencies (includes Twilio)
+    ├── .env.example            # Environment variables template
+    ├── .gitignore              # Git ignore rules
+    ├── README.md              # This comprehensive guide
+    └── PHONE_AUTHENTICATION.md # 📱 Detailed phone auth documentation
 ```
 
 ### Detailed Folder Explanations
@@ -216,7 +278,13 @@ loopin_backend/
   - `urls.py`: Root URL routing (only Django admin, FastAPI handles `/api/*`)
 
 #### `users/` - Django App for User Management
-- **Purpose**: Django app handling user models, admin interface, and DRF endpoints
+- **Purpose**: Django app handling user models, admin interface, and phone authentication
+- **Key Files**:
+  - `auth_router.py`: **NEW** - Phone authentication endpoints (FastAPI)
+  - `services.py`: **NEW** - Twilio SMS service integration
+  - `schemas.py`: **NEW** - Pydantic validation models
+  - `models.py`: UserProfile, PhoneOTP, EventInterest models
+  - `admin.py`: Enhanced admin with lead tracking
 - **Modular Structure**:
   - `serializers/`: One file per feature (e.g., `user_serializers.py`)
   - `views/`: One file per feature (e.g., `user_views.py`)
@@ -414,32 +482,86 @@ docker-compose exec db psql -U postgres loopin_db
 - **Django Admin**: `http://localhost:8000/django/admin/`
 - **API Root**: `http://localhost:8000/api/`
 
-### Example API Usage
+### 📱 Phone Authentication Flow
 
-#### Authentication Flow
+#### Complete Signup Flow
 ```bash
-# 1. Register user
-curl -X POST http://localhost:8000/api/auth/register \
+# 1. Send OTP for signup
+curl -X POST "http://localhost:8000/api/auth/signup" \
   -H "Content-Type: application/json" \
-  -d '{
-    "username": "newuser",
-    "email": "user@example.com", 
-    "password": "securepassword123",
-    "first_name": "John",
-    "last_name": "Doe"
-  }'
+  -d '{"phone_number": "+916205829376"}'
 
-# 2. Login and get JWT token
-curl -X POST http://localhost:8000/api/auth/login \
+# 2. Verify OTP (check logs for 4-digit code)
+curl -X POST "http://localhost:8000/api/auth/verify-otp" \
   -H "Content-Type: application/json" \
-  -d '{
-    "username": "newuser",
-    "password": "securepassword123"
-  }'
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
 
-# 3. Use token for authenticated requests
-curl -X GET http://localhost:8000/api/auth/me \
+# 3. Get Event Interests (optional, for frontend)
+curl -X GET "http://localhost:8000/api/auth/event-interests"
+
+# 4. Complete Profile (use JWT token from step 2)
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "phone_number": "+916205829376",
+    "name": "Gaurav Kumar",
+    "birth_date": "1995-01-01",
+    "gender": "male",
+    "event_interests": [1, 2, 3],
+    "profile_pictures": ["https://example.com/pic1.jpg", "https://example.com/pic2.jpg"]
+  }'
+```
+
+#### Complete Login Flow
+```bash
+# 1. Send OTP for login
+curl -X POST "http://localhost:8000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+916205829376"}'
+
+# 2. Verify OTP (4-digit code)
+curl -X POST "http://localhost:8000/api/auth/verify-login" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
+```
+
+#### Get User Profile
+```bash
+# Get user profile (use JWT token from login)
+curl -X GET "http://localhost:8000/api/auth/profile" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### 🔧 Debug Commands
+
+#### Check OTP Status
+```bash
+docker exec loopinbackend-web-1 python -c "
+import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings.dev')
+import django; django.setup()
+from users.models import PhoneOTP
+otp = PhoneOTP.objects.filter(phone_number='+916205829376').first()
+print(f'OTP: {otp.otp_code if otp else None}')
+print(f'Expires: {otp.expires_at if otp else None}')
+print(f'Verified: {otp.is_verified if otp else None}')
+"
+```
+
+#### Check User Status
+```bash
+docker exec loopinbackend-web-1 python -c "
+import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings.dev')
+import django; django.setup()
+from django.contrib.auth.models import User
+from users.models import UserProfile
+user = User.objects.filter(username='+916205829376').first()
+if user:
+    profile = UserProfile.objects.filter(user=user).first()
+    print(f'User: {user.username}')
+    print(f'Profile: {profile.name if profile else None}')
+    print(f'Verified: {profile.is_verified if profile else None}')
+"
 ```
 
 ## 🧪 Testing Strategy
@@ -471,10 +593,11 @@ coverage html  # Generates HTML report
 - [ ] Update `SECRET_KEY` and `JWT_SECRET_KEY`
 - [ ] Set `DEBUG=False`
 - [ ] Configure `ALLOWED_HOSTS`
-- [ ] Set strong `DB_PASSWORD`
+- [ ] Set strong database credentials
 - [ ] Configure SSL certificates
 - [ ] Set up proper CORS origins
-- [ ] Configure email backend
+- [ ] **Configure live Twilio credentials**
+- [ ] **Set `TWILIO_TEST_MODE=false`**
 - [ ] Set up monitoring and logging
 
 ### Environment Variables for Production
@@ -484,11 +607,15 @@ JWT_SECRET_KEY=your-production-jwt-key
 DEBUG=False
 ENVIRONMENT=prod
 ALLOWED_HOSTS=yourdomain.com,api.yourdomain.com
-DB_NAME=loopin_prod
-DB_USER=loopin_user
-DB_PASSWORD=secure-database-password
-DB_HOST=your-db-host
-DB_PORT=5432
+
+# Supabase Database
+DATABASE_URL=postgresql://username:password@host:port/database
+
+# Live Twilio Configuration
+TWILIO_ACCOUNT_SID=your_live_account_sid
+TWILIO_AUTH_TOKEN=your_live_auth_token
+TWILIO_PHONE_NUMBER=+15005550006
+TWILIO_TEST_MODE=false
 ```
 
 ## 🎯 Maintaining Code Quality
@@ -500,6 +627,7 @@ DB_PORT=5432
 - [ ] Documentation updated
 - [ ] No linting errors
 - [ ] Migrations created if needed
+- [ ] **Phone authentication flow tested**
 
 ### Code Review Guidelines
 - [ ] Proper separation between Django and FastAPI code
@@ -507,6 +635,8 @@ DB_PORT=5432
 - [ ] Modular organization maintained
 - [ ] Tests cover new functionality
 - [ ] Security considerations addressed
+- [ ] **Phone authentication security reviewed**
+- [ ] **Twilio credentials properly secured**
 
 ## 📝 Contributing Guidelines
 
@@ -517,6 +647,8 @@ When contributing to this project, please:
 3. **Write tests**: Add tests in the correct framework folder (`tests/django/` or `tests/fastapi/`)
 4. **Update documentation**: Keep README and docstrings current
 5. **Use Docker**: Run all commands within containers for consistency
+6. **Test phone authentication**: Ensure OTP flow works correctly
+7. **Secure credentials**: Never commit `.env` files or sensitive data
 
 ### Git Branching Strategy
 
@@ -617,7 +749,19 @@ This project structure is designed for **long-term maintainability** and **team 
 - **Clarity**: New developers can quickly understand the codebase
 - **Maintainability**: Clean separation makes debugging and updates easier
 - **Quality**: Structured testing and coding standards prevent technical debt
+- **Security**: Phone authentication with proper OTP validation
+- **Lead Management**: Comprehensive user tracking and conversion
 
 **Remember**: Consistency is key. Follow this structured approach religiously to maintain a professional, enterprise-grade codebase that scales with your team and requirements.
+
+### 📱 Key Features Summary
+
+- ✅ **Phone Authentication**: 4-digit OTP via Twilio SMS
+- ✅ **Lead Tracking**: Unverified users stored as leads
+- ✅ **Profile Management**: Comprehensive validation and data management
+- ✅ **Event Interests**: Dynamic interest system
+- ✅ **Admin Interface**: Enhanced Django admin with lead management
+- ✅ **Security**: JWT tokens, input validation, secure credentials
+- ✅ **Documentation**: Comprehensive API documentation
 
 Happy coding! 🚀

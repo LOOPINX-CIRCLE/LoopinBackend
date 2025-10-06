@@ -11,14 +11,15 @@ import jwt
 from datetime import datetime, timedelta
 import logging
 
-from .models import UserProfile, PhoneOTP
+from .models import UserProfile, PhoneOTP, EventInterest
 from .schemas import (
     PhoneNumberRequest, 
     OTPVerificationRequest, 
     CompleteProfileRequest,
     LoginRequest,
     AuthResponse,
-    UserProfileResponse
+    UserProfileResponse,
+    EventInterestResponse
 )
 from .services import twilio_service
 
@@ -64,7 +65,7 @@ async def signup_with_phone(request: PhoneNumberRequest):
             # Check if user has completed profile
             try:
                 profile = await sync_to_async(lambda: existing_user.profile)()
-                if profile and profile.name and profile.email:
+                if profile and profile.name and profile.profile_pictures:
                     return AuthResponse(
                         success=False,
                         message="User already exists. Please login instead."
@@ -183,7 +184,7 @@ async def verify_signup_otp(request: OTPVerificationRequest):
             token = create_jwt_token(user.id, phone_number)
             
             # Check if profile needs completion
-            needs_completion = not (profile.name and profile.email)
+            needs_completion = not (profile.name and profile.profile_pictures)
             
             return AuthResponse(
                 success=True,
@@ -224,14 +225,31 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
         user = await sync_to_async(lambda: User.objects.get(id=user_id))()
         profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
         
+        # Validate event interests exist and are active
+        event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(
+            id__in=request.event_interests, 
+            is_active=True
+        )))()
+        
+        if len(event_interests) != len(request.event_interests):
+            return AuthResponse(
+                success=False,
+                message="One or more selected event interests are invalid or inactive"
+            )
+        
         # Update profile information
         profile.name = request.name
-        profile.email = request.email
+        profile.birth_date = request.birth_date
+        profile.gender = request.gender
+        profile.profile_pictures = request.profile_pictures
         profile.bio = request.bio or ""
         profile.location = request.location or ""
-        profile.birth_date = request.birth_date
-        profile.avatar = request.avatar or ""
+        
+        # Save profile first
         await sync_to_async(lambda: profile.save())()
+        
+        # Set event interests
+        await sync_to_async(lambda: profile.event_interests.set(event_interests))()
         
         return AuthResponse(
             success=True,
@@ -240,8 +258,10 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
                 "user_id": user.id,
                 "profile_id": profile.id,
                 "name": profile.name,
-                "email": profile.email,
-                "phone_number": profile.phone_number
+                "phone_number": profile.phone_number,
+                "gender": profile.gender,
+                "event_interests_count": len(event_interests),
+                "profile_pictures_count": len(profile.profile_pictures)
             }
         )
         
@@ -249,6 +269,11 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
         return AuthResponse(
             success=False,
             message="User not found"
+        )
+    except UserProfile.DoesNotExist:
+        return AuthResponse(
+            success=False,
+            message="User profile not found"
         )
     except Exception as e:
         logger.error(f"Profile completion error: {e}")
@@ -316,7 +341,7 @@ async def verify_login_otp(request: LoginRequest):
         otp_code = request.otp_code
         
         # Get OTP record
-        otp_record = PhoneOTP.objects.filter(phone_number=phone_number).first()
+        otp_record = await sync_to_async(lambda: PhoneOTP.objects.filter(phone_number=phone_number).first())()
         if not otp_record:
             return AuthResponse(
                 success=False,
@@ -324,12 +349,12 @@ async def verify_login_otp(request: LoginRequest):
             )
         
         # Verify OTP
-        is_valid, message = otp_record.verify_otp(otp_code)
+        is_valid, message = await sync_to_async(lambda: otp_record.verify_otp(otp_code))()
         
         if is_valid:
             # Get user
-            user = User.objects.get(username=phone_number)
-            profile = UserProfile.objects.get(user=user)
+            user = await sync_to_async(lambda: User.objects.get(username=phone_number))()
+            profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
             
             # Generate JWT token
             token = create_jwt_token(user.id, phone_number)
@@ -342,7 +367,6 @@ async def verify_login_otp(request: LoginRequest):
                     "user_id": user.id,
                     "phone_number": phone_number,
                     "name": profile.name,
-                    "email": profile.email,
                     "is_verified": profile.is_verified
                 }
             )
@@ -382,7 +406,6 @@ async def get_user_profile(token: str = Depends(security)):
         return UserProfileResponse(
             id=profile.id,
             name=profile.name,
-            email=profile.email,
             phone_number=profile.phone_number,
             bio=profile.bio,
             location=profile.location,
@@ -399,6 +422,38 @@ async def get_user_profile(token: str = Depends(security)):
     except Exception as e:
         logger.error(f"Profile retrieval error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving profile")
+
+
+@router.get("/event-interests", response_model=dict)
+async def get_event_interests():
+    """
+    Get all active event interests for profile completion
+    """
+    try:
+        event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(is_active=True).order_by('name')))()
+        
+        interests_data = [
+            {
+                "id": interest.id,
+                "name": interest.name,
+                "description": interest.description
+            }
+            for interest in event_interests
+        ]
+        
+        return {
+            "success": True,
+            "message": "Event interests retrieved successfully",
+            "data": interests_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching event interests: {e}")
+        return {
+            "success": False,
+            "message": "Failed to retrieve event interests",
+            "data": []
+        }
 
 
 @router.post("/logout", response_model=AuthResponse)
