@@ -23,33 +23,47 @@
 #### Signup
 ```bash
 # 1. Send OTP
-curl -X POST "http://localhost:8000/auth/signup" \
+curl -X POST "http://localhost:8000/api/auth/signup" \
   -H "Content-Type: application/json" \
   -d '{"phone_number": "+916205829376"}'
 
-# 2. Verify OTP (check logs for code)
-curl -X POST "http://localhost:8000/auth/verify-otp" \
+# 2. Verify OTP (check logs for 4-digit code)
+curl -X POST "http://localhost:8000/api/auth/verify-otp" \
   -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "123456"}'
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
 
 # 3. Complete Profile (use JWT from step 2)
-curl -X POST "http://localhost:8000/auth/complete-profile" \
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -d '{"phone_number": "+916205829376", "name": "Gaurav Kumar", "email": "gaurav@loopinsocial.in"}'
+  -d '{
+    "phone_number": "+916205829376",
+    "name": "Gaurav Kumar",
+    "email": "gaurav@loopinsocial.in",
+    "birth_date": "1995-01-01",
+    "gender": "male",
+    "event_interests": [1, 2, 3],
+    "profile_pictures": ["https://example.com/pic1.jpg", "https://example.com/pic2.jpg"]
+  }'
 ```
 
 #### Login
 ```bash
 # 1. Send OTP
-curl -X POST "http://localhost:8000/auth/login" \
+curl -X POST "http://localhost:8000/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"phone_number": "+916205829376"}'
 
-# 2. Verify OTP
-curl -X POST "http://localhost:8000/auth/verify-login" \
+# 2. Verify OTP (4-digit code)
+curl -X POST "http://localhost:8000/api/auth/verify-login" \
   -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "123456"}'
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
+```
+
+#### Get Event Interests
+```bash
+# Get available event interests for profile completion
+curl -X GET "http://localhost:8000/api/auth/event-interests"
 ```
 
 ### ⚙️ Configuration
@@ -71,7 +85,7 @@ TWILIO_TEST_MODE=false  # Real SMS delivery
 
 ### 🔧 Debug Commands
 
-#### Check OTP
+#### Check OTP (4-digit)
 ```bash
 docker exec loopinbackend-web-1 python -c "
 import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings.dev')
@@ -107,40 +121,165 @@ The LoopinBackend implements a phone number-based authentication system using Tw
 
 ### Key Features
 - ✅ Phone number-based authentication
-- ✅ SMS OTP verification via Twilio
+- ✅ 4-digit SMS OTP verification via Twilio
 - ✅ JWT token-based sessions
 - ✅ Separate user management (Normal users vs Admin users)
-- ✅ Profile completion workflow
+- ✅ Comprehensive profile completion workflow
+- ✅ Dynamic event interests management
+- ✅ Profile picture validation (1-6 images)
+- ✅ Age verification (18+ requirement)
+- ✅ Gender selection validation
 - ✅ India timezone support
 - ✅ Test mode for development
 
 ## 🔄 Authentication Flow
 
-### Signup Flow
+### Complete Signup Flow with Lead Tracking
 ```mermaid
 graph TD
-    A[User enters phone number] --> B[POST /auth/signup]
-    B --> C[Generate 6-digit OTP]
-    C --> D[Send SMS via Twilio]
-    D --> E[User receives OTP]
-    E --> F[POST /auth/verify-otp]
-    F --> G[Create user account]
-    G --> H[Generate JWT token]
-    H --> I[POST /auth/complete-profile]
-    I --> J[User profile created]
+    A[User enters phone number] --> B[POST /api/auth/signup]
+    B --> C{User exists?}
+    C -->|Yes| D[Check profile completion]
+    C -->|No| E[Generate 4-digit OTP]
+    D -->|Complete| F[Return: User already exists]
+    D -->|Incomplete| E
+    E --> G[Store OTP in Database]
+    G --> H[Mark is_verified = false]
+    H --> I[Send SMS via Twilio]
+    I --> J[User receives OTP]
+    J --> K[POST /api/auth/verify-otp]
+    K --> L{OTP valid?}
+    L -->|No| M[Return: Invalid OTP]
+    L -->|Yes| N[Update is_verified = true]
+    N --> O{User exists?}
+    O -->|No| P[Create new User account]
+    O -->|Yes| Q[Update existing User]
+    P --> R[Create UserProfile]
+    Q --> R
+    R --> S[Generate JWT token]
+    S --> T[GET /api/auth/event-interests]
+    T --> U[POST /api/auth/complete-profile]
+    U --> V{Profile valid?}
+    V -->|No| W[Return: Validation errors]
+    V -->|Yes| X[Save profile data]
+    X --> Y[Return: Profile completed]
+    
+    style G fill:#e1f5fe
+    style H fill:#ffebee
+    style N fill:#e8f5e8
+    style Y fill:#e8f5e8
+    style F fill:#fff3e0
+    style M fill:#ffebee
+    style W fill:#ffebee
 ```
 
-### Login Flow
+### Complete Login Flow with Lead Tracking
 ```mermaid
 graph TD
-    A[User enters phone number] --> B[POST /auth/login]
-    B --> C[Generate 6-digit OTP]
-    C --> D[Send SMS via Twilio]
-    D --> E[User receives OTP]
-    E --> F[POST /auth/verify-login]
-    F --> G[Verify OTP]
-    G --> H[Generate JWT token]
-    H --> I[User logged in]
+    A[User enters phone number] --> B[POST /api/auth/login]
+    B --> C{User exists?}
+    C -->|No| D[Return: User not found]
+    C -->|Yes| E[Generate 4-digit OTP]
+    E --> F[Store OTP in Database]
+    F --> G[Mark is_verified = false]
+    G --> H[Send SMS via Twilio]
+    H --> I[User receives OTP]
+    I --> J[POST /api/auth/verify-login]
+    J --> K{OTP valid?}
+    K -->|No| L[Return: Invalid OTP]
+    K -->|Yes| M[Update is_verified = true]
+    M --> N[Get User & Profile]
+    N --> O[Generate JWT token]
+    O --> P[Return: Login successful]
+    
+    style F fill:#e1f5fe
+    style G fill:#ffebee
+    style M fill:#e8f5e8
+    style P fill:#e8f5e8
+    style D fill:#ffebee
+    style L fill:#ffebee
+```
+
+### Lead Management Flow
+```mermaid
+graph TD
+    A[User requests OTP] --> B[PhoneOTP record created]
+    B --> C[is_verified = false]
+    C --> D[Lead stored in database]
+    D --> E[Admin can view lead]
+    E --> F{User verifies OTP?}
+    F -->|Yes| G[is_verified = true]
+    F -->|No| H[Lead remains unverified]
+    G --> I[Lead converted to user]
+    H --> J[Lead available for follow-up]
+    J --> K[Sales team can contact]
+    K --> L[Manual verification possible]
+    L --> M[Mark as verified in admin]
+    
+    style D fill:#e1f5fe
+    style H fill:#fff3e0
+    style I fill:#e8f5e8
+    style J fill:#fff3e0
+```
+
+### Profile Completion Validation Flow
+```mermaid
+graph TD
+    A[POST /api/auth/complete-profile] --> B[Validate JWT token]
+    B --> C{Token valid?}
+    C -->|No| D[Return: Invalid token]
+    C -->|Yes| E[Validate required fields]
+    E --> F{Name valid?}
+    F -->|No| G[Return: Name too short]
+    F -->|Yes| H{DOB valid?}
+    H -->|No| I[Return: Under 18]
+    H -->|Yes| J{Gender valid?}
+    J -->|No| K[Return: Invalid gender]
+    J -->|Yes| L{Event interests valid?}
+    L -->|No| M[Return: 1-5 interests required]
+    L -->|Yes| N{Profile pictures valid?}
+    N -->|No| O[Return: 1-6 pictures required]
+    N -->|Yes| P[Validate picture URLs]
+    P --> Q{URLs valid?}
+    Q -->|No| R[Return: Invalid URL format]
+    Q -->|Yes| S[Save profile data]
+    S --> T[Update event interests]
+    T --> U[Return: Profile completed]
+    
+    style G fill:#ffebee
+    style I fill:#ffebee
+    style K fill:#ffebee
+    style M fill:#ffebee
+    style O fill:#ffebee
+    style R fill:#ffebee
+    style U fill:#e8f5e8
+```
+
+### Database Operations Flow
+```mermaid
+graph TD
+    A[API Request] --> B{Operation Type}
+    B -->|Signup| C[Create PhoneOTP record]
+    B -->|Login| D[Update existing PhoneOTP]
+    B -->|Verify OTP| E[Update is_verified flag]
+    B -->|Complete Profile| F[Create/Update UserProfile]
+    C --> G[Generate OTP code]
+    D --> G
+    G --> H[Set expiration time]
+    H --> I[Save to database]
+    E --> J{OTP matches?}
+    J -->|Yes| K[Mark verified]
+    J -->|No| L[Increment attempts]
+    K --> M[Create User if needed]
+    L --> N[Check attempt limit]
+    F --> O[Validate event interests]
+    O --> P[Save profile pictures]
+    P --> Q[Update database]
+    
+    style I fill:#e1f5fe
+    style K fill:#e8f5e8
+    style L fill:#fff3e0
+    style Q fill:#e8f5e8
 ```
 
 ## 🌐 API Endpoints
@@ -154,7 +293,7 @@ http://localhost:8000
 
 #### 1. Signup with Phone
 ```http
-POST /auth/signup
+POST /api/auth/signup
 Content-Type: application/json
 
 {
@@ -176,14 +315,19 @@ Content-Type: application/json
 
 #### 2. Verify Signup OTP
 ```http
-POST /auth/verify-otp
+POST /api/auth/verify-otp
 Content-Type: application/json
 
 {
   "phone_number": "+916205829376",
-  "otp_code": "123456"
+  "otp_code": "1097"
 }
 ```
+
+**Validation Rules:**
+- OTP must be exactly 4 digits
+- Only numeric characters allowed
+- Case-sensitive matching
 
 **Response:**
 ```json
@@ -201,7 +345,7 @@ Content-Type: application/json
 
 #### 3. Complete User Profile
 ```http
-POST /auth/complete-profile
+POST /api/auth/complete-profile
 Content-Type: application/json
 Authorization: Bearer <JWT_TOKEN>
 
@@ -209,12 +353,25 @@ Authorization: Bearer <JWT_TOKEN>
   "phone_number": "+916205829376",
   "name": "Gaurav Kumar",
   "email": "gaurav@loopinsocial.in",
-  "bio": "Backend Developer",
-  "location": "Delhi, India",
   "birth_date": "1995-01-01",
-  "avatar": "https://example.com/avatar.jpg"
+  "gender": "male",
+  "event_interests": [1, 2, 3],
+  "profile_pictures": [
+    "https://example.com/pic1.jpg",
+    "https://example.com/pic2.jpg"
+  ],
+  "bio": "Backend Developer",
+  "location": "Delhi, India"
 }
 ```
+
+**Validation Rules:**
+- **Name**: Minimum 3 characters, letters/spaces/hyphens/apostrophes only
+- **Birth Date**: User must be 18+ years old
+- **Gender**: Must be "male", "female", or "other"
+- **Event Interests**: Select 1-5 interests (IDs from event-interests endpoint)
+- **Profile Pictures**: 1-6 valid image URLs required
+- **Email**: Valid email format
 
 **Response:**
 ```json
@@ -233,7 +390,7 @@ Authorization: Bearer <JWT_TOKEN>
 
 #### 4. Login with Phone
 ```http
-POST /auth/login
+POST /api/auth/login
 Content-Type: application/json
 
 {
@@ -254,14 +411,18 @@ Content-Type: application/json
 
 #### 5. Verify Login OTP
 ```http
-POST /auth/verify-login
+POST /api/auth/verify-login
 Content-Type: application/json
 
 {
   "phone_number": "+916205829376",
-  "otp_code": "123456"
+  "otp_code": "1097"
 }
 ```
+
+**Validation Rules:**
+- OTP must be exactly 4 digits
+- Only numeric characters allowed
 
 **Response:**
 ```json
@@ -279,9 +440,34 @@ Content-Type: application/json
 }
 ```
 
-#### 6. Get User Profile
+#### 6. Get Event Interests
 ```http
-GET /auth/profile
+GET /api/auth/event-interests
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Event interests retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Music & Concerts",
+      "description": "Live music, concerts, and musical events"
+    },
+    {
+      "id": 2,
+      "name": "Sports & Fitness",
+      "description": "Sports events, fitness activities, and competitions"
+    }
+  ]
+}
+```
+
+#### 7. Get User Profile
+```http
+GET /api/auth/profile
 Authorization: Bearer <JWT_TOKEN>
 ```
 
@@ -303,9 +489,9 @@ Authorization: Bearer <JWT_TOKEN>
 }
 ```
 
-#### 7. Logout
+#### 8. Logout
 ```http
-POST /auth/logout
+POST /api/auth/logout
 ```
 
 **Response:**
@@ -325,23 +511,41 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     
     # Basic profile information
-    name = models.CharField(max_length=100, blank=True)
-    email = models.EmailField(blank=True)
-    phone_number = models.CharField(max_length=15, blank=True)
+    name = models.CharField(max_length=100, blank=True, help_text="Full name of the user")
+    email = models.EmailField(blank=True, help_text="Primary email address")
+    phone_number = models.CharField(max_length=15, blank=True, help_text="Contact phone number")
     
     # Additional profile details
-    bio = models.TextField(max_length=500, blank=True)
-    location = models.CharField(max_length=100, blank=True)
-    birth_date = models.DateField(null=True, blank=True)
-    avatar = models.URLField(blank=True)
+    bio = models.TextField(max_length=500, blank=True, help_text="User biography")
+    location = models.CharField(max_length=100, blank=True, help_text="User location")
+    birth_date = models.DateField(null=True, blank=True, help_text="Date of birth")
+    avatar = models.URLField(blank=True, help_text="Profile picture URL")
+    
+    # New required fields
+    gender = models.CharField(
+        max_length=10, 
+        choices=[('male', 'Male'), ('female', 'Female'), ('other', 'Other')],
+        blank=True, 
+        help_text="User gender"
+    )
+    event_interests = models.ManyToManyField(
+        'EventInterest', 
+        blank=True, 
+        help_text="User's event interests (1-5 selections required)"
+    )
+    profile_pictures = models.JSONField(
+        default=list, 
+        blank=True, 
+        help_text="List of profile picture URLs (1-6 pictures required)"
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     # Profile status
-    is_verified = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+    is_verified = models.BooleanField(default=False, help_text="Whether the user profile is verified")
+    is_active = models.BooleanField(default=True, help_text="Whether the user profile is active")
 ```
 
 ### PhoneOTP Model
@@ -349,11 +553,37 @@ class UserProfile(models.Model):
 class PhoneOTP(models.Model):
     """Model for storing phone number OTP verification"""
     phone_number = models.CharField(max_length=15, unique=True)
-    otp_code = models.CharField(max_length=6)
+    otp_code = models.CharField(max_length=4)  # Changed to 4 digits
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     attempts = models.IntegerField(default=0)
+    
+    def generate_otp(self):
+        """Generate a 4-digit OTP"""
+        self.otp_code = ''.join(random.choices(string.digits, k=4))
+        self.expires_at = timezone.now() + timedelta(minutes=10)
+        self.attempts = 0
+        self.is_verified = False
+```
+
+### EventInterest Model
+```python
+class EventInterest(models.Model):
+    """Model for event interests/categories"""
+    name = models.CharField(max_length=100, unique=True, help_text="Name of the event interest")
+    description = models.TextField(blank=True, help_text="Description of the event interest")
+    is_active = models.BooleanField(default=True, help_text="Whether this interest is active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        verbose_name = "Event Interest"
+        verbose_name_plural = "Event Interests"
+        ordering = ['name']
 ```
 
 ### User Separation
@@ -426,45 +656,82 @@ TWILIO_TEST_MODE=false
 #### Complete Signup Flow
 ```bash
 # Step 1: Send OTP
-curl -X POST "http://localhost:8000/auth/signup" \
+curl -X POST "http://localhost:8000/api/auth/signup" \
   -H "Content-Type: application/json" \
   -d '{"phone_number": "+916205829376"}'
 
-# Step 2: Verify OTP (check logs for OTP code)
-curl -X POST "http://localhost:8000/auth/verify-otp" \
+# Step 2: Verify OTP (check logs for 4-digit OTP code)
+curl -X POST "http://localhost:8000/api/auth/verify-otp" \
   -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "123456"}'
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
 
-# Step 3: Complete Profile (use JWT token from step 2)
-curl -X POST "http://localhost:8000/auth/complete-profile" \
+# Step 3: Get Event Interests (optional, for frontend)
+curl -X GET "http://localhost:8000/api/auth/event-interests"
+
+# Step 4: Complete Profile (use JWT token from step 2)
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
     "phone_number": "+916205829376",
     "name": "Gaurav Kumar",
     "email": "gaurav@loopinsocial.in",
+    "birth_date": "1995-01-01",
+    "gender": "male",
+    "event_interests": [1, 2, 3],
+    "profile_pictures": ["https://example.com/pic1.jpg", "https://example.com/pic2.jpg"],
     "bio": "Backend Developer",
-    "location": "Delhi, India",
-    "birth_date": "1995-01-01"
+    "location": "Delhi, India"
   }'
 ```
 
 #### Complete Login Flow
 ```bash
 # Step 1: Send OTP
-curl -X POST "http://localhost:8000/auth/login" \
+curl -X POST "http://localhost:8000/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"phone_number": "+916205829376"}'
 
-# Step 2: Verify OTP
-curl -X POST "http://localhost:8000/auth/verify-login" \
+# Step 2: Verify OTP (4-digit code)
+curl -X POST "http://localhost:8000/api/auth/verify-login" \
   -H "Content-Type: application/json" \
-  -d '{"phone_number": "+916205829376", "otp_code": "123456"}'
+  -d '{"phone_number": "+916205829376", "otp_code": "1097"}'
+```
+
+#### Validation Testing
+```bash
+# Test 3-digit OTP (should fail)
+curl -X POST "http://localhost:8000/api/auth/verify-otp" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+916205829376", "otp_code": "123"}'
+
+# Test 5-digit OTP (should fail)
+curl -X POST "http://localhost:8000/api/auth/verify-otp" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+916205829376", "otp_code": "12345"}'
+
+# Test invalid profile data (should fail)
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "name": "Ab",
+    "birth_date": "2010-01-01",
+    "gender": "invalid",
+    "event_interests": [],
+    "profile_pictures": []
+  }'
 ```
 
 ### Test User Credentials
 - **Phone Number**: +916205829376
-- **Current OTP**: Check application logs (in test mode)
+- **Current OTP**: Check application logs (4-digit code in test mode)
+- **Event Interests**: 10 categories available (Music, Sports, Food, etc.)
+- **Sample Profile Data**:
+  - Name: Gaurav Kumar (3+ characters)
+  - Birth Date: 1995-01-01 (18+ years old)
+  - Gender: male/female/other
+  - Event Interests: [1, 2, 3] (1-5 selections)
+  - Profile Pictures: ["https://example.com/pic1.jpg"] (1-6 URLs)
 
 ## 🛠️ Troubleshooting
 
@@ -588,18 +855,30 @@ docker-compose logs web
 ```
 loopin_backend/
 ├── users/
-│   ├── models.py          # UserProfile, PhoneOTP models
-│   ├── auth_router.py     # Phone authentication endpoints
+│   ├── models.py          # UserProfile, PhoneOTP, EventInterest models
+│   ├── auth_router.py     # Phone authentication endpoints (FastAPI)
 │   ├── services.py        # Twilio SMS service
-│   ├── schemas.py         # Pydantic request/response models
-│   └── admin.py           # Django admin configuration
+│   ├── schemas.py         # Pydantic request/response models with validation
+│   ├── admin.py           # Django admin configuration
+│   └── migrations/        # Database migrations
 ├── api/
-│   └── main.py            # FastAPI main application
+│   ├── main.py            # FastAPI main application
+│   └── routers/           # Additional FastAPI routers
 ├── loopin_backend/
 │   ├── settings/          # Django settings
-│   └── asgi.py            # ASGI configuration
+│   └── asgi.py            # ASGI configuration (Django + FastAPI)
 └── PHONE_AUTHENTICATION.md # This documentation
 ```
+
+### Technology Stack
+- **FastAPI**: REST API endpoints with automatic documentation
+- **Django**: Database models, admin interface, ORM
+- **PostgreSQL**: Database (Supabase cloud)
+- **Twilio**: SMS OTP delivery
+- **JWT**: Authentication tokens
+- **Pydantic**: Request/response validation
+- **Docker**: Containerization
+- **ASGI**: Async web server (Gunicorn + Uvicorn)
 
 ### Support
 For issues or questions:
@@ -610,6 +889,18 @@ For issues or questions:
 
 ---
 
-**Last Updated**: October 3, 2025  
-**Version**: 1.0.0  
+**Last Updated**: October 6, 2025  
+**Version**: 2.0.0  
 **Author**: LoopinBackend Development Team
+
+### Recent Updates (v2.0.0)
+- ✅ **4-digit OTP**: Changed from 6-digit to exactly 4 digits
+- ✅ **Enhanced Validation**: Comprehensive profile validation with user-friendly errors
+- ✅ **Event Interests**: Dynamic interest management with 10 pre-loaded categories
+- ✅ **Profile Pictures**: Support for 1-6 profile images with URL validation
+- ✅ **Age Verification**: 18+ requirement with automatic age calculation
+- ✅ **Gender Selection**: Required field with validation
+- ✅ **Improved Error Handling**: Clear, actionable error messages
+- ✅ **New Endpoint**: GET /api/auth/event-interests for dynamic data
+- ✅ **Database Migration**: Updated models with new fields
+- ✅ **Admin Interface**: Enhanced Django admin for event interests management
