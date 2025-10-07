@@ -28,3 +28,4 @@ email-validator==2.1.1
 
 # Twilio for SMS OTP
 twilio==9.3.2
+httpx

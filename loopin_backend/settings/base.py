@@ -68,9 +68,12 @@ ASGI_APPLICATION = 'loopin_backend.asgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# Import custom database utility for IPv4/IPv6 handling
+from loopin_backend.db_utils import get_database_config
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=config('DATABASE_URL', default='sqlite:///db.sqlite3')
+    'default': get_database_config(
+        database_url=config('DATABASE_URL', default='sqlite:///db.sqlite3')
     )
 }
 
