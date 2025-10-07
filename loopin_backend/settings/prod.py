@@ -3,11 +3,16 @@ Production settings for loopin_backend project.
 """
 
 from .base import *
+import os
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
+
+# Force IPv4 for Render deployment with Supabase
+# Render's free tier has IPv6 outbound restrictions
+os.environ['FORCE_IPV4_DB'] = 'true'
 
 # Production-specific apps
 INSTALLED_APPS += [
