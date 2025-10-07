@@ -17,14 +17,15 @@ def force_ipv4_database_url(database_url):
     """
     Force IPv4 resolution for database connections.
     
-    This is necessary for Render's free tier which has IPv6 outbound restrictions,
-    while Supabase database endpoints often resolve to IPv6 addresses.
+    IMPORTANT: For Supabase connection pooler URLs (containing 'pooler.supabase.com'),
+    we DON'T resolve to IP because the pooler requires the original hostname for
+    SSL/TLS verification and tenant authentication.
     
     Args:
         database_url (str): The original database URL
         
     Returns:
-        str: Modified database URL with IPv4 host resolution
+        str: Modified database URL with IPv4 host resolution (or original if Supabase pooler)
     """
     if not database_url or database_url.startswith('sqlite'):
         return database_url
@@ -39,7 +40,13 @@ def force_ipv4_database_url(database_url):
         if not hostname:
             return database_url
         
-        # Try to resolve to IPv4 address
+        # CRITICAL: Don't resolve Supabase pooler hostnames to IP
+        # The pooler needs the original hostname for authentication
+        if 'pooler.supabase.com' in hostname or 'supabase.co' in hostname:
+            logger.info(f"Supabase pooler detected ({hostname}). Using original URL without IPv4 resolution.")
+            return database_url
+        
+        # Try to resolve to IPv4 address for non-pooler connections
         try:
             # Get IPv4 address only (AF_INET = IPv4)
             ipv4_address = socket.getaddrinfo(
