@@ -43,8 +43,12 @@ class UserModelTest(TestCase):
 
     def test_user_profile_string_representation(self):
         """Test UserProfile string representation."""
-        profile = UserProfile.objects.create(user=self.user)
-        self.assertEqual(str(profile), "testuser's profile")
+        profile = UserProfile.objects.create(
+            user=self.user,
+            name="Test User",
+            phone_number="+1234567890"
+        )
+        self.assertEqual(str(profile), "Test User (+1234567890)")
 
 
 class UserSerializerTest(TestCase):
