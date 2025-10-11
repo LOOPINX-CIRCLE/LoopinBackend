@@ -1,16 +1,17 @@
 # 📱 Phone Authentication System Documentation
 
 ## 📋 Table of Contents
-- [Quick Reference](#quick-reference)
-- [Overview](#overview)
-- [Unified Authentication Flow](#unified-authentication-flow)
-- [API Endpoints](#api-endpoints)
-- [Database Models](#database-models)
-- [Configuration](#configuration)
-- [Testing](#testing)
-- [Mobile App Integration Guide](#mobile-app-integration-guide)
-- [Troubleshooting](#troubleshooting)
-- [Deployment](#deployment)
+- [🚀 Quick Reference](#-quick-reference)
+- [🎯 Overview](#-overview)
+- [🔄 Unified Authentication Flow](#-unified-authentication-flow)
+- [🌐 API Endpoints](#-api-endpoints)
+- [🗄️ Database Models](#️-database-models)
+- [⚙️ Configuration](#️-configuration)
+- [🧪 Testing](#-testing)
+- [📱 Mobile App Integration Guide](#-mobile-app-integration-guide)
+- [🛠️ Troubleshooting](#️-troubleshooting)
+- [🚀 Deployment](#-deployment)
+- [📚 Additional Resources](#-additional-resources)
 
 ## 🚀 Quick Reference
 
