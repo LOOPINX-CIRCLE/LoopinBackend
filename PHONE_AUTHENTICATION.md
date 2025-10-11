@@ -131,89 +131,93 @@ The LoopinBackend implements a **unified phone number-based authentication syste
 
 ```mermaid
 graph TD
-    A[Mobile App] --> B[User enters phone number]
-    B --> C[POST /api/auth/signup]
-    C --> D{User exists in DB?}
+    A[📱 Mobile App] --> B[👤 User enters phone number]
+    B --> C[🚀 POST /api/auth/signup]
+    C --> D{🔍 User exists in DB?}
     
-    D -->|No - New User| E[Generate 4-digit OTP]
-    D -->|Yes - Existing User| F{Profile complete?}
+    D -->|🆕 No - New User| E[🎲 Generate 4-digit OTP]
+    D -->|✅ Yes - Existing User| F{📋 Profile complete?}
     
-    F -->|Yes - Complete| E
-    F -->|No - Incomplete| E
+    F -->|✅ Yes - Complete| E
+    F -->|⚠️ No - Incomplete| E
     
-    E --> G[Store OTP in PhoneOTP table]
-    G --> H[Mark is_verified = false]
-    H --> I[Send SMS via Twilio]
-    I --> J{SMS sent successfully?}
+    E --> G[💾 Store OTP in PhoneOTP table]
+    G --> H[🔴 Mark is_verified = false]
+    H --> I[📨 Send SMS via Twilio]
+    I --> J{📤 SMS sent successfully?}
     
-    J -->|No| K[Return: Failed to send OTP]
-    J -->|Yes| L[Return: OTP sent successfully]
+    J -->|❌ No| K[⚠️ Return: Failed to send OTP]
+    J -->|✅ Yes| L[🎉 Return: OTP sent successfully]
     
-    L --> M[User receives OTP via SMS]
-    M --> N[User enters OTP in app]
-    N --> O[POST /api/auth/verify-otp]
+    L --> M[📱 User receives OTP via SMS]
+    M --> N[👤 User enters OTP in app]
+    N --> O[🔐 POST /api/auth/verify-otp]
     
-    O --> P{OTP valid?}
-    P -->|No - Wrong OTP| Q[Increment attempts]
-    P -->|No - Expired| R[Return: OTP expired]
-    P -->|No - Max attempts| S[Return: Too many attempts]
-    P -->|Yes - Valid OTP| T[Mark is_verified = true]
+    O --> P{✅ OTP valid?}
+    P -->|❌ No - Wrong OTP| Q[📈 Increment attempts]
+    P -->|⏰ No - Expired| R[⚠️ Return: OTP expired]
+    P -->|🚫 No - Max attempts| S[❌ Return: Too many attempts]
+    P -->|✅ Yes - Valid OTP| T[🟢 Mark is_verified = true]
     
-    Q --> U{Attempts < 3?}
-    U -->|Yes| V[Return: Invalid OTP X attempts remaining]
-    U -->|No| S
+    Q --> U{🔢 Attempts < 3?}
+    U -->|✅ Yes| V[⚠️ Return: Invalid OTP<br/>X attempts remaining]
+    U -->|❌ No| S
     
-    T --> W{User account exists?}
-    W -->|No| X[Create new User account]
-    W -->|Yes| Y[Get existing User account]
+    T --> W{🔍 User account exists?}
+    W -->|🆕 No| X[✨ Create new User account]
+    W -->|✅ Yes| Y[🔄 Get existing User account]
     
-    X --> Z[Create UserProfile]
-    Y --> AA{UserProfile exists?}
+    X --> Z[📝 Create UserProfile]
+    Y --> AA{📋 UserProfile exists?}
     
-    AA -->|No| Z
-    AA -->|Yes| AB[Get existing UserProfile]
+    AA -->|❌ No| Z
+    AA -->|✅ Yes| AB[📄 Get existing UserProfile]
     
-    Z --> AC[Set is_verified = true]
+    Z --> AC[🟢 Set is_verified = true]
     AB --> AC
     
-    AC --> AD[Generate JWT token]
-    AD --> AE{Profile complete?}
+    AC --> AD[🔐 Generate JWT token<br/>⏰ Valid: 30 days]
+    AD --> AE{🔍 Profile complete?}
     
-    AE -->|Check: name AND profile_pictures| AF{Has both?}
-    AF -->|No| AG[needs_profile_completion = true]
-    AF -->|Yes| AH[needs_profile_completion = false]
+    AE -->|Check: name AND profile_pictures| AF{✅ Has both?}
+    AF -->|❌ No| AG[⚠️ needs_profile_completion = true]
+    AF -->|✅ Yes| AH[🎉 needs_profile_completion = false]
     
-    AG --> AI[Return: Token + Please complete profile]
-    AH --> AJ[Return: Token + Logged in]
+    AG --> AI[📤 Return: Token +<br/>Please complete profile]
+    AH --> AJ[📤 Return: Token +<br/>Logged in]
     
-    AI --> AK[Mobile App: Show profile completion screen]
-    AJ --> AL[Mobile App: Navigate to home screen]
+    AI --> AK[📱 Mobile App:<br/>Show profile completion screen]
+    AJ --> AL[🏠 Mobile App:<br/>Navigate to home screen]
     
-    AK --> AM[GET /api/auth/event-interests]
-    AM --> AN[User fills profile form]
-    AN --> AO[POST /api/auth/complete-profile]
+    AK --> AM[🎯 GET /api/auth/event-interests]
+    AM --> AN[📝 User fills profile form<br/>Name, DOB, Gender, Interests, Pictures]
+    AN --> AO[📤 POST /api/auth/complete-profile]
     
-    AO --> AP{All validations pass?}
-    AP -->|No| AQ[Return: Validation errors]
-    AP -->|Yes| AR[Save profile data]
+    AO --> AP{✅ All validations pass?}
+    AP -->|❌ No| AQ[⚠️ Return: Validation errors<br/>Name/Age/Gender/Interests/Pictures]
+    AP -->|✅ Yes| AR[💾 Save profile data]
     
-    AR --> AS[Set event_interests ManyToMany]
-    AS --> AT[Return: Profile completed]
+    AR --> AS[🔗 Set event_interests<br/>ManyToMany relationship]
+    AS --> AT[🎉 Return: Profile completed]
     AT --> AL
     
     AQ --> AN
     
-    style H fill:#ffebee
-    style K fill:#ffebee
-    style R fill:#ffebee
-    style S fill:#ffebee
-    style V fill:#fff3e0
-    style T fill:#e8f5e9
-    style AC fill:#e8f5e9
-    style AG fill:#fff3e0
-    style AH fill:#e8f5e9
-    style AT fill:#e8f5e9
-    style G fill:#e1f5fe
+    style H fill:#ffebee,stroke:#d32f2f,stroke-width:3px
+    style K fill:#ffebee,stroke:#d32f2f,stroke-width:3px
+    style R fill:#ffebee,stroke:#d32f2f,stroke-width:3px
+    style S fill:#ffebee,stroke:#d32f2f,stroke-width:3px
+    style V fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style T fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style AC fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style AG fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style AH fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style AT fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style G fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
+    style X fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style Z fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style AL fill:#81c784,stroke:#388e3c,stroke-width:4px
+    style AQ fill:#ffccbc,stroke:#d32f2f,stroke-width:2px
 ```
 
 ### Detailed Step-by-Step Flow
@@ -222,42 +226,59 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Mobile App
-    participant API
-    participant Database
-    participant Twilio
+    autonumber
+    participant U as 👤 User
+    participant M as 📱 Mobile App
+    participant A as 🚀 API Server
+    participant D as 💾 Database
+    participant T as 📨 Twilio SMS
     
-    User->>Mobile App: Enters phone number
-    Mobile App->>API: POST /signup {phone_number}
-    
-    API->>Database: Check if User exists
-    alt User is New
-        Database-->>API: No user found
-        Note over API: user_status = "new"
-    else User Exists (Complete Profile)
-        Database-->>API: User found with complete profile
-        Note over API: user_status = "existing"
-    else User Exists (Incomplete Profile)
-        Database-->>API: User found with incomplete profile
-        Note over API: user_status = "existing"
+    rect rgb(240, 248, 255)
+    Note over U,M: Step 1: User Input
+    U->>M: Enters phone number<br/>+1234567890
     end
     
-    API->>Database: Create/Update PhoneOTP record
-    Database->>API: OTP record created
-    Note over Database: is_verified = false
+    rect rgb(245, 255, 250)
+    Note over M,A: Step 2: API Request
+    M->>+A: POST /api/auth/signup<br/>{phone_number: "+1234567890"}
+    end
     
-    API->>API: Generate 4-digit OTP
-    API->>Twilio: Send SMS with OTP
+    rect rgb(255, 250, 240)
+    Note over A,D: Step 3: User Detection
+    A->>+D: SELECT * FROM User<br/>WHERE username = phone
+    alt 🆕 User is New
+        D-->>-A: ❌ No user found
+        Note right of A: ✨ user_status = "new"<br/>🎯 Signup flow
+    else ✅ User Exists (Complete Profile)
+        D-->>A: ✅ User found<br/>Profile: Complete
+        Note right of A: 🔄 user_status = "existing"<br/>🎯 Login flow
+    else ⚠️ User Exists (Incomplete Profile)
+        D-->>A: ⚠️ User found<br/>Profile: Incomplete
+        Note right of A: 🔄 user_status = "existing"<br/>🎯 Resume signup
+    end
+    end
     
-    alt SMS Success
-        Twilio-->>API: Message sent
-        API-->>Mobile App: {success: true, otp_sent: true}
-        Mobile App-->>User: OTP sent! Check your phone
-    else SMS Failure
-        Twilio-->>API: Send failed
-        API-->>Mobile App: {success: false, message: "Failed to send OTP"}
-        Mobile App-->>User: Error: Please try again
+    rect rgb(255, 245, 245)
+    Note over A,D: Step 4: OTP Generation
+    A->>+D: INSERT/UPDATE PhoneOTP<br/>SET is_verified = false
+    D-->>-A: ✅ OTP record created
+    Note right of D: 🔴 Lead tracked!<br/>is_verified = false
+    A->>A: 🎲 Generate 4-digit OTP<br/>Code: 1234
+    end
+    
+    rect rgb(245, 245, 255)
+    Note over A,T: Step 5: SMS Delivery
+    A->>+T: Send SMS<br/>To: +1234567890<br/>Message: "Your OTP is 1234"
+    
+    alt ✅ SMS Success
+        T-->>-A: 📤 Message sent successfully
+        A-->>-M: 🎉 {success: true,<br/>otp_sent: true,<br/>user_status: "new"}
+        M-->>U: ✅ OTP sent!<br/>Check your phone 📱
+    else ❌ SMS Failure
+        T-->>A: ⚠️ Send failed
+        A-->>M: ❌ {success: false,<br/>message: "Failed to send OTP"}
+        M-->>U: ⚠️ Error: Please try again
+    end
     end
 ```
 
@@ -299,56 +320,95 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Mobile App
-    participant API
-    participant Database
+    autonumber
+    participant U as 👤 User
+    participant M as 📱 Mobile App
+    participant A as 🚀 API Server
+    participant D as 💾 Database
     
-    User->>Mobile App: Enters 4-digit OTP
-    Mobile App->>API: POST /verify-otp {phone, otp_code}
+    rect rgb(240, 248, 255)
+    Note over U,M: Step 1: User Input
+    U->>M: Enters 4-digit OTP<br/>Code: 1234
+    end
     
-    API->>Database: Get PhoneOTP record
+    rect rgb(245, 255, 250)
+    Note over M,A: Step 2: Verification Request
+    M->>+A: POST /api/auth/verify-otp<br/>{phone: "+1234567890",<br/>otp_code: "1234"}
+    end
     
-    alt OTP Not Found
-        Database-->>API: No record
-        API-->>Mobile App: {success: false, message: "No OTP found"}
-    else OTP Found
-        Database-->>API: OTP record
+    rect rgb(255, 250, 240)
+    Note over A,D: Step 3: OTP Lookup
+    A->>+D: SELECT * FROM PhoneOTP<br/>WHERE phone_number = phone
+    
+    alt ❌ OTP Not Found
+        D-->>-A: No record
+        A-->>-M: ❌ {success: false,<br/>message: "No OTP found"}
+        M-->>U: ⚠️ Please request new OTP
+    else ✅ OTP Found
+        D-->>A: OTP record returned
+        end
         
-        API->>API: Verify OTP
+        rect rgb(255, 245, 255)
+        Note over A: Step 4: OTP Validation
+        A->>A: 🔍 Verify OTP code
         
-        alt OTP Expired
-            API-->>Mobile App: {success: false, message: "OTP has expired"}
-        else Too Many Attempts
-            API-->>Mobile App: {success: false, message: "Too many attempts"}
-        else Wrong OTP
-            API->>Database: Increment attempts
-            API-->>Mobile App: {success: false, message: "Invalid OTP. X attempts remaining"}
-        else Correct OTP
-            API->>Database: Set is_verified = true
-            
-            API->>Database: Check if User exists
-            
-            alt New User
-                API->>Database: Create User account
-                API->>Database: Create UserProfile
-                Note over Database: New signup!
-            else Existing User
-                API->>Database: Get User & Profile
-                Note over Database: Login!
+        alt ⏰ OTP Expired (>10 min)
+            A-->>M: ❌ {success: false,<br/>message: "OTP has expired"}
+            M-->>U: ⚠️ Request new OTP
+        else 🚫 Too Many Attempts (≥3)
+            A-->>M: ❌ {success: false,<br/>message: "Too many attempts"}
+            M-->>U: ⚠️ Request new OTP
+        else ❌ Wrong OTP Code
+            A->>D: UPDATE attempts = attempts + 1
+            A-->>M: ❌ {success: false,<br/>message: "Invalid OTP.<br/>X attempts remaining"}
+            M-->>U: ⚠️ Try again
+        else ✅ Correct OTP
             end
             
-            API->>API: Generate JWT token
-            API->>API: Check profile completion
+            rect rgb(240, 255, 240)
+            Note over A,D: Step 5: Mark Verified
+            A->>+D: UPDATE PhoneOTP<br/>SET is_verified = true
+            D-->>-A: ✅ Lead converted!
+            Note right of D: 🟢 is_verified = true<br/>✨ Lead → User
+            end
             
-            alt Profile Incomplete
-                Note over API: name OR profile_pictures missing
-                API-->>Mobile App: {success: true, needs_profile_completion: true, token}
-                Mobile App-->>User: Please complete your profile
-            else Profile Complete
-                Note over API: name AND profile_pictures exist
-                API-->>Mobile App: {success: true, needs_profile_completion: false, token}
-                Mobile App-->>User: Welcome back! (Navigate to home)
+            rect rgb(255, 250, 245)
+            Note over A,D: Step 6: User Account
+            A->>+D: SELECT * FROM User<br/>WHERE username = phone
+            
+            alt 🆕 New User (Signup)
+                D-->>-A: ❌ No user found
+                A->>+D: INSERT INTO User<br/>CREATE account
+                D-->>-A: ✅ User created
+                A->>+D: INSERT INTO UserProfile<br/>SET is_verified = true
+                D-->>-A: ✅ Profile created
+                Note right of D: 🎉 New account!<br/>User ID: 123
+            else 🔄 Existing User (Login)
+                D-->>A: ✅ User found
+                A->>+D: SELECT * FROM UserProfile
+                D-->>-A: Profile returned
+                Note right of D: 🔓 Login successful!<br/>User ID: 123
+            end
+            end
+            
+            rect rgb(245, 250, 255)
+            Note over A: Step 7: Generate Token
+            A->>A: 🔐 Generate JWT token<br/>Expiry: 30 days
+            end
+            
+            rect rgb(255, 248, 240)
+            Note over A: Step 8: Check Profile
+            A->>A: 🔍 Check profile completion<br/>Has name AND pictures?
+            
+            alt ⚠️ Profile Incomplete
+                Note right of A: ❌ Missing: name OR pictures<br/>🎯 Needs completion
+                A-->>-M: 🎉 {success: true,<br/>needs_profile_completion: true,<br/>token: "eyJ..."}
+                M-->>U: ✅ Verified!<br/>📝 Complete your profile
+            else ✅ Profile Complete
+                Note right of A: ✅ Has: name AND pictures<br/>🎯 Ready to use
+                A-->>M: 🎉 {success: true,<br/>needs_profile_completion: false,<br/>token: "eyJ..."}
+                M-->>U: 🎊 Welcome back!<br/>🏠 Navigate to home
+            end
             end
         end
     end
@@ -398,47 +458,82 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Mobile App
-    participant API
-    participant Database
+    autonumber
+    participant U as 👤 User
+    participant M as 📱 Mobile App
+    participant A as 🚀 API Server
+    participant D as 💾 Database
     
-    Note over Mobile App: Only if needs_profile_completion = true
+    rect rgb(255, 250, 240)
+    Note over M: ⚠️ Only if needs_profile_completion = true
+    end
     
-    Mobile App->>API: GET /event-interests
-    API->>Database: Get active EventInterests
-    Database-->>API: List of interests
-    API-->>Mobile App: {data: [...interests]}
-    Mobile App-->>User: Show profile form with interests
+    rect rgb(240, 248, 255)
+    Note over M,A: Step 1: Fetch Event Interests
+    M->>+A: GET /api/auth/event-interests
+    A->>+D: SELECT * FROM EventInterest<br/>WHERE is_active = true
+    D-->>-A: 📋 12 active interests
+    A-->>-M: 🎯 {data: [Music, Sports,<br/>Food, Art, Tech...]}
+    M-->>U: 📝 Show profile form<br/>with interest options
+    end
     
-    User->>Mobile App: Fills profile form
-    Note over User: Name, DOB, Gender, Interests, Pictures
+    rect rgb(245, 255, 250)
+    Note over U,M: Step 2: User Fills Form
+    U->>M: Enters profile data:<br/>• Name: "John Doe"<br/>• DOB: "2007-01-15"<br/>• Gender: "male"<br/>• Interests: [1,2,3]<br/>• Pictures: [url1, url2]<br/>• Bio: "Love events"
+    end
     
-    Mobile App->>API: POST /complete-profile + JWT token
+    rect rgb(255, 248, 240)
+    Note over M,A: Step 3: Submit Profile
+    M->>+A: POST /api/auth/complete-profile<br/>Authorization: Bearer token<br/>{...profile data}
+    end
     
-    API->>API: Verify JWT token
+    rect rgb(255, 245, 255)
+    Note over A: Step 4: Token Verification
+    A->>A: 🔐 Verify JWT token
     
-    alt Token Invalid/Expired
-        API-->>Mobile App: {success: false, message: "Token expired"}
-    else Token Valid
-        API->>API: Validate all fields
+    alt ❌ Token Invalid/Expired
+        A-->>-M: ❌ {success: false,<br/>message: "Token expired"}
+        M-->>U: ⚠️ Please login again
+    else ✅ Token Valid
+        end
         
-        alt Name Invalid
-            API-->>Mobile App: {success: false, message: "Name too short"}
-        else Age < 18
-            API-->>Mobile App: {success: false, message: "Must be 16+"}
-        else Invalid Gender
-            API-->>Mobile App: {success: false, message: "Invalid gender"}
-        else Invalid Interests
-            API-->>Mobile App: {success: false, message: "Select 1-5 interests"}
-        else Invalid Pictures
-            API-->>Mobile App: {success: false, message: "1-6 pictures required"}
-        else All Valid
-            API->>Database: Update UserProfile
-            API->>Database: Set event_interests (ManyToMany)
-            Database-->>API: Profile saved
-            API-->>Mobile App: {success: true, profile_complete: true}
-            Mobile App-->>User: Profile completed! (Navigate to home)
+        rect rgb(255, 250, 245)
+        Note over A: Step 5: Field Validation
+        A->>A: 🔍 Validate all fields
+        
+        alt ❌ Name Too Short (<2 chars)
+            A-->>M: ❌ {success: false,<br/>message: "Name too short"}
+            M-->>U: ⚠️ Name must be 2+ chars
+        else ❌ Age Under 16
+            A-->>M: ❌ {success: false,<br/>message: "Must be 16+"}
+            M-->>U: ⚠️ Must be 16 or older
+        else ❌ Invalid Gender
+            A-->>M: ❌ {success: false,<br/>message: "Invalid gender"}
+            M-->>U: ⚠️ Choose male/female/other
+        else ❌ Invalid Interests (0 or >5)
+            A-->>M: ❌ {success: false,<br/>message: "Select 1-5 interests"}
+            M-->>U: ⚠️ Pick 1 to 5 interests
+        else ❌ Invalid Pictures (0 or >6)
+            A-->>M: ❌ {success: false,<br/>message: "1-6 pictures required"}
+            M-->>U: ⚠️ Upload 1 to 6 photos
+        else ✅ All Fields Valid
+            end
+            
+            rect rgb(240, 255, 240)
+            Note over A,D: Step 6: Save Profile
+            A->>+D: UPDATE UserProfile SET<br/>name, birth_date, gender,<br/>profile_pictures, bio, location
+            D-->>-A: ✅ Profile updated
+            
+            A->>+D: INSERT INTO UserProfile_EventInterest<br/>SET event_interests
+            D-->>-A: ✅ Interests linked
+            Note right of D: 🎉 Profile complete!<br/>✨ User ready
+            end
+            
+            rect rgb(240, 255, 240)
+            Note over A,M: Step 7: Success Response
+            A-->>M: 🎊 {success: true,<br/>profile_complete: true,<br/>message: "You can now use the app!"}
+            M-->>U: 🎉 Profile completed!<br/>🏠 Navigate to home
+            end
         end
     end
 ```
@@ -491,33 +586,42 @@ sequenceDiagram
 }
 ```
 
-### Lead Tracking Flow
+### Lead Tracking Flow (Business Intelligence)
 
 ```mermaid
 graph TD
-    A[User requests OTP] --> B[PhoneOTP record created]
-    B --> C[is_verified = false]
-    C --> D[Lead stored in database]
-    D --> E[Admin can view in Django Admin]
-    E --> F{User verifies OTP?}
+    A[👤 User requests OTP] --> B[📝 PhoneOTP record created]
+    B --> C[🔴 is_verified = false]
+    C --> D[💼 Lead stored in database]
+    D --> E[👨‍💼 Admin can view in Django Admin]
+    E --> F{⏰ User verifies OTP?}
     
-    F -->|Yes - Within 10 minutes| G[is_verified = true]
-    F -->|No - Never verifies| H[Lead remains unverified]
-    F -->|No - OTP expires| H
+    F -->|✅ Yes - Within 10 minutes| G[🟢 is_verified = true]
+    F -->|❌ No - Never verifies| H[⚠️ Lead remains unverified]
+    F -->|⏰ No - OTP expires| H
     
-    G --> I[Lead converted to User]
-    I --> J[Full signup/login completed]
+    G --> I[✨ Lead converted to User]
+    I --> J[🎉 Full signup/login completed]
+    J --> K[🏠 User active in system]
     
-    H --> K[Business analytics available]
-    K --> L[Marketing team can analyze]
-    L --> M[Follow-up campaigns possible]
-    M --> N[Re-engagement strategies]
+    H --> L[📊 Business analytics available]
+    L --> M[📈 Marketing team can analyze:<br/>• Conversion rate<br/>• Drop-off points<br/>• User behavior]
+    M --> N[📧 Follow-up campaigns:<br/>• SMS reminders<br/>• Special offers<br/>• Re-engagement]
+    N --> O[🎯 Re-engagement strategies:<br/>• Personalized messages<br/>• Incentives<br/>• Support outreach]
+    O --> P[💰 Revenue opportunities]
     
-    style C fill:#ffebee
-    style D fill:#e1f5fe
-    style G fill:#e8f5e9
-    style H fill:#fff3e0
-    style K fill:#fff3e0
+    style C fill:#ffebee,stroke:#d32f2f,stroke-width:3px
+    style D fill:#e1f5fe,stroke:#0288d1,stroke-width:3px
+    style G fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style H fill:#fff3e0,stroke:#f57c00,stroke-width:3px
+    style I fill:#c8e6c9,stroke:#388e3c,stroke-width:3px
+    style J fill:#a5d6a7,stroke:#388e3c,stroke-width:3px
+    style K fill:#81c784,stroke:#388e3c,stroke-width:3px
+    style L fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style M fill:#ffe082,stroke:#f57c00,stroke-width:2px
+    style N fill:#ffd54f,stroke:#f57c00,stroke-width:2px
+    style O fill:#ffca28,stroke:#f57c00,stroke-width:2px
+    style P fill:#ffc107,stroke:#f57c00,stroke-width:3px
 ```
 
 **Why Lead Tracking Matters:**
