@@ -8,8 +8,10 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta, date, datetime
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from unittest.mock import patch, MagicMock
 import jwt
+import hashlib
 
 from users.models import UserProfile, PhoneOTP, EventInterest
 from users.auth_router import router, create_jwt_token, verify_jwt_token
@@ -21,37 +23,38 @@ client = TestClient(router)
 class PhoneOTPModelTests(TestCase):
     """Test PhoneOTP model functionality"""
     
-    def setUp(self):
-        self.phone = "+1234567890"
+    def tearDown(self):
+        """Clean up after each test"""
+        PhoneOTP.objects.all().delete()
     
     def test_create_otp_with_auto_expiration(self):
         """Test OTP creation with automatic expiration"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+1111111111", otp_code="1234")
         self.assertIsNotNone(otp.expires_at)
         self.assertFalse(otp.is_expired())
     
     def test_generate_otp_creates_4_digit_code(self):
         """Test OTP generation creates 4-digit code"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+2222222222", otp_code="1234")
         otp.generate_otp()
         self.assertEqual(len(otp.otp_code), 4)
         self.assertTrue(otp.otp_code.isdigit())
     
     def test_generate_otp_resets_attempts(self):
         """Test OTP generation resets attempt counter"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234", attempts=3)
+        otp = PhoneOTP.objects.create(phone_number="+3333333333", otp_code="1234", attempts=3)
         otp.generate_otp()
         self.assertEqual(otp.attempts, 0)
     
     def test_generate_otp_sets_verification_false(self):
         """Test OTP generation sets is_verified to False"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234", is_verified=True)
+        otp = PhoneOTP.objects.create(phone_number="+4444444444", otp_code="1234", is_verified=True)
         otp.generate_otp()
         self.assertFalse(otp.is_verified)
     
     def test_verify_otp_success(self):
         """Test successful OTP verification"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+5555555555", otp_code="1234")
         is_valid, message = otp.verify_otp("1234")
         self.assertTrue(is_valid)
         self.assertEqual(message, "OTP verified successfully")
@@ -59,7 +62,7 @@ class PhoneOTPModelTests(TestCase):
     
     def test_verify_otp_invalid_code(self):
         """Test OTP verification with invalid code"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+6666666666", otp_code="1234")
         is_valid, message = otp.verify_otp("5678")
         self.assertFalse(is_valid)
         self.assertIn("Invalid OTP", message)
@@ -68,7 +71,7 @@ class PhoneOTPModelTests(TestCase):
     def test_verify_otp_expired(self):
         """Test OTP verification with expired code"""
         otp = PhoneOTP.objects.create(
-            phone_number=self.phone,
+            phone_number="+7777777777",
             otp_code="1234",
             expires_at=timezone.now() - timedelta(minutes=1)
         )
@@ -78,14 +81,14 @@ class PhoneOTPModelTests(TestCase):
     
     def test_verify_otp_max_attempts_reached(self):
         """Test OTP verification when max attempts reached"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234", attempts=3)
+        otp = PhoneOTP.objects.create(phone_number="+8888888888", otp_code="1234", attempts=3)
         is_valid, message = otp.verify_otp("1234")
         self.assertFalse(is_valid)
         self.assertEqual(message, "Too many attempts. Please request a new OTP")
     
     def test_verify_otp_attempts_increment(self):
         """Test OTP attempts increment on wrong code"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+9999999999", otp_code="1234")
         otp.verify_otp("0000")
         self.assertEqual(otp.attempts, 1)
         otp.verify_otp("0000")
@@ -95,7 +98,7 @@ class PhoneOTPModelTests(TestCase):
     
     def test_verify_otp_remaining_attempts_message(self):
         """Test remaining attempts message"""
-        otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        otp = PhoneOTP.objects.create(phone_number="+1010101010", otp_code="1234")
         _, msg1 = otp.verify_otp("0000")
         self.assertIn("2 attempts remaining", msg1)
         _, msg2 = otp.verify_otp("0000")
@@ -103,9 +106,10 @@ class PhoneOTPModelTests(TestCase):
     
     def test_otp_unique_phone_number(self):
         """Test phone number uniqueness constraint"""
-        PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+        phone = "+1212121212"
+        PhoneOTP.objects.create(phone_number=phone, otp_code="1234")
         with self.assertRaises(Exception):
-            PhoneOTP.objects.create(phone_number=self.phone, otp_code="5678")
+            PhoneOTP.objects.create(phone_number=phone, otp_code="5678")
 
 
 class EventInterestModelTests(TestCase):
@@ -276,8 +280,17 @@ class OTPVerificationAPITests(TestCase):
     """Test OTP verification endpoint - /auth/verify-otp"""
     
     def setUp(self):
-        self.phone = "+1234567890"
+        # Use unique phone number based on test method name
+        import hashlib
+        test_name = self._testMethodName
+        hash_suffix = hashlib.md5(test_name.encode()).hexdigest()[:8]
+        self.phone = f"+9{hash_suffix[:10]}"
         self.otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+    
+    def tearDown(self):
+        """Clean up after each test"""
+        PhoneOTP.objects.filter(phone_number=self.phone).delete()
+        User.objects.filter(username=self.phone).delete()
     
     def test_verify_otp_success_new_user(self):
         """Test successful OTP verification for new user"""
@@ -390,7 +403,10 @@ class CompleteProfileAPITests(TestCase):
     """Test complete profile endpoint - /auth/complete-profile"""
     
     def setUp(self):
-        self.phone = "+1234567890"
+        # Use unique phone number based on test method name
+        test_name = self._testMethodName
+        hash_suffix = hashlib.md5(test_name.encode()).hexdigest()[:8]
+        self.phone = f"+7{hash_suffix[:10]}"
         self.user = User.objects.create_user(username=self.phone, password="test")
         self.profile = UserProfile.objects.create(
             user=self.user,
@@ -398,9 +414,15 @@ class CompleteProfileAPITests(TestCase):
             is_verified=True
         )
         self.token = create_jwt_token(self.user.id, self.phone)
-        self.interest1 = EventInterest.objects.create(name="Music", is_active=True)
-        self.interest2 = EventInterest.objects.create(name="Sports", is_active=True)
-        
+        # Create unique interest names per test
+        self.interest1 = EventInterest.objects.create(name=f"Music-{hash_suffix}", is_active=True)
+        self.interest2 = EventInterest.objects.create(name=f"Sports-{hash_suffix}", is_active=True)
+    
+    def tearDown(self):
+        """Clean up after each test"""
+        EventInterest.objects.filter(name__contains=hashlib.md5(self._testMethodName.encode()).hexdigest()[:8]).delete()
+        User.objects.filter(username=self.phone).delete()
+    
         # Birth date for 20-year-old
         birth_date = (date.today() - timedelta(days=365*20)).strftime('%Y-%m-%d')
         
@@ -670,7 +692,11 @@ class VerifyLoginAPITests(TestCase):
     """Test verify login endpoint - /auth/verify-login"""
     
     def setUp(self):
-        self.phone = "+1234567890"
+        # Use unique phone number based on test method name
+        import hashlib
+        test_name = self._testMethodName
+        hash_suffix = hashlib.md5(test_name.encode()).hexdigest()[:8]
+        self.phone = f"+8{hash_suffix[:10]}"
         self.user = User.objects.create_user(username=self.phone, password="test")
         self.profile = UserProfile.objects.create(
             user=self.user,
@@ -679,6 +705,11 @@ class VerifyLoginAPITests(TestCase):
             is_verified=True
         )
         self.otp = PhoneOTP.objects.create(phone_number=self.phone, otp_code="1234")
+    
+    def tearDown(self):
+        """Clean up after each test"""
+        PhoneOTP.objects.filter(phone_number=self.phone).delete()
+        User.objects.filter(username=self.phone).delete()
     
     def test_verify_login_success(self):
         """Test successful login verification"""
