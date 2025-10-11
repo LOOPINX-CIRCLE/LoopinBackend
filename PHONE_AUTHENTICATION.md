@@ -8,6 +8,7 @@
 - [Database Models](#database-models)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [Mobile App Integration Guide](#mobile-app-integration-guide)
 - [Troubleshooting](#troubleshooting)
 - [Deployment](#deployment)
 
