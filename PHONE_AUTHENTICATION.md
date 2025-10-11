@@ -225,6 +225,7 @@ graph TD
 #### Step 1: Send OTP (Universal Entry Point)
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd','primaryTextColor':'#1565c0','primaryBorderColor':'#1976d2','lineColor':'#42a5f5','secondaryColor':'#f3e5f5','tertiaryColor':'#e8f5e9'}}}%%
 sequenceDiagram
     autonumber
     participant U as 👤 User
@@ -233,21 +234,16 @@ sequenceDiagram
     participant D as 💾 Database
     participant T as 📨 Twilio SMS
     
-    rect rgb(240, 248, 255)
-    Note over U,M: Step 1: User Input
+    Note over U,M: <span style='color:#1565c0'>Step 1: User Input</span>
     U->>M: Enters phone number<br/>+1234567890
-    end
     
-    rect rgb(245, 255, 250)
-    Note over M,A: Step 2: API Request
-    M->>+A: POST /api/auth/signup<br/>{phone_number: "+1234567890"}
-    end
+    Note over M,A: <span style='color:#2e7d32'>Step 2: API Request</span>
+    M->>A: POST /api/auth/signup<br/>{phone_number: "+1234567890"}
     
-    rect rgb(255, 250, 240)
-    Note over A,D: Step 3: User Detection
-    A->>+D: SELECT * FROM User<br/>WHERE username = phone
+    Note over A,D: <span style='color:#e65100'>Step 3: User Detection</span>
+    A->>D: SELECT * FROM User<br/>WHERE username = phone
     alt 🆕 User is New
-        D-->>-A: ❌ No user found
+        D-->>A: ❌ No user found
         Note right of A: ✨ user_status = "new"<br/>🎯 Signup flow
     else ✅ User Exists (Complete Profile)
         D-->>A: ✅ User found<br/>Profile: Complete
@@ -256,29 +252,24 @@ sequenceDiagram
         D-->>A: ⚠️ User found<br/>Profile: Incomplete
         Note right of A: 🔄 user_status = "existing"<br/>🎯 Resume signup
     end
-    end
     
-    rect rgb(255, 245, 245)
-    Note over A,D: Step 4: OTP Generation
-    A->>+D: INSERT/UPDATE PhoneOTP<br/>SET is_verified = false
-    D-->>-A: ✅ OTP record created
+    Note over A,D: <span style='color:#c62828'>Step 4: OTP Generation</span>
+    A->>D: INSERT/UPDATE PhoneOTP<br/>SET is_verified = false
+    D-->>A: ✅ OTP record created
     Note right of D: 🔴 Lead tracked!<br/>is_verified = false
     A->>A: 🎲 Generate 4-digit OTP<br/>Code: 1234
-    end
     
-    rect rgb(245, 245, 255)
-    Note over A,T: Step 5: SMS Delivery
-    A->>+T: Send SMS<br/>To: +1234567890<br/>Message: "Your OTP is 1234"
+    Note over A,T: <span style='color:#6a1b9a'>Step 5: SMS Delivery</span>
+    A->>T: Send SMS<br/>To: +1234567890<br/>Message: "Your OTP is 1234"
     
     alt ✅ SMS Success
-        T-->>-A: 📤 Message sent successfully
-        A-->>-M: 🎉 {success: true,<br/>otp_sent: true,<br/>user_status: "new"}
+        T-->>A: 📤 Message sent successfully
+        A-->>M: 🎉 {success: true,<br/>otp_sent: true,<br/>user_status: "new"}
         M-->>U: ✅ OTP sent!<br/>Check your phone 📱
     else ❌ SMS Failure
         T-->>A: ⚠️ Send failed
         A-->>M: ❌ {success: false,<br/>message: "Failed to send OTP"}
         M-->>U: ⚠️ Error: Please try again
-    end
     end
 ```
 
@@ -319,6 +310,7 @@ sequenceDiagram
 #### Step 2: Verify OTP (Creates Account or Logs In)
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd','primaryTextColor':'#1565c0','primaryBorderColor':'#1976d2','lineColor':'#42a5f5','secondaryColor':'#f3e5f5','tertiaryColor':'#e8f5e9'}}}%%
 sequenceDiagram
     autonumber
     participant U as 👤 User
@@ -326,30 +318,23 @@ sequenceDiagram
     participant A as 🚀 API Server
     participant D as 💾 Database
     
-    rect rgb(240, 248, 255)
-    Note over U,M: Step 1: User Input
+    Note over U,M: <span style='color:#1565c0'>Step 1: User Input</span>
     U->>M: Enters 4-digit OTP<br/>Code: 1234
-    end
     
-    rect rgb(245, 255, 250)
-    Note over M,A: Step 2: Verification Request
-    M->>+A: POST /api/auth/verify-otp<br/>{phone: "+1234567890",<br/>otp_code: "1234"}
-    end
+    Note over M,A: <span style='color:#2e7d32'>Step 2: Verification Request</span>
+    M->>A: POST /api/auth/verify-otp<br/>{phone: "+1234567890",<br/>otp_code: "1234"}
     
-    rect rgb(255, 250, 240)
-    Note over A,D: Step 3: OTP Lookup
-    A->>+D: SELECT * FROM PhoneOTP<br/>WHERE phone_number = phone
+    Note over A,D: <span style='color:#e65100'>Step 3: OTP Lookup</span>
+    A->>D: SELECT * FROM PhoneOTP<br/>WHERE phone_number = phone
     
     alt ❌ OTP Not Found
-        D-->>-A: No record
-        A-->>-M: ❌ {success: false,<br/>message: "No OTP found"}
+        D-->>A: No record
+        A-->>M: ❌ {success: false,<br/>message: "No OTP found"}
         M-->>U: ⚠️ Please request new OTP
     else ✅ OTP Found
         D-->>A: OTP record returned
-        end
         
-        rect rgb(255, 245, 255)
-        Note over A: Step 4: OTP Validation
+        Note over A: <span style='color:#6a1b9a'>Step 4: OTP Validation</span>
         A->>A: 🔍 Verify OTP code
         
         alt ⏰ OTP Expired (>10 min)
@@ -363,52 +348,43 @@ sequenceDiagram
             A-->>M: ❌ {success: false,<br/>message: "Invalid OTP.<br/>X attempts remaining"}
             M-->>U: ⚠️ Try again
         else ✅ Correct OTP
-            end
             
-            rect rgb(240, 255, 240)
-            Note over A,D: Step 5: Mark Verified
-            A->>+D: UPDATE PhoneOTP<br/>SET is_verified = true
-            D-->>-A: ✅ Lead converted!
+            Note over A,D: <span style='color:#2e7d32'>Step 5: Mark Verified</span>
+            A->>D: UPDATE PhoneOTP<br/>SET is_verified = true
+            D-->>A: ✅ Lead converted!
             Note right of D: 🟢 is_verified = true<br/>✨ Lead → User
-            end
             
-            rect rgb(255, 250, 245)
-            Note over A,D: Step 6: User Account
-            A->>+D: SELECT * FROM User<br/>WHERE username = phone
+            Note over A,D: <span style='color:#e65100'>Step 6: User Account</span>
+            A->>D: SELECT * FROM User<br/>WHERE username = phone
             
             alt 🆕 New User (Signup)
-                D-->>-A: ❌ No user found
-                A->>+D: INSERT INTO User<br/>CREATE account
-                D-->>-A: ✅ User created
-                A->>+D: INSERT INTO UserProfile<br/>SET is_verified = true
-                D-->>-A: ✅ Profile created
+                D-->>A: ❌ No user found
+                A->>D: INSERT INTO User<br/>CREATE account
+                D-->>A: ✅ User created
+                A->>D: INSERT INTO UserProfile<br/>SET is_verified = true
+                D-->>A: ✅ Profile created
                 Note right of D: 🎉 New account!<br/>User ID: 123
             else 🔄 Existing User (Login)
                 D-->>A: ✅ User found
-                A->>+D: SELECT * FROM UserProfile
-                D-->>-A: Profile returned
+                A->>D: SELECT * FROM UserProfile
+                D-->>A: Profile returned
                 Note right of D: 🔓 Login successful!<br/>User ID: 123
             end
-            end
             
-            rect rgb(245, 250, 255)
-            Note over A: Step 7: Generate Token
+            Note over A: <span style='color:#1565c0'>Step 7: Generate Token</span>
             A->>A: 🔐 Generate JWT token<br/>Expiry: 30 days
-            end
             
-            rect rgb(255, 248, 240)
-            Note over A: Step 8: Check Profile
+            Note over A: <span style='color:#e65100'>Step 8: Check Profile</span>
             A->>A: 🔍 Check profile completion<br/>Has name AND pictures?
             
             alt ⚠️ Profile Incomplete
                 Note right of A: ❌ Missing: name OR pictures<br/>🎯 Needs completion
-                A-->>-M: 🎉 {success: true,<br/>needs_profile_completion: true,<br/>token: "eyJ..."}
+                A-->>M: 🎉 {success: true,<br/>needs_profile_completion: true,<br/>token: "eyJ..."}
                 M-->>U: ✅ Verified!<br/>📝 Complete your profile
             else ✅ Profile Complete
                 Note right of A: ✅ Has: name AND pictures<br/>🎯 Ready to use
                 A-->>M: 🎉 {success: true,<br/>needs_profile_completion: false,<br/>token: "eyJ..."}
                 M-->>U: 🎊 Welcome back!<br/>🏠 Navigate to home
-            end
             end
         end
     end
@@ -457,6 +433,7 @@ sequenceDiagram
 #### Step 3: Complete Profile (Only if needed)
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd','primaryTextColor':'#1565c0','primaryBorderColor':'#1976d2','lineColor':'#42a5f5','secondaryColor':'#f3e5f5','tertiaryColor':'#e8f5e9'}}}%%
 sequenceDiagram
     autonumber
     participant U as 👤 User
@@ -464,41 +441,30 @@ sequenceDiagram
     participant A as 🚀 API Server
     participant D as 💾 Database
     
-    rect rgb(255, 250, 240)
-    Note over M: ⚠️ Only if needs_profile_completion = true
-    end
+    Note over M: <span style='color:#e65100'>⚠️ Only if needs_profile_completion = true</span>
     
-    rect rgb(240, 248, 255)
-    Note over M,A: Step 1: Fetch Event Interests
-    M->>+A: GET /api/auth/event-interests
-    A->>+D: SELECT * FROM EventInterest<br/>WHERE is_active = true
-    D-->>-A: 📋 12 active interests
-    A-->>-M: 🎯 {data: [Music, Sports,<br/>Food, Art, Tech...]}
+    Note over M,A: <span style='color:#1565c0'>Step 1: Fetch Event Interests</span>
+    M->>A: GET /api/auth/event-interests
+    A->>D: SELECT * FROM EventInterest<br/>WHERE is_active = true
+    D-->>A: 📋 12 active interests
+    A-->>M: 🎯 {data: [Music, Sports,<br/>Food, Art, Tech...]}
     M-->>U: 📝 Show profile form<br/>with interest options
-    end
     
-    rect rgb(245, 255, 250)
-    Note over U,M: Step 2: User Fills Form
-    U->>M: Enters profile data:<br/>• Name: "John Doe"<br/>• DOB: "2007-01-15"<br/>• Gender: "male"<br/>• Interests: [1,2,3]<br/>• Pictures: [url1, url2]<br/>• Bio: "Love events"
-    end
+    Note over U,M: <span style='color:#2e7d32'>Step 2: User Fills Form</span>
+    U->>M: Enters profile data:<br/>• Name: "John Doe" (2+ chars)<br/>• DOB: "2007-01-15" (16+)<br/>• Gender: "male"<br/>• Interests: [1,2,3]<br/>• Pictures: [url1, url2]<br/>• Bio: "Love events"
     
-    rect rgb(255, 248, 240)
-    Note over M,A: Step 3: Submit Profile
-    M->>+A: POST /api/auth/complete-profile<br/>Authorization: Bearer token<br/>{...profile data}
-    end
+    Note over M,A: <span style='color:#e65100'>Step 3: Submit Profile</span>
+    M->>A: POST /api/auth/complete-profile<br/>Authorization: Bearer token<br/>{...profile data}
     
-    rect rgb(255, 245, 255)
-    Note over A: Step 4: Token Verification
+    Note over A: <span style='color:#6a1b9a'>Step 4: Token Verification</span>
     A->>A: 🔐 Verify JWT token
     
     alt ❌ Token Invalid/Expired
-        A-->>-M: ❌ {success: false,<br/>message: "Token expired"}
+        A-->>M: ❌ {success: false,<br/>message: "Token expired"}
         M-->>U: ⚠️ Please login again
     else ✅ Token Valid
-        end
         
-        rect rgb(255, 250, 245)
-        Note over A: Step 5: Field Validation
+        Note over A: <span style='color:#e65100'>Step 5: Field Validation</span>
         A->>A: 🔍 Validate all fields
         
         alt ❌ Name Too Short (<2 chars)
@@ -517,23 +483,18 @@ sequenceDiagram
             A-->>M: ❌ {success: false,<br/>message: "1-6 pictures required"}
             M-->>U: ⚠️ Upload 1 to 6 photos
         else ✅ All Fields Valid
-            end
             
-            rect rgb(240, 255, 240)
-            Note over A,D: Step 6: Save Profile
-            A->>+D: UPDATE UserProfile SET<br/>name, birth_date, gender,<br/>profile_pictures, bio, location
-            D-->>-A: ✅ Profile updated
+            Note over A,D: <span style='color:#2e7d32'>Step 6: Save Profile</span>
+            A->>D: UPDATE UserProfile SET<br/>name, birth_date, gender,<br/>profile_pictures, bio, location
+            D-->>A: ✅ Profile updated
             
-            A->>+D: INSERT INTO UserProfile_EventInterest<br/>SET event_interests
-            D-->>-A: ✅ Interests linked
+            A->>D: INSERT INTO UserProfile_EventInterest<br/>SET event_interests
+            D-->>A: ✅ Interests linked
             Note right of D: 🎉 Profile complete!<br/>✨ User ready
-            end
             
-            rect rgb(240, 255, 240)
-            Note over A,M: Step 7: Success Response
+            Note over A,M: <span style='color:#2e7d32'>Step 7: Success Response</span>
             A-->>M: 🎊 {success: true,<br/>profile_complete: true,<br/>message: "You can now use the app!"}
             M-->>U: 🎉 Profile completed!<br/>🏠 Navigate to home
-            end
         end
     end
 ```
