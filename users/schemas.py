@@ -41,7 +41,7 @@ class OTPVerificationRequest(BaseModel):
 class CompleteProfileRequest(BaseModel):
     """Request model for completing user profile"""
     phone_number: str = Field(..., description="Phone number with country code")
-    name: str = Field(..., min_length=3, max_length=100, description="Full name (minimum 3 characters)")
+    name: str = Field(..., min_length=2, max_length=100, description="Full name (minimum 2 characters)")
     birth_date: str = Field(..., description="Birth date in YYYY-MM-DD format")
     gender: str = Field(..., description="User gender")
     event_interests: List[int] = Field(..., min_items=1, max_items=5, description="List of event interest IDs (1-5 selections)")
@@ -53,8 +53,8 @@ class CompleteProfileRequest(BaseModel):
     def validate_name(cls, v):
         if not v or not v.strip():
             raise ValueError('Name cannot be empty')
-        if len(v.strip()) < 3:
-            raise ValueError('Name must be at least 3 characters long')
+        if len(v.strip()) < 2:
+            raise ValueError('Name must be at least 2 characters long')
         # Check for valid characters (letters, spaces, hyphens, apostrophes)
         if not re.match(r"^[a-zA-Z\s\-\']+$", v.strip()):
             raise ValueError('Name contains invalid characters')
@@ -66,8 +66,8 @@ class CompleteProfileRequest(BaseModel):
             birth_date = datetime.strptime(v, '%Y-%m-%d').date()
             today = date.today()
             age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
-            if age < 18:
-                raise ValueError('User must be 18 years or older')
+            if age < 16:
+                raise ValueError('User must be 16 years or older')
             return v
         except ValueError as e:
             if 'time data' in str(e):
