@@ -234,13 +234,13 @@ sequenceDiagram
     participant D as 💾 Database
     participant T as 📨 Twilio SMS
     
-    Note over U,M: <span style='color:#1565c0'>Step 1: User Input</span>
+    Note over U,M: 📥 STEP 1: User Input
     U->>M: Enters phone number<br/>+1234567890
     
-    Note over M,A: <span style='color:#2e7d32'>Step 2: API Request</span>
+    Note over M,A: 🚀 STEP 2: API Request
     M->>A: POST /api/auth/signup<br/>{phone_number: "+1234567890"}
     
-    Note over A,D: <span style='color:#e65100'>Step 3: User Detection</span>
+    Note over A,D: 🔍 STEP 3: User Detection
     A->>D: SELECT * FROM User<br/>WHERE username = phone
     alt 🆕 User is New
         D-->>A: ❌ No user found
@@ -253,13 +253,13 @@ sequenceDiagram
         Note right of A: 🔄 user_status = "existing"<br/>🎯 Resume signup
     end
     
-    Note over A,D: <span style='color:#c62828'>Step 4: OTP Generation</span>
+    Note over A,D: 🎲 STEP 4: OTP Generation
     A->>D: INSERT/UPDATE PhoneOTP<br/>SET is_verified = false
     D-->>A: ✅ OTP record created
     Note right of D: 🔴 Lead tracked!<br/>is_verified = false
     A->>A: 🎲 Generate 4-digit OTP<br/>Code: 1234
     
-    Note over A,T: <span style='color:#6a1b9a'>Step 5: SMS Delivery</span>
+    Note over A,T: 📨 STEP 5: SMS Delivery
     A->>T: Send SMS<br/>To: +1234567890<br/>Message: "Your OTP is 1234"
     
     alt ✅ SMS Success
@@ -317,51 +317,52 @@ sequenceDiagram
     participant M as 📱 Mobile App
     participant A as 🚀 API Server
     participant D as 💾 Database
+    participant T as 📨 Twilio SMS
     
-    Note over U,M: <span style='color:#1565c0'>Step 1: User Input</span>
+    Note over U,M: 📥 STEP 1: User Input
     U->>M: Enters 4-digit OTP<br/>Code: 1234
     
-    Note over M,A: <span style='color:#2e7d32'>Step 2: Verification Request</span>
-    M->>A: POST /api/auth/verify-otp<br/>{phone: "+1234567890",<br/>otp_code: "1234"}
+    Note over M,A: 🚀 STEP 2: Verification Request
+    M->>A: POST /api/auth/verify-otp<br/>{phone: "+1234567890", otp_code: "1234"}
     
-    Note over A,D: <span style='color:#e65100'>Step 3: OTP Lookup</span>
+    Note over A,D: 🔍 STEP 3: OTP Lookup
     A->>D: SELECT * FROM PhoneOTP<br/>WHERE phone_number = phone
     
     alt ❌ OTP Not Found
         D-->>A: No record
-        A-->>M: ❌ {success: false,<br/>message: "No OTP found"}
+        A-->>M: ❌ {success: false, message: "No OTP found"}
         M-->>U: ⚠️ Please request new OTP
     else ✅ OTP Found
         D-->>A: OTP record returned
         
-        Note over A: <span style='color:#6a1b9a'>Step 4: OTP Validation</span>
-        A->>A: 🔍 Verify OTP code
+        Note over A: 🔍 STEP 4: OTP Validation
+        A->>A: Verify OTP code
         
         alt ⏰ OTP Expired (>10 min)
-            A-->>M: ❌ {success: false,<br/>message: "OTP has expired"}
+            A-->>M: ❌ {success: false, message: "OTP has expired"}
             M-->>U: ⚠️ Request new OTP
         else 🚫 Too Many Attempts (≥3)
-            A-->>M: ❌ {success: false,<br/>message: "Too many attempts"}
+            A-->>M: ❌ {success: false, message: "Too many attempts"}
             M-->>U: ⚠️ Request new OTP
         else ❌ Wrong OTP Code
             A->>D: UPDATE attempts = attempts + 1
-            A-->>M: ❌ {success: false,<br/>message: "Invalid OTP.<br/>X attempts remaining"}
+            A-->>M: ❌ {success: false, message: "Invalid OTP. X attempts remaining"}
             M-->>U: ⚠️ Try again
         else ✅ Correct OTP
             
-            Note over A,D: <span style='color:#2e7d32'>Step 5: Mark Verified</span>
-            A->>D: UPDATE PhoneOTP<br/>SET is_verified = true
+            Note over A,D: 🟢 STEP 5: Mark Verified
+            A->>D: UPDATE PhoneOTP SET is_verified = true
             D-->>A: ✅ Lead converted!
             Note right of D: 🟢 is_verified = true<br/>✨ Lead → User
             
-            Note over A,D: <span style='color:#e65100'>Step 6: User Account</span>
-            A->>D: SELECT * FROM User<br/>WHERE username = phone
+            Note over A,D: 👤 STEP 6: User Account
+            A->>D: SELECT * FROM User WHERE username = phone
             
             alt 🆕 New User (Signup)
                 D-->>A: ❌ No user found
-                A->>D: INSERT INTO User<br/>CREATE account
+                A->>D: INSERT INTO User - CREATE account
                 D-->>A: ✅ User created
-                A->>D: INSERT INTO UserProfile<br/>SET is_verified = true
+                A->>D: INSERT INTO UserProfile - SET is_verified = true
                 D-->>A: ✅ Profile created
                 Note right of D: 🎉 New account!<br/>User ID: 123
             else 🔄 Existing User (Login)
@@ -371,19 +372,19 @@ sequenceDiagram
                 Note right of D: 🔓 Login successful!<br/>User ID: 123
             end
             
-            Note over A: <span style='color:#1565c0'>Step 7: Generate Token</span>
-            A->>A: 🔐 Generate JWT token<br/>Expiry: 30 days
+            Note over A: 🔐 STEP 7: Generate Token
+            A->>A: Generate JWT token<br/>Expiry: 30 days
             
-            Note over A: <span style='color:#e65100'>Step 8: Check Profile</span>
-            A->>A: 🔍 Check profile completion<br/>Has name AND pictures?
+            Note over A: 📋 STEP 8: Check Profile
+            A->>A: Check profile completion<br/>Has name AND pictures?
             
             alt ⚠️ Profile Incomplete
                 Note right of A: ❌ Missing: name OR pictures<br/>🎯 Needs completion
-                A-->>M: 🎉 {success: true,<br/>needs_profile_completion: true,<br/>token: "eyJ..."}
+                A-->>M: 🎉 {success: true, needs_profile_completion: true, token: "eyJ..."}
                 M-->>U: ✅ Verified!<br/>📝 Complete your profile
             else ✅ Profile Complete
                 Note right of A: ✅ Has: name AND pictures<br/>🎯 Ready to use
-                A-->>M: 🎉 {success: true,<br/>needs_profile_completion: false,<br/>token: "eyJ..."}
+                A-->>M: 🎉 {success: true, needs_profile_completion: false, token: "eyJ..."}
                 M-->>U: 🎊 Welcome back!<br/>🏠 Navigate to home
             end
         end
@@ -441,50 +442,50 @@ sequenceDiagram
     participant A as 🚀 API Server
     participant D as 💾 Database
     
-    Note over M: <span style='color:#e65100'>⚠️ Only if needs_profile_completion = true</span>
+    Note over M: ⚠️ ONLY IF needs_profile_completion = true
     
-    Note over M,A: <span style='color:#1565c0'>Step 1: Fetch Event Interests</span>
+    Note over M,A: 🎯 STEP 1: Fetch Event Interests
     M->>A: GET /api/auth/event-interests
-    A->>D: SELECT * FROM EventInterest<br/>WHERE is_active = true
+    A->>D: SELECT * FROM EventInterest WHERE is_active = true
     D-->>A: 📋 12 active interests
-    A-->>M: 🎯 {data: [Music, Sports,<br/>Food, Art, Tech...]}
-    M-->>U: 📝 Show profile form<br/>with interest options
+    A-->>M: {data: [Music, Sports, Food, Art, Tech...]}
+    M-->>U: 📝 Show profile form with interest options
     
-    Note over U,M: <span style='color:#2e7d32'>Step 2: User Fills Form</span>
+    Note over U,M: 📝 STEP 2: User Fills Form
     U->>M: Enters profile data:<br/>• Name: "John Doe" (2+ chars)<br/>• DOB: "2007-01-15" (16+)<br/>• Gender: "male"<br/>• Interests: [1,2,3]<br/>• Pictures: [url1, url2]<br/>• Bio: "Love events"
     
-    Note over M,A: <span style='color:#e65100'>Step 3: Submit Profile</span>
+    Note over M,A: 📤 STEP 3: Submit Profile
     M->>A: POST /api/auth/complete-profile<br/>Authorization: Bearer token<br/>{...profile data}
     
-    Note over A: <span style='color:#6a1b9a'>Step 4: Token Verification</span>
-    A->>A: 🔐 Verify JWT token
+    Note over A: 🔐 STEP 4: Token Verification
+    A->>A: Verify JWT token
     
     alt ❌ Token Invalid/Expired
-        A-->>M: ❌ {success: false,<br/>message: "Token expired"}
+        A-->>M: ❌ {success: false, message: "Token expired"}
         M-->>U: ⚠️ Please login again
     else ✅ Token Valid
         
-        Note over A: <span style='color:#e65100'>Step 5: Field Validation</span>
-        A->>A: 🔍 Validate all fields
+        Note over A: 🔍 STEP 5: Field Validation
+        A->>A: Validate all fields
         
         alt ❌ Name Too Short (<2 chars)
-            A-->>M: ❌ {success: false,<br/>message: "Name too short"}
+            A-->>M: ❌ {success: false, message: "Name too short"}
             M-->>U: ⚠️ Name must be 2+ chars
         else ❌ Age Under 16
-            A-->>M: ❌ {success: false,<br/>message: "Must be 16+"}
+            A-->>M: ❌ {success: false, message: "Must be 16+"}
             M-->>U: ⚠️ Must be 16 or older
         else ❌ Invalid Gender
-            A-->>M: ❌ {success: false,<br/>message: "Invalid gender"}
+            A-->>M: ❌ {success: false, message: "Invalid gender"}
             M-->>U: ⚠️ Choose male/female/other
         else ❌ Invalid Interests (0 or >5)
-            A-->>M: ❌ {success: false,<br/>message: "Select 1-5 interests"}
+            A-->>M: ❌ {success: false, message: "Select 1-5 interests"}
             M-->>U: ⚠️ Pick 1 to 5 interests
         else ❌ Invalid Pictures (0 or >6)
-            A-->>M: ❌ {success: false,<br/>message: "1-6 pictures required"}
+            A-->>M: ❌ {success: false, message: "1-6 pictures required"}
             M-->>U: ⚠️ Upload 1 to 6 photos
         else ✅ All Fields Valid
             
-            Note over A,D: <span style='color:#2e7d32'>Step 6: Save Profile</span>
+            Note over A,D: 💾 STEP 6: Save Profile
             A->>D: UPDATE UserProfile SET<br/>name, birth_date, gender,<br/>profile_pictures, bio, location
             D-->>A: ✅ Profile updated
             
@@ -492,8 +493,8 @@ sequenceDiagram
             D-->>A: ✅ Interests linked
             Note right of D: 🎉 Profile complete!<br/>✨ User ready
             
-            Note over A,M: <span style='color:#2e7d32'>Step 7: Success Response</span>
-            A-->>M: 🎊 {success: true,<br/>profile_complete: true,<br/>message: "You can now use the app!"}
+            Note over A,M: 🎊 STEP 7: Success Response
+            A-->>M: {success: true, profile_complete: true,<br/>message: "You can now use the app!"}
             M-->>U: 🎉 Profile completed!<br/>🏠 Navigate to home
         end
     end
