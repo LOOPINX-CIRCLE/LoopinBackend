@@ -1316,6 +1316,1321 @@ curl -X POST "https://loopinbackend-g17e.onrender.com/api/auth/signup" \
 
 ---
 
+## 📱 Mobile App Integration Guide
+
+### Overview for iOS and Android Developers
+
+This section provides a comprehensive guide for integrating the Loopin Backend authentication system into your iOS (Swift/SwiftUI) or Android (Kotlin/Java) mobile applications. The integration follows a simple 3-step process that works identically for both platforms.
+
+---
+
+### 🎯 Integration Architecture
+
+**Base URL:** `https://loopinbackend-g17e.onrender.com/api/`
+
+**Authentication Flow:**
+1. **Send OTP** → User enters phone number
+2. **Verify OTP** → User enters 4-digit code
+3. **Complete Profile** → User fills profile (if needed)
+
+**Key Concept:** The backend handles all business logic. Your app only needs to:
+- Collect user input
+- Make HTTP requests
+- Handle responses
+- Navigate based on flags
+
+---
+
+### 📋 Step-by-Step Integration
+
+#### **STEP 1: Send OTP (Universal Entry Point)**
+
+**Purpose:** Send a 4-digit OTP to the user's phone number. Works for both new users (signup) and existing users (login).
+
+**When to Call:** When user enters their phone number on the login/signup screen.
+
+**Endpoint:** `POST /api/auth/signup`
+
+**Request Details:**
+- **Method:** POST
+- **Content-Type:** application/json
+- **Authentication:** Not required (public endpoint)
+
+**Request Payload:**
+```json
+{
+  "phone_number": "+1234567890"
+}
+```
+
+**Payload Fields:**
+- `phone_number` (string, required): User's phone number with country code
+  - Format: E.164 international format (e.g., +1 for USA, +91 for India)
+  - Must include the `+` prefix
+  - Can include spaces, dashes, or parentheses (backend normalizes)
+  - Examples: `+1234567890`, `+1 (234) 567-8900`, `+1-234-567-8900`
+
+**Success Response (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully to your phone number. Please verify to complete signup.",
+  "data": {
+    "phone_number": "+1234567890",
+    "user_status": "new",
+    "otp_sent": true
+  },
+  "token": null
+}
+```
+
+**Response Fields Explained:**
+- `success` (boolean): Always check this first - `true` means operation succeeded
+- `message` (string): User-friendly message to display in your app
+- `data.phone_number` (string): Normalized phone number (use this for next step)
+- `data.user_status` (string): Either `"new"` (signup) or `"existing"` (login)
+- `data.otp_sent` (boolean): Confirms OTP was sent via SMS
+- `token` (null): No token at this stage
+
+**Error Responses (HTTP 200 with success: false):**
+
+**Invalid Phone Format:**
+```json
+{
+  "success": false,
+  "message": "Invalid phone number format",
+  "data": null,
+  "token": null
+}
+```
+
+**SMS Send Failure:**
+```json
+{
+  "success": false,
+  "message": "Failed to send OTP. Please try again later.",
+  "data": null,
+  "token": null
+}
+```
+
+**Server Error:**
+```json
+{
+  "success": false,
+  "message": "An unexpected error occurred. Please try again later.",
+  "data": null,
+  "token": null
+}
+```
+
+**App Implementation Steps:**
+1. Validate phone number format in your app (basic check)
+2. Show loading indicator
+3. Make POST request to `/api/auth/signup`
+4. Parse JSON response
+5. Check `success` field:
+   - If `true`: Navigate to OTP verification screen, show success message
+   - If `false`: Show error message from `message` field, keep user on same screen
+6. Store `phone_number` from response for next step
+7. Start 10-minute countdown timer (OTP expires in 10 minutes)
+
+**UI/UX Recommendations:**
+- Show "Sending OTP..." loading state
+- Display success message: "OTP sent! Check your phone"
+- Show countdown timer: "OTP expires in 09:45"
+- Provide "Resend OTP" button (calls same endpoint again)
+- Handle network errors gracefully
+
+---
+
+#### **STEP 2: Verify OTP (Authentication)**
+
+**Purpose:** Verify the 4-digit OTP code sent to user's phone. Creates account for new users, logs in existing users.
+
+**When to Call:** When user enters the 4-digit OTP code received via SMS.
+
+**Endpoint:** `POST /api/auth/verify-otp`
+
+**Request Details:**
+- **Method:** POST
+- **Content-Type:** application/json
+- **Authentication:** Not required (public endpoint)
+
+**Request Payload:**
+```json
+{
+  "phone_number": "+1234567890",
+  "otp_code": "1234"
+}
+```
+
+**Payload Fields:**
+- `phone_number` (string, required): Same phone number from Step 1
+- `otp_code` (string, required): 4-digit OTP code entered by user
+  - Must be exactly 4 digits
+  - Only numeric characters (0-9)
+  - Case-sensitive (though always numeric)
+
+**Success Response - Profile Incomplete (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "OTP verified successfully. Please complete your profile to continue.",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMjMsInBob25lX251bWJlciI6IisxMjM0NTY3ODkwIiwiZXhwIjoxNzM1Njg5NjAwLCJpYXQiOjE3MzMwOTc2MDB9.signature",
+  "data": {
+    "user_id": 123,
+    "phone_number": "+1234567890",
+    "needs_profile_completion": true,
+    "is_verified": true
+  }
+}
+```
+
+**Success Response - Profile Complete (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "OTP verified successfully. You are logged in.",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "data": {
+    "user_id": 123,
+    "phone_number": "+1234567890",
+    "needs_profile_completion": false,
+    "is_verified": true
+  }
+}
+```
+
+**Response Fields Explained:**
+- `success` (boolean): `true` means OTP verified successfully
+- `message` (string): Display this to user
+- `token` (string): **CRITICAL** - JWT authentication token, store securely
+  - Valid for 30 days
+  - Required for all authenticated endpoints
+  - Store in secure storage (Keychain for iOS, EncryptedSharedPreferences for Android)
+- `data.user_id` (integer): Unique user identifier
+- `data.phone_number` (string): Verified phone number
+- `data.needs_profile_completion` (boolean): **CRITICAL DECISION FLAG**
+  - `true`: Navigate to profile completion screen
+  - `false`: Navigate to home screen (user is fully authenticated)
+- `data.is_verified` (boolean): Confirms phone verification status
+
+**Error Responses:**
+
+**No Phone Number:**
+```json
+{
+  "success": false,
+  "message": "Phone number is required",
+  "data": null,
+  "token": null
+}
+```
+
+**No OTP Code:**
+```json
+{
+  "success": false,
+  "message": "OTP code is required",
+  "data": null,
+  "token": null
+}
+```
+
+**OTP Not Found:**
+```json
+{
+  "success": false,
+  "message": "No OTP found for this phone number. Please request a new OTP.",
+  "data": null,
+  "token": null
+}
+```
+
+**Invalid OTP (Wrong Code):**
+```json
+{
+  "success": false,
+  "message": "Invalid OTP. 2 attempts remaining",
+  "data": null,
+  "token": null
+}
+```
+
+**OTP Expired:**
+```json
+{
+  "success": false,
+  "message": "OTP has expired. Please request a new OTP.",
+  "data": null,
+  "token": null
+}
+```
+
+**Too Many Attempts:**
+```json
+{
+  "success": false,
+  "message": "Too many attempts. Please request a new OTP",
+  "data": null,
+  "token": null
+}
+```
+
+**App Implementation Steps:**
+1. Collect 4-digit OTP from user input
+2. Validate OTP format locally (4 digits, numeric only)
+3. Show loading indicator
+4. Make POST request to `/api/auth/verify-otp`
+5. Parse JSON response
+6. Check `success` field:
+   - If `false`: Show error message, allow retry (unless "too many attempts")
+   - If `true`: Proceed to step 7
+7. **Store JWT token securely** (Keychain/EncryptedSharedPreferences)
+8. Check `needs_profile_completion` flag:
+   - If `true`: Navigate to profile completion screen
+   - If `false`: Navigate to home screen (user is logged in)
+9. Store `user_id` for future use
+
+**Security Best Practices:**
+- Store JWT token in secure storage (never in UserDefaults/SharedPreferences)
+- iOS: Use Keychain Services
+- Android: Use EncryptedSharedPreferences
+- Never log the token
+- Clear token on logout
+
+**UI/UX Recommendations:**
+- Show "Verifying..." loading state
+- Disable submit button during verification
+- Show remaining attempts on error
+- Auto-navigate on success
+- Provide "Resend OTP" option on errors
+
+---
+
+#### **STEP 3: Get Event Interests (Optional but Recommended)**
+
+**Purpose:** Fetch list of available event interest categories for user selection during profile completion.
+
+**When to Call:** 
+- When showing profile completion screen
+- Before user starts filling the profile form
+- Can be called in background while user reads instructions
+
+**Endpoint:** `GET /api/auth/event-interests`
+
+**Request Details:**
+- **Method:** GET
+- **Content-Type:** Not required (GET request)
+- **Authentication:** Not required (public endpoint)
+- **Body:** No request body needed
+
+**Success Response (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "Event interests retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Music & Concerts",
+      "description": "Live music, concerts, and musical events"
+    },
+    {
+      "id": 2,
+      "name": "Sports & Fitness",
+      "description": "Sports events, fitness activities, and competitions"
+    },
+    {
+      "id": 3,
+      "name": "Food & Dining",
+      "description": "Food festivals, cooking classes, and dining experiences"
+    },
+    {
+      "id": 4,
+      "name": "Art & Culture",
+      "description": "Art exhibitions, cultural events, and museum visits"
+    },
+    {
+      "id": 5,
+      "name": "Technology",
+      "description": "Tech meetups, conferences, and innovation events"
+    },
+    {
+      "id": 6,
+      "name": "Travel & Adventure",
+      "description": "Travel experiences, adventure activities, and exploration"
+    },
+    {
+      "id": 7,
+      "name": "Business & Networking",
+      "description": "Professional networking, business events, and conferences"
+    },
+    {
+      "id": 8,
+      "name": "Health & Wellness",
+      "description": "Wellness retreats, health seminars, and mindfulness events"
+    },
+    {
+      "id": 9,
+      "name": "Education & Learning",
+      "description": "Workshops, seminars, and educational events"
+    },
+    {
+      "id": 10,
+      "name": "Entertainment",
+      "description": "Movies, shows, gaming, and entertainment events"
+    }
+  ]
+}
+```
+
+**Response Fields Explained:**
+- `success` (boolean): Always `true` for successful fetch
+- `message` (string): Confirmation message
+- `data` (array): List of event interest objects
+  - `id` (integer): Unique identifier (use this in profile completion)
+  - `name` (string): Display name for the interest
+  - `description` (string): Detailed description (optional to show)
+
+**Error Response (Rare):**
+```json
+{
+  "success": false,
+  "message": "An error occurred while fetching event interests",
+  "data": null
+}
+```
+
+**App Implementation Steps:**
+1. Make GET request when profile completion screen loads
+2. Parse JSON response
+3. Check `success` field
+4. Extract `data` array
+5. Display interests as selectable items (checkboxes, chips, or cards)
+6. Allow user to select 1-5 interests
+7. Store selected interest IDs for Step 4
+8. Show validation: "Select at least 1 interest" if none selected
+9. Show validation: "Maximum 5 interests allowed" if more than 5 selected
+
+**UI/UX Recommendations:**
+- Display as grid of cards with icons
+- Show interest name and description
+- Use multi-select UI (checkboxes or toggle buttons)
+- Highlight selected interests
+- Show counter: "3 of 5 selected"
+- Disable selection when 5 are selected
+- Cache this data (rarely changes)
+
+---
+
+#### **STEP 4: Complete Profile (Required for New Users)**
+
+**Purpose:** Complete user profile with personal information, interests, and pictures.
+
+**When to Call:** 
+- Only if `needs_profile_completion = true` from Step 2
+- After user fills the profile completion form
+- Before allowing access to main app features
+
+**Endpoint:** `POST /api/auth/complete-profile`
+
+**Request Details:**
+- **Method:** POST
+- **Content-Type:** application/json
+- **Authentication:** **REQUIRED** - Bearer token from Step 2
+- **Headers:** 
+  - `Authorization: Bearer <JWT_TOKEN>`
+  - `Content-Type: application/json`
+
+**Request Payload:**
+```json
+{
+  "phone_number": "+1234567890",
+  "name": "John Doe",
+  "birth_date": "2007-01-15",
+  "gender": "male",
+  "event_interests": [1, 3, 5, 7],
+  "profile_pictures": [
+    "https://example.com/pic1.jpg",
+    "https://example.com/pic2.jpg"
+  ],
+  "bio": "Love music and traveling. Always up for new adventures!",
+  "location": "New York, USA"
+}
+```
+
+**Payload Fields Explained:**
+
+**Required Fields:**
+- `phone_number` (string): Same phone number from previous steps
+- `name` (string): User's full name
+  - Minimum: 2 characters
+  - Maximum: 100 characters
+  - Allowed: Letters, spaces, hyphens, apostrophes only
+  - Examples: "Jo Li", "Mary-Jane", "O'Connor"
+  
+- `birth_date` (string): Date of birth in YYYY-MM-DD format
+  - Format: ISO 8601 date format
+  - Validation: User must be 16 years or older
+  - Example: "2007-01-15" (for someone born January 15, 2007)
+  - Calculation: Age calculated from current date
+  
+- `gender` (string): User's gender
+  - Allowed values: `"male"`, `"female"`, `"other"`
+  - Case-insensitive (backend converts to lowercase)
+  - Display as dropdown or radio buttons
+  
+- `event_interests` (array of integers): Selected event interest IDs
+  - Minimum: 1 interest
+  - Maximum: 5 interests
+  - Must be valid IDs from Step 3 (event-interests endpoint)
+  - Backend validates each ID exists and is active
+  - Example: `[1, 3, 5]` means Music, Food, Technology
+  
+- `profile_pictures` (array of strings): URLs of user's profile pictures
+  - Minimum: 1 picture
+  - Maximum: 6 pictures
+  - Must be valid HTTP/HTTPS URLs
+  - Should be uploaded to your image storage (S3, Cloudinary, etc.) before this step
+  - Backend validates URL format
+  - Examples: `["https://cdn.example.com/user123/pic1.jpg"]`
+
+**Optional Fields:**
+- `bio` (string): User's biography or description
+  - Maximum: 500 characters
+  - Can be empty string or null
+  - Display as multiline text field
+  
+- `location` (string): User's location or city
+  - Maximum: 100 characters
+  - Can be empty string or null
+  - Example: "New York, USA" or "Mumbai, India"
+
+**Success Response (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "Profile completed successfully. You can now use the app!",
+  "data": {
+    "user_id": 123,
+    "profile_id": 456,
+    "name": "John Doe",
+    "phone_number": "+1234567890",
+    "gender": "male",
+    "event_interests_count": 4,
+    "profile_pictures_count": 2,
+    "profile_complete": true
+  },
+  "token": null
+}
+```
+
+**Response Fields Explained:**
+- `success` (boolean): `true` means profile saved successfully
+- `message` (string): Success message to display
+- `data.user_id` (integer): User's unique ID
+- `data.profile_id` (integer): Profile's unique ID
+- `data.name` (string): Saved name (confirmation)
+- `data.phone_number` (string): User's phone number
+- `data.gender` (string): Saved gender
+- `data.event_interests_count` (integer): Number of interests saved
+- `data.profile_pictures_count` (integer): Number of pictures saved
+- `data.profile_complete` (boolean): Always `true` on success
+
+**Error Responses:**
+
+**Token Expired:**
+```json
+{
+  "success": false,
+  "message": "Token has expired",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Navigate user back to login screen
+
+**Invalid Token:**
+```json
+{
+  "success": false,
+  "message": "Authentication token is invalid or expired. Please login again.",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Clear stored token, navigate to login
+
+**Name Too Short:**
+```json
+{
+  "success": false,
+  "message": "String should have at least 2 characters",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Highlight name field, show inline error
+
+**Name Invalid Characters:**
+```json
+{
+  "success": false,
+  "message": "Name contains invalid characters",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Show error: "Name can only contain letters, spaces, hyphens, and apostrophes"
+
+**Age Under 16:**
+```json
+{
+  "success": false,
+  "message": "User must be 16 years or older",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Highlight birth date field, show error message
+
+**Invalid Date Format:**
+```json
+{
+  "success": false,
+  "message": "Invalid date format. Use YYYY-MM-DD",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Show date picker or format example
+
+**Invalid Gender:**
+```json
+{
+  "success": false,
+  "message": "Gender must be one of: male, female, other",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Ensure dropdown/radio buttons only allow valid values
+
+**No Event Interests:**
+```json
+{
+  "success": false,
+  "message": "At least one event interest is required",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Highlight interests section, show error
+
+**Too Many Interests:**
+```json
+{
+  "success": false,
+  "message": "List should have at most 5 items after validation",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Disable selection after 5 interests chosen
+
+**Invalid Interest IDs:**
+```json
+{
+  "success": false,
+  "message": "One or more selected event interests (1) are invalid or inactive. Please select from available interests.",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Refresh interests list from Step 3
+
+**No Profile Pictures:**
+```json
+{
+  "success": false,
+  "message": "At least one profile picture is required",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Highlight picture upload section
+
+**Too Many Pictures:**
+```json
+{
+  "success": false,
+  "message": "Maximum 6 profile pictures allowed",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Disable picture upload after 6 pictures
+
+**Invalid Picture URL:**
+```json
+{
+  "success": false,
+  "message": "Invalid URL format for profile picture 1",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Re-upload the problematic picture
+
+**Bio Too Long:**
+```json
+{
+  "success": false,
+  "message": "String should have at most 500 characters",
+  "data": null,
+  "token": null
+}
+```
+**Action:** Show character counter, trim to 500 characters
+
+**App Implementation Steps:**
+1. Retrieve JWT token from secure storage (saved in Step 2)
+2. Validate all fields locally before submission:
+   - Name: 2-100 characters, letters only
+   - Birth date: Calculate age, must be 16+
+   - Gender: One of three options
+   - Interests: 1-5 selected
+   - Pictures: 1-6 uploaded
+3. Upload profile pictures to your image storage first
+4. Get picture URLs from your storage
+5. Build request payload with all data
+6. Add Authorization header with Bearer token
+7. Make POST request to `/api/auth/complete-profile`
+8. Parse JSON response
+9. Check `success` field:
+   - If `false`: Show specific error message, highlight problematic field
+   - If `true`: Show success message, navigate to home screen
+10. Update local user state with profile data
+
+**Image Upload Flow:**
+1. User selects pictures from gallery/camera
+2. Upload each picture to your image storage (S3, Cloudinary, Firebase Storage)
+3. Get public URL for each uploaded picture
+4. Store URLs in array
+5. Send URLs array in `profile_pictures` field
+6. Backend validates URL format but doesn't download images
+
+**UI/UX Recommendations:**
+- Show "Completing profile..." loading state
+- Validate fields as user types (real-time validation)
+- Show character counters (name, bio)
+- Show age as user selects birth date
+- Disable submit until all required fields valid
+- Show progress indicator: "Step 3 of 3"
+- Celebrate completion with animation
+
+---
+
+#### **STEP 5: Get User Profile (Authenticated Endpoint)**
+
+**Purpose:** Retrieve complete user profile information after authentication.
+
+**When to Call:**
+- After successful login (when `needs_profile_completion = false`)
+- When user navigates to profile screen
+- To refresh profile data
+- After profile updates
+
+**Endpoint:** `GET /api/auth/profile`
+
+**Request Details:**
+- **Method:** GET
+- **Content-Type:** Not required (GET request)
+- **Authentication:** **REQUIRED** - Bearer token
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+
+**Success Response (HTTP 200):**
+```json
+{
+  "id": 456,
+  "name": "John Doe",
+  "phone_number": "+1234567890",
+  "gender": "male",
+  "bio": "Love music and traveling",
+  "location": "New York, USA",
+  "birth_date": "2007-01-15",
+  "event_interests": [
+    {
+      "id": 1,
+      "name": "Music & Concerts",
+      "description": "Live music, concerts, and musical events",
+      "is_active": true,
+      "created_at": "2025-10-01T00:00:00Z",
+      "updated_at": "2025-10-01T00:00:00Z"
+    },
+    {
+      "id": 3,
+      "name": "Food & Dining",
+      "description": "Food festivals, cooking classes, and dining experiences",
+      "is_active": true,
+      "created_at": "2025-10-01T00:00:00Z",
+      "updated_at": "2025-10-01T00:00:00Z"
+    }
+  ],
+  "profile_pictures": [
+    "https://example.com/pic1.jpg",
+    "https://example.com/pic2.jpg"
+  ],
+  "is_verified": true,
+  "is_active": true,
+  "created_at": "2025-10-11T10:15:23.435393+00:00",
+  "updated_at": "2025-10-11T10:17:32.077460+00:00"
+}
+```
+
+**Response Fields Explained:**
+- `id` (integer): Profile unique ID
+- `name` (string): User's full name
+- `phone_number` (string): Verified phone number
+- `gender` (string): User's gender
+- `bio` (string): User biography (can be empty)
+- `location` (string): User location (can be empty)
+- `birth_date` (string): ISO format date
+- `event_interests` (array): Full interest objects with details
+- `profile_pictures` (array): List of picture URLs
+- `is_verified` (boolean): Phone verification status
+- `is_active` (boolean): Account active status
+- `created_at` (string): Account creation timestamp
+- `updated_at` (string): Last update timestamp
+
+**Error Responses:**
+
+**Invalid Token:**
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+**Expired Token:**
+```json
+{
+  "detail": "Token has expired"
+}
+```
+
+**User Not Found:**
+```json
+{
+  "detail": "User not found"
+}
+```
+
+**Profile Not Found:**
+```json
+{
+  "detail": "User profile not found"
+}
+```
+
+**App Implementation Steps:**
+1. Retrieve JWT token from secure storage
+2. Add Authorization header
+3. Make GET request to `/api/auth/profile`
+4. Parse JSON response
+5. Handle errors (401/404):
+   - If token expired: Navigate to login
+   - If user not found: Clear data, navigate to signup
+6. On success: Update local user state
+7. Display profile data in UI
+8. Cache profile data locally
+9. Refresh periodically or on pull-to-refresh
+
+---
+
+#### **STEP 6: Logout (Optional)**
+
+**Purpose:** Log out the current user (client-side token removal).
+
+**When to Call:** When user taps logout button.
+
+**Endpoint:** `POST /api/auth/logout`
+
+**Request Details:**
+- **Method:** POST
+- **Content-Type:** application/json
+- **Authentication:** Not strictly required (stateless JWT)
+
+**Success Response (HTTP 200):**
+```json
+{
+  "success": true,
+  "message": "Logged out successfully"
+}
+```
+
+**App Implementation Steps:**
+1. Make POST request to `/api/auth/logout` (optional)
+2. **Delete JWT token from secure storage** (required)
+3. Clear all user data from memory
+4. Clear any cached profile data
+5. Reset app state
+6. Navigate to login/welcome screen
+7. Show "Logged out successfully" message
+
+**Important Note:** Since JWT tokens are stateless, the actual logout happens client-side by deleting the token. The backend endpoint is provided for consistency and future server-side logout logic.
+
+---
+
+### 🔐 Token Management
+
+#### Storing JWT Token
+
+**iOS (Swift):**
+- Use Keychain Services
+- Store with service identifier: `com.loopin.authToken`
+- Access group for app extensions if needed
+- Set accessibility: `kSecAttrAccessibleAfterFirstUnlock`
+
+**Android (Kotlin/Java):**
+- Use EncryptedSharedPreferences
+- Key: `auth_token`
+- Master key: Use AndroidKeyStore
+- Never store in plain SharedPreferences
+
+#### Using JWT Token
+
+**For All Authenticated Requests:**
+1. Retrieve token from secure storage
+2. Add to request header: `Authorization: Bearer <token>`
+3. Handle 401 errors (token expired):
+   - Clear token
+   - Navigate to login
+   - Show "Session expired" message
+
+**Token Lifecycle:**
+- **Issued:** After successful OTP verification (Step 2)
+- **Validity:** 30 days from issuance
+- **Expiry:** Automatically expires after 30 days
+- **Renewal:** User must login again (no refresh tokens)
+
+#### Token Payload (For Reference)
+
+The JWT token contains:
+```json
+{
+  "user_id": 123,
+  "phone_number": "+1234567890",
+  "exp": 1735689600,
+  "iat": 1733097600
+}
+```
+
+**Fields:**
+- `user_id`: User's database ID
+- `phone_number`: Verified phone number
+- `exp`: Expiration timestamp (Unix epoch)
+- `iat`: Issued at timestamp (Unix epoch)
+
+**Note:** You don't need to decode the token in your app. Just store and send it.
+
+---
+
+### 🔄 Complete Integration Flow Summary
+
+#### For New Users (Signup):
+
+**Screen 1: Phone Number Entry**
+- User enters phone number
+- Call: `POST /api/auth/signup`
+- Response: `success: true, otp_sent: true, user_status: "new"`
+- Navigate to: OTP verification screen
+
+**Screen 2: OTP Verification**
+- User enters 4-digit OTP
+- Call: `POST /api/auth/verify-otp`
+- Response: `success: true, needs_profile_completion: true, token: "..."`
+- Store: JWT token securely
+- Navigate to: Profile completion screen
+
+**Screen 3: Event Interests (Background)**
+- Call: `GET /api/auth/event-interests`
+- Response: Array of 12 interests
+- Display: As selectable cards/chips
+
+**Screen 4: Profile Completion**
+- User fills form (name, DOB, gender, interests, pictures, bio, location)
+- Upload pictures to your storage first
+- Call: `POST /api/auth/complete-profile` with Bearer token
+- Response: `success: true, profile_complete: true`
+- Navigate to: Home screen (user is fully authenticated)
+
+#### For Existing Users (Login):
+
+**Screen 1: Phone Number Entry**
+- User enters phone number
+- Call: `POST /api/auth/signup` (same endpoint!)
+- Response: `success: true, otp_sent: true, user_status: "existing"`
+- Navigate to: OTP verification screen
+
+**Screen 2: OTP Verification**
+- User enters 4-digit OTP
+- Call: `POST /api/auth/verify-otp`
+- Response: `success: true, needs_profile_completion: false, token: "..."`
+- Store: JWT token securely
+- Navigate to: Home screen (user is logged in, skip profile completion)
+
+---
+
+### ⚠️ Error Handling Best Practices
+
+#### Network Errors
+
+**No Internet Connection:**
+- Detect before making request
+- Show: "No internet connection. Please check your network."
+- Provide: Retry button
+
+**Timeout:**
+- Set timeout: 30 seconds for API calls
+- Show: "Request timed out. Please try again."
+- Provide: Retry button
+
+**Server Error (500):**
+- Show: "Server error. Please try again later."
+- Log error for debugging
+- Provide: Contact support option
+
+#### Validation Errors
+
+**Client-Side Validation (Before API Call):**
+- Phone number: Check format locally
+- OTP: Must be 4 digits
+- Name: 2-100 characters
+- Birth date: Calculate age, must be 16+
+- Gender: One of three options
+- Interests: 1-5 selected
+- Pictures: 1-6 uploaded
+
+**Server-Side Validation (From API Response):**
+- Always check `success` field first
+- If `false`: Display `message` field to user
+- Highlight the problematic field
+- Allow user to correct and retry
+
+#### User Experience
+
+**Loading States:**
+- Show spinner or progress indicator
+- Disable submit buttons during API calls
+- Show descriptive text: "Sending OTP...", "Verifying...", "Saving profile..."
+
+**Success States:**
+- Show success message briefly
+- Use animations for positive feedback
+- Auto-navigate after 1-2 seconds
+- Provide skip option for impatient users
+
+**Error States:**
+- Show error message clearly
+- Use red color for errors
+- Keep user on same screen
+- Allow immediate retry
+- Provide help text or examples
+
+---
+
+### 📊 State Management
+
+#### App States to Track
+
+**Authentication State:**
+- `NOT_AUTHENTICATED`: No token, show login
+- `AUTHENTICATED_INCOMPLETE`: Has token, needs profile
+- `AUTHENTICATED_COMPLETE`: Has token, profile complete
+
+**User Data State:**
+- `user_id`: Store after Step 2
+- `phone_number`: Store after Step 1
+- `jwt_token`: Store after Step 2 (secure storage)
+- `profile_complete`: Boolean flag
+- `profile_data`: Full profile object (after Step 5)
+
+#### Navigation Logic
+
+**On App Launch:**
+1. Check if JWT token exists in secure storage
+2. If no token: Navigate to login screen
+3. If token exists:
+   - Validate token (check expiry locally if possible)
+   - Call `GET /api/auth/profile`
+   - If success: Navigate to home screen
+   - If 401 error: Clear token, navigate to login
+
+**After OTP Verification:**
+1. Check `needs_profile_completion` flag
+2. If `true`: Navigate to profile completion
+3. If `false`: Navigate to home screen
+
+**After Profile Completion:**
+1. Always navigate to home screen
+2. User is now fully authenticated
+
+---
+
+### 🧪 Testing Your Integration
+
+#### Test Scenarios
+
+**Scenario 1: New User Signup**
+1. Enter phone: `+1234567890`
+2. Receive OTP via SMS (or check logs if test mode)
+3. Enter OTP: `1234`
+4. See profile completion screen
+5. Fill all fields
+6. Submit profile
+7. See home screen
+
+**Scenario 2: Existing User Login**
+1. Enter phone: `+1234567890` (already registered)
+2. Receive OTP via SMS
+3. Enter OTP: `1234`
+4. Directly see home screen (no profile completion)
+
+**Scenario 3: Invalid OTP**
+1. Enter phone: `+1234567890`
+2. Enter wrong OTP: `0000`
+3. See error: "Invalid OTP. 2 attempts remaining"
+4. Try again with correct OTP
+
+**Scenario 4: Profile Validation**
+1. Complete Steps 1-2
+2. Enter name: "A" (too short)
+3. See error: "Name must be at least 2 characters"
+4. Correct to: "Jo"
+5. Submit successfully
+
+#### Test Mode vs Production
+
+**Test Mode (Development):**
+- Set `TWILIO_TEST_MODE=true` in backend
+- OTP codes visible in server logs
+- No actual SMS sent
+- Use for development and testing
+- OTP is always: Check logs
+
+**Production Mode:**
+- Set `TWILIO_TEST_MODE=false` in backend
+- Real SMS sent via Twilio
+- OTP codes not in logs
+- Use for staging and production
+- OTP received on actual phone
+
+---
+
+### 💡 Implementation Tips
+
+#### iOS-Specific Considerations
+
+**Phone Number Input:**
+- Use `UITextField` with `keyboardType = .phonePad`
+- Format as user types: `+1 (234) 567-8900`
+- Store normalized version: `+1234567890`
+
+**OTP Input:**
+- Use 4 separate `UITextField` for each digit
+- Auto-advance to next field
+- Auto-submit when all 4 digits entered
+- Use `keyboardType = .numberPad`
+
+**Date Picker:**
+- Use `UIDatePicker` with `datePickerMode = .date`
+- Set `maximumDate` to 16 years ago
+- Format to YYYY-MM-DD before sending
+
+**Image Upload:**
+- Use `UIImagePickerController` or `PHPickerViewController`
+- Compress images before upload
+- Show upload progress
+- Handle permissions (camera, photo library)
+
+#### Android-Specific Considerations
+
+**Phone Number Input:**
+- Use `EditText` with `inputType="phone"`
+- Use `PhoneNumberFormattingTextWatcher` for formatting
+- Store normalized version for API
+
+**OTP Input:**
+- Use 4 separate `EditText` with `inputType="number"`
+- Implement `TextWatcher` for auto-advance
+- Use `maxLength="1"` for each field
+- Consider SMS auto-read with SMS Retriever API
+
+**Date Picker:**
+- Use `DatePickerDialog`
+- Set `maxDate` to 16 years ago
+- Format using `SimpleDateFormat("yyyy-MM-dd")`
+
+**Image Upload:**
+- Use `Intent.ACTION_PICK` or `Intent.ACTION_GET_CONTENT`
+- Handle runtime permissions (READ_EXTERNAL_STORAGE)
+- Compress images using Bitmap
+- Show upload progress with ProgressBar
+
+---
+
+### 🔧 Common Integration Issues
+
+#### Issue 1: Token Not Persisting
+
+**Symptom:** User logged out after app restart
+
+**Solution:**
+- Ensure token stored in secure storage, not memory
+- iOS: Use Keychain, not UserDefaults
+- Android: Use EncryptedSharedPreferences, not SharedPreferences
+- Verify token retrieval on app launch
+
+#### Issue 2: Profile Pictures Not Uploading
+
+**Symptom:** "Invalid URL format" error
+
+**Solution:**
+- Upload images to your storage service first (S3, Cloudinary, Firebase)
+- Get public HTTPS URLs
+- Validate URLs are accessible
+- Ensure URLs start with `https://`
+- Test URLs in browser before sending
+
+#### Issue 3: Age Validation Failing
+
+**Symptom:** "User must be 16 years or older" error
+
+**Solution:**
+- Calculate age correctly (account for leap years)
+- Use current date for calculation
+- Format date as YYYY-MM-DD
+- Example: Born Oct 11, 2009 → Age 16 (valid)
+- Example: Born Oct 12, 2009 → Age 15 (invalid)
+
+#### Issue 4: OTP Not Received
+
+**Symptom:** User doesn't receive SMS
+
+**Solution:**
+- Check if backend is in test mode (TWILIO_TEST_MODE)
+- Verify phone number format includes country code
+- Check Twilio account status (trial vs paid)
+- Verify phone number in Twilio console (for trial accounts)
+- Check SMS logs in Twilio dashboard
+
+#### Issue 5: "needs_profile_completion" Always True
+
+**Symptom:** User always sees profile screen even after completing
+
+**Solution:**
+- Profile is complete only if BOTH `name` AND `profile_pictures` exist
+- Verify profile completion API was called successfully
+- Check if pictures array is not empty
+- Call `GET /api/auth/profile` to verify profile state
+
+---
+
+### 📱 Platform-Specific Libraries
+
+#### iOS Recommended Libraries
+
+**Networking:**
+- Alamofire (HTTP requests)
+- URLSession (native, no dependencies)
+
+**JSON Parsing:**
+- Codable (native Swift)
+- SwiftyJSON (optional)
+
+**Secure Storage:**
+- KeychainAccess (wrapper for Keychain)
+- Native Keychain Services
+
+**Image Upload:**
+- Kingfisher (image loading/caching)
+- SDWebImage (alternative)
+
+#### Android Recommended Libraries
+
+**Networking:**
+- Retrofit (REST API client)
+- OkHttp (HTTP client)
+- Volley (alternative)
+
+**JSON Parsing:**
+- Gson (Google's JSON library)
+- Moshi (modern alternative)
+- Kotlin Serialization (for Kotlin)
+
+**Secure Storage:**
+- EncryptedSharedPreferences (Jetpack Security)
+- AndroidKeyStore (native)
+
+**Image Upload:**
+- Glide (image loading/caching)
+- Picasso (alternative)
+- Coil (Kotlin-first)
+
+---
+
+### ✅ Integration Checklist
+
+#### Before Starting Development
+
+- [ ] Understand the unified flow (signup = login entry point)
+- [ ] Review all API endpoints and responses
+- [ ] Set up secure token storage
+- [ ] Plan image upload strategy
+- [ ] Design UI screens (phone entry, OTP, profile completion, home)
+
+#### During Development
+
+- [ ] Implement phone number input with validation
+- [ ] Implement OTP input (4 digits)
+- [ ] Implement secure token storage
+- [ ] Implement image upload to your storage
+- [ ] Implement profile form with all validations
+- [ ] Handle all error responses
+- [ ] Implement loading states
+- [ ] Test with test mode backend
+
+#### Before Production
+
+- [ ] Test complete flow end-to-end
+- [ ] Test error scenarios (wrong OTP, invalid data)
+- [ ] Test token expiry handling
+- [ ] Test network error handling
+- [ ] Test with real SMS (backend test mode off)
+- [ ] Verify secure storage implementation
+- [ ] Test logout and re-login flow
+- [ ] Performance test (image upload, API calls)
+
+---
+
+### 📞 Support and Resources
+
+**API Documentation:** https://loopinbackend-g17e.onrender.com/api/docs  
+**Interactive Testing:** Use Swagger UI at `/api/docs`  
+**Backend Status:** https://loopinbackend-g17e.onrender.com/api/health
+
+**For Integration Questions:**
+- Review this documentation thoroughly
+- Test endpoints using Postman or cURL first
+- Check error messages carefully (they're user-friendly)
+- Verify request payloads match examples exactly
+- Ensure Authorization header format is correct
+
+---
+
 ## 🛠️ Troubleshooting
 
 ### Common Issues
