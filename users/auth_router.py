@@ -54,206 +54,427 @@ def verify_jwt_token(token: str) -> dict:
 @router.post("/signup", response_model=AuthResponse)
 async def signup_with_phone(request: PhoneNumberRequest):
     """
-    Step 1: Send OTP to phone number for signup
+    Unified Authentication: Send OTP for both new users and existing users
+    
+    This endpoint handles both signup and login in a single flow:
+    - For new users: Initiates signup process
+    - For existing users: Initiates login process
+    - Both receive a 4-digit OTP via SMS
+    
+    Flow:
+    1. Validate phone number format
+    2. Check if user exists
+    3. Generate and send 4-digit OTP
+    4. Return success with appropriate message
     """
     try:
+        # Validate phone number is provided
+        if not request.phone_number:
+            return AuthResponse(
+                success=False,
+                message="Phone number is required"
+            )
+        
         phone_number = request.phone_number
         
-        # Check if user already exists (fully registered user)
+        # Check if user already exists
         existing_user = await sync_to_async(lambda: User.objects.filter(username=phone_number).first())()
+        
+        # Determine if this is a new user or existing user
+        is_new_user = existing_user is None
+        user_status = "new" if is_new_user else "existing"
+        
+        # For existing users, check profile completion status
+        has_complete_profile = False
         if existing_user:
-            # Check if user has completed profile
             try:
                 profile = await sync_to_async(lambda: existing_user.profile)()
-                if profile and profile.name and profile.profile_pictures:
-                    return AuthResponse(
-                        success=False,
-                        message="User already exists. Please login instead."
-                    )
-                else:
-                    # User exists but profile is incomplete - continue from where they left off
-                    logger.info(f"User {phone_number} exists but profile incomplete, continuing signup process")
-            except:
-                # User exists but no profile - continue signup process
-                logger.info(f"User {phone_number} exists but no profile, continuing signup process")
+                has_complete_profile = bool(profile and profile.name and profile.profile_pictures)
+                logger.info(f"Existing user {phone_number} - Profile complete: {has_complete_profile}")
+            except Exception as e:
+                logger.info(f"User {phone_number} exists but no profile found: {e}")
+                has_complete_profile = False
         
-        # Get or create OTP record
+        # Get or create OTP record (works for both signup and login)
         otp_record, created = await sync_to_async(lambda: PhoneOTP.objects.get_or_create(
             phone_number=phone_number
         ))()
         
-        # Generate new OTP
+        # Generate new OTP (4 digits)
         await sync_to_async(lambda: otp_record.generate_otp())()
         await sync_to_async(lambda: otp_record.save())()
         
         # Send OTP via SMS
-        success, message = await sync_to_async(lambda: twilio_service.send_otp_sms(phone_number, otp_record.otp_code))()
+        try:
+            success, sms_message = await sync_to_async(
+                lambda: twilio_service.send_otp_sms(phone_number, otp_record.otp_code)
+            )()
+        except Exception as sms_error:
+            logger.error(f"SMS sending error for {phone_number}: {sms_error}")
+            return AuthResponse(
+                success=False,
+                message="Failed to send OTP. Please try again later."
+            )
         
         if success:
-            # Check if this is a resume of incomplete signup
-            if existing_user:
-                message_text = "OTP sent successfully. Please verify to complete your registration."
+            # Create appropriate message based on user status
+            if is_new_user:
+                message_text = "OTP sent successfully to your phone number. Please verify to complete signup."
+            elif has_complete_profile:
+                message_text = "OTP sent successfully to your phone number. Please verify to login."
             else:
-                message_text = "OTP sent successfully to your phone number"
-                
+                message_text = "OTP sent successfully. Please verify to complete your registration."
+            
             return AuthResponse(
                 success=True,
                 message=message_text,
-                data={"phone_number": phone_number}
+                data={
+                    "phone_number": phone_number,
+                    "user_status": user_status,
+                    "otp_sent": True
+                }
             )
         else:
+            # SMS failed to send
+            logger.error(f"Failed to send OTP to {phone_number}: {sms_message}")
             return AuthResponse(
                 success=False,
-                message=f"Failed to send OTP: {message}"
+                message=f"Failed to send OTP. {sms_message}. Please try again."
             )
             
-    except Exception as e:
-        logger.error(f"Signup error: {e}")
+    except ValueError as ve:
+        # Validation errors from phone number validator
+        logger.error(f"Validation error in signup: {ve}")
         return AuthResponse(
             success=False,
-            message="An error occurred during signup"
+            message=str(ve)
+        )
+    except Exception as e:
+        # Catch-all for any unexpected errors
+        logger.error(f"Unexpected error in signup for {request.phone_number if request.phone_number else 'N/A'}: {e}")
+        return AuthResponse(
+            success=False,
+            message="An unexpected error occurred. Please try again later."
         )
 
 
 @router.post("/verify-otp", response_model=AuthResponse)
 async def verify_signup_otp(request: OTPVerificationRequest):
     """
-    Step 2: Verify OTP and create user account
+    Unified OTP Verification: Verify OTP for both signup and login
+    
+    This endpoint handles OTP verification for:
+    - New users (signup): Creates user account and profile
+    - Existing users (login): Authenticates and returns token
+    - Incomplete profiles: Returns token with needs_profile_completion flag
+    
+    Flow:
+    1. Validate phone number and OTP format
+    2. Check if OTP exists and is valid
+    3. Verify OTP (checks expiry, attempts, correctness)
+    4. Create/authenticate user
+    5. Generate JWT token
+    6. Return token with profile completion status
     """
     try:
+        # Validate required fields
+        if not request.phone_number:
+            return AuthResponse(
+                success=False,
+                message="Phone number is required"
+            )
+        
+        if not request.otp_code:
+            return AuthResponse(
+                success=False,
+                message="OTP code is required"
+            )
+        
         phone_number = request.phone_number
         otp_code = request.otp_code
         
         # Get OTP record
         otp_record = await sync_to_async(lambda: PhoneOTP.objects.filter(phone_number=phone_number).first())()
+        
         if not otp_record:
             return AuthResponse(
                 success=False,
                 message="No OTP found for this phone number. Please request a new OTP."
             )
         
-        # Verify OTP
-        is_valid, message = await sync_to_async(lambda: otp_record.verify_otp(otp_code))()
+        # Verify OTP (this checks expiry, attempts, and code correctness)
+        try:
+            is_valid, validation_message = await sync_to_async(lambda: otp_record.verify_otp(otp_code))()
+        except Exception as verify_error:
+            logger.error(f"OTP verification logic error for {phone_number}: {verify_error}")
+            return AuthResponse(
+                success=False,
+                message="An error occurred while verifying OTP. Please try again."
+            )
         
-        if is_valid:
-            # Check if user already exists (for incomplete signup resume)
+        if not is_valid:
+            # OTP verification failed (wrong code, expired, or too many attempts)
+            return AuthResponse(
+                success=False,
+                message=validation_message
+            )
+        
+        # OTP is valid - proceed with user authentication/creation
+        try:
+            # Check if user already exists
             existing_user = await sync_to_async(lambda: User.objects.filter(username=phone_number).first())()
             
             if existing_user:
-                # User exists but profile might be incomplete - update existing user
+                # Existing user - handle login flow
                 user = existing_user
                 try:
                     # Check if profile exists
                     profile = await sync_to_async(lambda: existing_user.profile)()
                     if not profile:
-                        # Create missing profile
+                        # Create missing profile for existing user
                         profile = await sync_to_async(lambda: UserProfile.objects.create(
                             user=user,
                             phone_number=phone_number,
                             is_verified=True
                         ))()
+                        logger.info(f"Created missing profile for existing user {phone_number}")
                     else:
-                        # Update existing profile verification status
+                        # Update verification status
                         profile.is_verified = True
                         await sync_to_async(lambda: profile.save())()
-                except:
+                except Exception as profile_error:
                     # Profile doesn't exist, create it
+                    logger.warning(f"Profile access error for {phone_number}: {profile_error}")
                     profile = await sync_to_async(lambda: UserProfile.objects.create(
                         user=user,
                         phone_number=phone_number,
                         is_verified=True
                     ))()
             else:
-                # Create new user account
-                user = await sync_to_async(lambda: User.objects.create_user(
-                    username=phone_number,
-                    password=phone_number,  # Simple password, can be improved
-                    is_active=True,
-                    is_staff=False,
-                    is_superuser=False
-                ))()
-                
-                # Create user profile
-                profile = await sync_to_async(lambda: UserProfile.objects.create(
-                    user=user,
-                    phone_number=phone_number,
-                    is_verified=True
-                ))()
+                # New user - handle signup flow
+                try:
+                    # Create new user account
+                    user = await sync_to_async(lambda: User.objects.create_user(
+                        username=phone_number,
+                        password=phone_number,  # Password set to phone for simplicity
+                        is_active=True,
+                        is_staff=False,
+                        is_superuser=False
+                    ))()
+                    logger.info(f"Created new user account for {phone_number}")
+                    
+                    # Create user profile
+                    profile = await sync_to_async(lambda: UserProfile.objects.create(
+                        user=user,
+                        phone_number=phone_number,
+                        is_verified=True
+                    ))()
+                    logger.info(f"Created new profile for {phone_number}")
+                except Exception as creation_error:
+                    logger.error(f"Error creating user/profile for {phone_number}: {creation_error}")
+                    return AuthResponse(
+                        success=False,
+                        message="An error occurred while creating your account. Please try again."
+                    )
             
-            # Generate JWT token
-            token = create_jwt_token(user.id, phone_number)
+            # Generate JWT authentication token
+            try:
+                token = create_jwt_token(user.id, phone_number)
+            except Exception as token_error:
+                logger.error(f"Error generating token for user {user.id}: {token_error}")
+                return AuthResponse(
+                    success=False,
+                    message="Authentication successful but token generation failed. Please try again."
+                )
             
             # Check if profile needs completion
+            # Profile is complete if it has name and at least one profile picture
             needs_completion = not (profile.name and profile.profile_pictures)
+            
+            # Create appropriate success message
+            if needs_completion:
+                message_text = "OTP verified successfully. Please complete your profile to continue."
+            else:
+                message_text = "OTP verified successfully. You are logged in."
             
             return AuthResponse(
                 success=True,
-                message="OTP verified successfully. Please complete your profile." if needs_completion else "OTP verified successfully. You are logged in.",
+                message=message_text,
                 token=token,
                 data={
                     "user_id": user.id,
                     "phone_number": phone_number,
-                    "needs_profile_completion": needs_completion
+                    "needs_profile_completion": needs_completion,
+                    "is_verified": True
                 }
             )
-        else:
+            
+        except User.DoesNotExist:
+            logger.error(f"User not found during verification for {phone_number}")
             return AuthResponse(
                 success=False,
-                message=message
+                message="User account error. Please try signing up again."
             )
             
-    except Exception as e:
-        logger.error(f"OTP verification error: {e}")
+    except ValueError as ve:
+        # Validation errors from request model
+        logger.error(f"Validation error in verify-otp: {ve}")
         return AuthResponse(
             success=False,
-            message="An error occurred during OTP verification"
+            message=str(ve)
+        )
+    except Exception as e:
+        # Catch-all for any unexpected errors
+        logger.error(f"Unexpected error in verify-otp for {request.phone_number if request.phone_number else 'N/A'}: {e}")
+        return AuthResponse(
+            success=False,
+            message="An unexpected error occurred during verification. Please try again later."
         )
 
 
 @router.post("/complete-profile", response_model=AuthResponse)
 async def complete_user_profile(request: CompleteProfileRequest, token: str = Depends(security)):
     """
-    Step 3: Complete user profile with additional information
+    Complete User Profile: Add additional profile information after OTP verification
+    
+    This endpoint handles profile completion for users who have verified their phone:
+    - Requires valid JWT token from /verify-otp endpoint
+    - Validates all profile data (name, age, gender, interests, pictures)
+    - Updates user profile with complete information
+    - Returns success with profile completion status
+    
+    Required fields:
+    - name (2-100 characters, letters only)
+    - birth_date (YYYY-MM-DD, must be 16+)
+    - gender (male/female/other)
+    - event_interests (1-5 interest IDs)
+    - profile_pictures (1-6 valid URLs)
+    
+    Optional fields:
+    - bio (max 500 characters)
+    - location (max 100 characters)
     """
     try:
         # Verify JWT token
-        payload = verify_jwt_token(token.credentials)
-        user_id = payload['user_id']
-        phone_number = payload['phone_number']
-        
-        # Get user and profile
-        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
-        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
-        
-        # Validate event interests exist and are active
-        event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(
-            id__in=request.event_interests, 
-            is_active=True
-        )))()
-        
-        if len(event_interests) != len(request.event_interests):
+        try:
+            payload = verify_jwt_token(token.credentials)
+            user_id = payload.get('user_id')
+            phone_number = payload.get('phone_number')
+            
+            if not user_id or not phone_number:
+                return AuthResponse(
+                    success=False,
+                    message="Invalid authentication token. Please login again."
+                )
+        except HTTPException as he:
             return AuthResponse(
                 success=False,
-                message="One or more selected event interests are invalid or inactive"
+                message=he.detail
+            )
+        except Exception as token_error:
+            logger.error(f"Token verification error: {token_error}")
+            return AuthResponse(
+                success=False,
+                message="Authentication token is invalid or expired. Please login again."
+            )
+        
+        # Validate required fields from request
+        if not request.name:
+            return AuthResponse(
+                success=False,
+                message="Name is required"
+            )
+        
+        if not request.birth_date:
+            return AuthResponse(
+                success=False,
+                message="Birth date is required"
+            )
+        
+        if not request.gender:
+            return AuthResponse(
+                success=False,
+                message="Gender is required"
+            )
+        
+        if not request.event_interests or len(request.event_interests) == 0:
+            return AuthResponse(
+                success=False,
+                message="At least one event interest is required"
+            )
+        
+        if not request.profile_pictures or len(request.profile_pictures) == 0:
+            return AuthResponse(
+                success=False,
+                message="At least one profile picture is required"
+            )
+        
+        # Get user and profile
+        try:
+            user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+        except User.DoesNotExist:
+            return AuthResponse(
+                success=False,
+                message="User account not found. Please signup again."
+            )
+        
+        try:
+            profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        except UserProfile.DoesNotExist:
+            return AuthResponse(
+                success=False,
+                message="User profile not found. Please contact support."
+            )
+        
+        # Validate event interests exist and are active
+        try:
+            event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(
+                id__in=request.event_interests, 
+                is_active=True
+            )))()
+        except Exception as interest_error:
+            logger.error(f"Error fetching event interests: {interest_error}")
+            return AuthResponse(
+                success=False,
+                message="An error occurred while validating event interests. Please try again."
+            )
+        
+        # Check if all requested interests were found and are active
+        if len(event_interests) != len(request.event_interests):
+            missing_count = len(request.event_interests) - len(event_interests)
+            return AuthResponse(
+                success=False,
+                message=f"One or more selected event interests ({missing_count}) are invalid or inactive. Please select from available interests."
             )
         
         # Update profile information
-        profile.name = request.name
-        profile.birth_date = request.birth_date
-        profile.gender = request.gender
-        profile.profile_pictures = request.profile_pictures
-        profile.bio = request.bio or ""
-        profile.location = request.location or ""
+        try:
+            profile.name = request.name.strip()
+            profile.birth_date = request.birth_date
+            profile.gender = request.gender.lower()
+            profile.profile_pictures = request.profile_pictures
+            profile.bio = request.bio.strip() if request.bio else ""
+            profile.location = request.location.strip() if request.location else ""
+            
+            # Save profile first
+            await sync_to_async(lambda: profile.save())()
+            logger.info(f"Profile updated for user {user_id}")
+            
+            # Set event interests (ManyToMany relationship)
+            await sync_to_async(lambda: profile.event_interests.set(event_interests))()
+            logger.info(f"Event interests set for user {user_id}: {len(event_interests)} interests")
+            
+        except Exception as save_error:
+            logger.error(f"Error saving profile for user {user_id}: {save_error}")
+            return AuthResponse(
+                success=False,
+                message="An error occurred while saving your profile. Please try again."
+            )
         
-        # Save profile first
-        await sync_to_async(lambda: profile.save())()
-        
-        # Set event interests
-        await sync_to_async(lambda: profile.event_interests.set(event_interests))()
-        
+        # Return success with profile details
         return AuthResponse(
             success=True,
-            message="Profile completed successfully",
+            message="Profile completed successfully. You can now use the app!",
             data={
                 "user_id": user.id,
                 "profile_id": profile.id,
@@ -261,25 +482,24 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
                 "phone_number": profile.phone_number,
                 "gender": profile.gender,
                 "event_interests_count": len(event_interests),
-                "profile_pictures_count": len(profile.profile_pictures)
+                "profile_pictures_count": len(profile.profile_pictures),
+                "profile_complete": True
             }
         )
         
-    except User.DoesNotExist:
+    except ValueError as ve:
+        # Validation errors from request model validators
+        logger.error(f"Validation error in complete-profile: {ve}")
         return AuthResponse(
             success=False,
-            message="User not found"
-        )
-    except UserProfile.DoesNotExist:
-        return AuthResponse(
-            success=False,
-            message="User profile not found"
+            message=str(ve)
         )
     except Exception as e:
-        logger.error(f"Profile completion error: {e}")
+        # Catch-all for any unexpected errors
+        logger.error(f"Unexpected error in complete-profile for user {user_id if 'user_id' in locals() else 'N/A'}: {e}")
         return AuthResponse(
             success=False,
-            message="An error occurred while completing profile"
+            message="An unexpected error occurred while completing your profile. Please try again later."
         )
 
 
