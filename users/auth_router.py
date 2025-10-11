@@ -400,17 +400,32 @@ async def get_user_profile(token: str = Depends(security)):
         user_id = payload['user_id']
         
         # Get user and profile
-        user = User.objects.get(id=user_id)
-        profile = UserProfile.objects.get(user=user)
+        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        
+        # Fetch event interests
+        event_interests_qs = await sync_to_async(lambda: list(profile.event_interests.filter(is_active=True).order_by('name')))()
+        event_interests_data = [
+            EventInterestResponse(
+                id=interest.id,
+                name=interest.name,
+                description=interest.description,
+                is_active=interest.is_active,
+                created_at=interest.created_at.isoformat(),
+                updated_at=interest.updated_at.isoformat()
+            ) for interest in event_interests_qs
+        ]
         
         return UserProfileResponse(
             id=profile.id,
             name=profile.name,
             phone_number=profile.phone_number,
+            gender=profile.gender,
             bio=profile.bio,
             location=profile.location,
-            birth_date=profile.birth_date,
-            avatar=profile.avatar,
+            birth_date=profile.birth_date.isoformat() if profile.birth_date else None,
+            event_interests=event_interests_data,
+            profile_pictures=profile.profile_pictures,
             is_verified=profile.is_verified,
             is_active=profile.is_active,
             created_at=profile.created_at.isoformat(),
@@ -419,6 +434,8 @@ async def get_user_profile(token: str = Depends(security)):
         
     except User.DoesNotExist:
         raise HTTPException(status_code=404, detail="User not found")
+    except UserProfile.DoesNotExist:
+        raise HTTPException(status_code=404, detail="User profile not found")
     except Exception as e:
         logger.error(f"Profile retrieval error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving profile")
