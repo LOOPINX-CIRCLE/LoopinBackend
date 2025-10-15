@@ -18,6 +18,7 @@ class TwilioService:
         self.auth_token = os.getenv('TWILIO_AUTH_TOKEN')
         self.verify_sid = os.getenv('TWILIO_VERIFY_SID')
         self.verify_secret = os.getenv('TWILIO_VERIFY_SECRET')
+        self.messaging_service_sid = os.getenv('TWILIO_MESSAGING_SERVICE_SID')
         
         try:
             self.client = Client(self.account_sid, self.auth_token)
@@ -45,14 +46,22 @@ class TwilioService:
             
             # Use direct SMS method for better control over OTP codes
             try:
-                # For trial accounts, you can use verified numbers or the trial number
-                from_number = os.getenv('TWILIO_PHONE_NUMBER', '+15005550006')
-                
-                message = self.client.messages.create(
-                    body=f"Your Loopin verification code is: {otp_code}. This code expires in 10 minutes.",
-                    from_=from_number,
-                    to=phone_number
-                )
+                # Check if Messaging Service SID is available (recommended for production)
+                if self.messaging_service_sid:
+                    # Use Messaging Service (supports multiple sender numbers and better reliability)
+                    message = self.client.messages.create(
+                        body=f"Your Loopin verification code is: {otp_code}. This code expires in 10 minutes.",
+                        messaging_service_sid=self.messaging_service_sid,
+                        to=phone_number
+                    )
+                else:
+                    # Fallback to direct phone number
+                    from_number = os.getenv('TWILIO_PHONE_NUMBER', '+15005550006')
+                    message = self.client.messages.create(
+                        body=f"Your Loopin verification code is: {otp_code}. This code expires in 10 minutes.",
+                        from_=from_number,
+                        to=phone_number
+                    )
                 
                 logger.info(f"OTP sent successfully to {phone_number}. SID: {message.sid}")
                 return True, "OTP sent successfully"
