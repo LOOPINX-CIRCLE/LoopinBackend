@@ -5,262 +5,263 @@ This markdown file includes the **Mermaid ERD** of the event hosting backend wit
 ```mermaid
 erDiagram
     %% -------------------- USERS --------------------
-    AUTH_USER ||--|| USER_PROFILE : "has"
-    USER_PROFILE ||--o{ USER_PROFILE_EVENT_INTERESTS : "selects"
-    USER_PROFILE_EVENT_INTERESTS }o--|| EVENT_INTEREST : "categorizes"
-    USER_PHONE_OTP ||--o| AUTH_USER : "verifies"
+    AUTH_USER ||--|| USER_PROFILE : "1-to-1 has profile"
+    USER_PROFILE ||--o{ USER_PROFILE_EVENT_INTERESTS : "1-to-many user interests"
+    USER_PROFILE_EVENT_INTERESTS ||--|| EVENT_INTEREST : "many-to-many interest mapping"
+    USER_PHONE_OTP ||--|| AUTH_USER : "1-to-1 OTP verification"
 
     %% -------------------- EVENTS --------------------
-    AUTH_USER ||--o{ EVENT : "hosts"
-    EVENT ||--o{ EVENT_INTEREST_MAP : "categorized_by"
-    EVENT_INTEREST ||--o{ EVENT_INTEREST_MAP : "categorizes"
-    EVENT ||--o{ EVENT_REQUEST : "receives"
-    AUTH_USER ||--o{ EVENT_REQUEST : "sends"
-    EVENT ||--o{ EVENT_INVITE : "sends"
-    AUTH_USER ||--o{ EVENT_INVITE : "receives"
-    EVENT ||--o{ EVENT_ATTENDEE : "has"
-    EVENT_ATTENDEE ||--|| TICKET_SECRET : "has"
-    EVENT ||--o{ CAPACITY_RESERVATION : "reserves"
-    AUTH_USER ||--o{ CAPACITY_RESERVATION : "holds"
-    EVENT ||--o{ EVENT_IMAGE : "displays"
-    VENUE ||--o{ EVENT : "hosts"
+    AUTH_USER ||--o{ EVENT : "1 host can create many events"
+    EVENT ||--o{ EVENT_INTEREST_MAP : "event categorized by multiple interests"
+    EVENT_INTEREST ||--o{ EVENT_INTEREST_MAP : "many-to-many mapping"
+    EVENT ||--o{ EVENT_REQUEST : "users send requests to join event"
+    AUTH_USER ||--o{ EVENT_REQUEST : "1 user can request many events"
+    EVENT ||--o{ EVENT_INVITE : "host can invite multiple users"
+    AUTH_USER ||--o{ EVENT_INVITE : "users can receive many invites"
+    EVENT ||--o{ EVENT_ATTENDEE : "event has attendees after approval/payment"
+    EVENT_ATTENDEE ||--|| TICKET_SECRET : "each attendee has one secret ticket"
+    EVENT ||--o{ CAPACITY_RESERVATION : "temporary holds for paid/free events"
+    AUTH_USER ||--o{ CAPACITY_RESERVATION : "user can have multiple reservations"
+    EVENT ||--o{ EVENT_IMAGE : "event can have multiple images"
+    VENUE ||--o{ EVENT : "venue hosts multiple events"
 
     %% -------------------- PAYMENTS --------------------
-    AUTH_USER ||--o{ PAYMENT_ORDER : "places"
-    EVENT ||--o{ PAYMENT_ORDER : "generates"
+    AUTH_USER ||--o{ PAYMENT_ORDER : "user can have many orders"
+    EVENT ||--o{ PAYMENT_ORDER : "orders can be tied to events"
 
     %% -------------------- NOTIFICATIONS & AUDIT --------------------
-    AUTH_USER ||--o{ NOTIFICATION : "receives"
-    AUTH_USER ||--o{ AUDIT_LOG : "performs"
+    AUTH_USER ||--o{ NOTIFICATION : "user receives many notifications"
+    AUTH_USER ||--o{ AUDIT_LOG : "user can be actor of many logs"
 
     %% -------------------- TABLE DEFINITIONS --------------------
+    %% All tables include created_at and updated_at
 
     AUTH_USER {
-        bigint id PK
-        uuid uuid
-        string username
-        string password
-        boolean is_active
-        boolean is_staff
-        boolean is_superuser
-        datetime date_joined
-        datetime last_login
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK "Primary key"
+        UUID uuid "Public UUID"
+        STRING username "Phone number used for login"
+        STRING password "Hashed password"
+        BOOLEAN is_active
+        BOOLEAN is_staff
+        BOOLEAN is_superuser
+        DATETIME date_joined
+        DATETIME last_login
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     USER_PROFILE {
-        bigint id PK
-        bigint user_id FK
-        uuid uuid
-        string name
-        string phone_number
-        text bio
-        string location
-        date birth_date
-        string gender
-        jsonb profile_pictures
-        boolean is_verified
-        boolean is_active
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT user_id FK "FK to AUTH_USER.id"
+        UUID uuid "Public UUID"
+        STRING name "Full name"
+        STRING phone_number "Copy of auth_user.username"
+        TEXT bio "User biography"
+        STRING location "City/location"
+        DATE birth_date
+        STRING gender
+        JSONB profile_pictures "Array of 1-6 picture URLs"
+        BOOLEAN is_verified
+        BOOLEAN is_active
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     USER_PHONE_OTP {
-        bigint id PK
-        string phone_number
-        text otp_hash
-        text otp_salt
-        boolean is_verified
-        int attempts
-        datetime created_at
-        datetime updated_at
-        datetime expires_at
+        BIGINT id PK
+        STRING phone_number "Phone number for OTP"
+        TEXT otp_hash "Hashed OTP"
+        TEXT otp_salt "Salt for hashing"
+        BOOLEAN is_verified
+        INT attempts
+        DATETIME created_at
+        DATETIME updated_at
+        DATETIME expires_at
     }
 
     EVENT_INTEREST {
-        bigint id PK
-        string name
-        string slug
-        text description
-        boolean is_active
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        STRING name "Interest name (e.g., Music, Travel)"
+        STRING slug "URL-friendly slug"
+        TEXT description
+        BOOLEAN is_active
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     USER_PROFILE_EVENT_INTERESTS {
-        bigint id PK
-        bigint userprofile_id FK
-        bigint eventinterest_id FK
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT userprofile_id FK "FK to USER_PROFILE"
+        BIGINT eventinterest_id FK "FK to EVENT_INTEREST"
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     VENUE {
-        bigint id PK
-        uuid uuid
-        string name
-        text address
-        numeric latitude
-        numeric longitude
-        jsonb metadata
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        STRING name
+        TEXT address
+        NUMERIC latitude
+        NUMERIC longitude
+        JSONB metadata "Extra info, accessibility, capacity hints"
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT {
-        bigint id PK
-        uuid uuid
-        bigint host_user_id FK
-        string title
-        string slug
-        string mood
-        text description
-        bigint venue_id FK
-        string venue_text
-        date event_date
-        time start_time
-        string duration
-        int capacity
-        boolean is_paid
-        numeric ticket_price
-        string gst_number
-        numeric gst_percent
-        boolean allow_plus_one
-        string allowed_genders
-        jsonb cover_images
-        boolean is_published
-        boolean is_active
-        int going_count
-        int requests_count
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        BIGINT host_user_id FK
+        STRING title
+        STRING slug
+        STRING mood "Party, Picnic, Travel etc."
+        TEXT description
+        BIGINT venue_id FK
+        STRING venue_text "Custom venue if not in VENUE table"
+        DATE event_date
+        TIME start_time
+        STRING duration
+        INT capacity
+        BOOLEAN is_paid
+        NUMERIC ticket_price
+        STRING gst_number
+        NUMERIC gst_percent
+        BOOLEAN allow_plus_one
+        STRING allowed_genders "all, male, female, non-binary"
+        JSONB cover_images "Array of 1-3 URLs"
+        BOOLEAN is_published
+        BOOLEAN is_active
+        INT going_count
+        INT requests_count
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT_INTEREST_MAP {
-        bigint id PK
-        bigint event_id FK
-        bigint eventinterest_id FK
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT event_id FK
+        BIGINT eventinterest_id FK
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT_REQUEST {
-        bigint id PK
-        uuid uuid
-        bigint event_id FK
-        bigint requester_user_id FK
-        text message
-        string status
-        text host_message
-        int seats_requested
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        BIGINT event_id FK
+        BIGINT requester_user_id FK
+        TEXT message
+        STRING status "pending, accepted, declined, cancelled"
+        TEXT host_message
+        INT seats_requested
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT_INVITE {
-        bigint id PK
-        uuid uuid
-        bigint event_id FK
-        bigint host_user_id FK
-        bigint invited_user_id FK
-        string status
-        text message
-        string invite_type
-        datetime expires_at
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        BIGINT event_id FK
+        BIGINT host_user_id FK
+        BIGINT invited_user_id FK
+        STRING status "pending, accepted, declined"
+        TEXT message
+        STRING invite_type "direct, share_link"
+        DATETIME expires_at
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     CAPACITY_RESERVATION {
-        bigint id PK
-        uuid reservation_key
-        bigint event_id FK
-        bigint user_id FK
-        int seats_reserved
-        boolean consumed
-        datetime expires_at
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID reservation_key
+        BIGINT event_id FK
+        BIGINT user_id FK
+        INT seats_reserved
+        BOOLEAN consumed
+        DATETIME expires_at
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT_ATTENDEE {
-        bigint id PK
-        uuid uuid
-        bigint event_id FK
-        bigint user_id FK
-        bigint request_id FK
-        string ticket_type
-        int seats
-        boolean is_paid
-        numeric price_paid
-        numeric platform_fee
-        string status
-        datetime checked_in_at
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        BIGINT event_id FK
+        BIGINT user_id FK
+        BIGINT request_id FK
+        STRING ticket_type "standard, VIP etc."
+        INT seats
+        BOOLEAN is_paid
+        NUMERIC price_paid
+        NUMERIC platform_fee
+        STRING status "going, not_going, checked_in, cancelled"
+        DATETIME checked_in_at
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     TICKET_SECRET {
-        bigint id PK
-        bigint ticket_id FK
-        text secret_hash
-        text secret_salt
-        boolean is_redeemed
-        datetime redeemed_at
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT ticket_id FK
+        TEXT secret_hash
+        TEXT secret_salt
+        BOOLEAN is_redeemed
+        DATETIME redeemed_at
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     PAYMENT_ORDER {
-        bigint id PK
-        uuid uuid
-        string order_reference
-        bigint user_id FK
-        bigint event_id FK
-        numeric amount
-        string currency
-        string payment_provider
-        string provider_payment_id
-        jsonb provider_response
-        string status
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        STRING order_reference
+        BIGINT user_id FK
+        BIGINT event_id FK
+        NUMERIC amount
+        STRING currency
+        STRING payment_provider
+        STRING provider_payment_id
+        JSONB provider_response
+        STRING status "created, paid, failed, refunded"
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     NOTIFICATION {
-        bigint id PK
-        uuid uuid
-        bigint recipient_user_id FK
-        bigint sender_user_id FK
-        string type
-        string title
-        text message
-        string reference_type
-        bigint reference_id
-        boolean is_read
-        jsonb metadata
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        UUID uuid
+        BIGINT recipient_user_id FK
+        BIGINT sender_user_id FK
+        STRING type "event_request, event_invite, system"
+        STRING title
+        TEXT message
+        STRING reference_type
+        BIGINT reference_id
+        BOOLEAN is_read
+        JSONB metadata
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     AUDIT_LOG {
-        bigint id PK
-        bigint actor_user_id FK
-        string object_type
-        bigint object_id
-        string action
-        jsonb payload
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT actor_user_id FK
+        STRING object_type
+        BIGINT object_id
+        STRING action "create, update, delete"
+        JSONB payload "Snapshot of data changed"
+        DATETIME created_at
+        DATETIME updated_at
     }
 
     EVENT_IMAGE {
-        bigint id PK
-        bigint event_id FK
-        text image_url
-        int position
-        datetime created_at
-        datetime updated_at
+        BIGINT id PK
+        BIGINT event_id FK
+        TEXT image_url
+        INT position
+        DATETIME created_at
+        DATETIME updated_at
     }
 ```
