@@ -3,14 +3,15 @@
 This markdown file includes the **Mermaid ERD** of the event hosting backend with all tables, fields, relationships, and descriptions. It can be rendered directly on GitHub or any markdown viewer that supports Mermaid.
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd','primaryTextColor':'#1565c0','primaryBorderColor':'#1976d2','lineColor':'#42a5f5','secondaryColor':'#f3e5f5','tertiaryColor':'#e8f5e9','background':'#ffffff','mainBkg':'#ffffff','secondBkg':'#f5f5f5','tertiaryBkg':'#ffffff'}}}%%
 erDiagram
-    %% -------------------- USERS --------------------
+    %% -------------------- USERS (Blue Theme) --------------------
     AUTH_USER ||--|| USER_PROFILE : "1-to-1 has profile"
     USER_PROFILE ||--o{ USER_PROFILE_EVENT_INTERESTS : "1-to-many user interests"
     USER_PROFILE_EVENT_INTERESTS ||--|| EVENT_INTEREST : "many-to-many interest mapping"
     USER_PHONE_OTP ||--|| AUTH_USER : "1-to-1 OTP verification"
 
-    %% -------------------- EVENTS --------------------
+    %% -------------------- EVENTS (Green Theme) --------------------
     AUTH_USER ||--o{ EVENT : "1 host can create many events"
     EVENT ||--o{ EVENT_INTEREST_MAP : "event categorized by multiple interests"
     EVENT_INTEREST ||--o{ EVENT_INTEREST_MAP : "many-to-many mapping"
@@ -25,16 +26,23 @@ erDiagram
     EVENT ||--o{ EVENT_IMAGE : "event can have multiple images"
     VENUE ||--o{ EVENT : "venue hosts multiple events"
 
-    %% -------------------- PAYMENTS --------------------
+    %% -------------------- PAYMENTS (Orange Theme) --------------------
     AUTH_USER ||--o{ PAYMENT_ORDER : "user can have many orders"
     EVENT ||--o{ PAYMENT_ORDER : "orders can be tied to events"
 
-    %% -------------------- NOTIFICATIONS & AUDIT --------------------
+    %% -------------------- NOTIFICATIONS & AUDIT (Purple Theme) --------------------
     AUTH_USER ||--o{ NOTIFICATION : "user receives many notifications"
     AUTH_USER ||--o{ AUDIT_LOG : "user can be actor of many logs"
 
     %% -------------------- TABLE DEFINITIONS --------------------
     %% All tables include created_at and updated_at
+
+    %% Color Definitions for Table Categories
+    classDef userTables fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#1565c0
+    classDef eventTables fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#2e7d32
+    classDef paymentTables fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
+    classDef systemTables fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#6a1b9a
+    classDef junctionTables fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#424242
 
     AUTH_USER {
         BIGINT id PK "Primary key"
@@ -264,6 +272,13 @@ erDiagram
         DATETIME created_at
         DATETIME updated_at
     }
+
+    %% Apply Color Classes to Tables
+    class AUTH_USER,USER_PROFILE,USER_PHONE_OTP userTables
+    class EVENT,EVENT_INTEREST,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,EVENT_IMAGE,VENUE eventTables
+    class PAYMENT_ORDER,TICKET_SECRET,CAPACITY_RESERVATION paymentTables
+    class NOTIFICATION,AUDIT_LOG systemTables
+    class USER_PROFILE_EVENT_INTERESTS,EVENT_INTEREST_MAP junctionTables
 ```
 
 ---
