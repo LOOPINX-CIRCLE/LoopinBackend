@@ -11,6 +11,8 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('analytics/', include('analytics.urls')),
+    path('api/analytics/', include('analytics.api')),  # FastAPI analytics endpoints
     # FastAPI handles all API endpoints at /api/ 
     # Django REST Framework endpoints removed for clean separation
 ]

@@ -31,6 +31,12 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     'users',
+    'events',
+    'attendances',
+    'payments',
+    'notifications',
+    'audit',
+    'analytics',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -44,6 +50,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'posthog.integrations.django.PosthogContextMiddleware',
+    'analytics.middleware.AnalyticsMiddleware',  # Custom analytics middleware
 ]
 
 ROOT_URLCONF = 'loopin_backend.urls'
@@ -143,3 +151,84 @@ CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# PostHog Analytics Configuration
+POSTHOG_API_KEY = config('POSTHOG_API_KEY', default='')
+POSTHOG_HOST = config('POSTHOG_HOST', default='https://us.i.posthog.com')
+
+# PostHog Middleware Configuration
+POSTHOG_MW_CAPTURE_EXCEPTIONS = True
+
+def add_user_tags(request):
+    """Add user tags to PostHog events"""
+    tags = {}
+    if hasattr(request, 'user') and request.user.is_authenticated:
+        tags['user_id'] = request.user.id
+        tags['username'] = request.user.username
+        if hasattr(request.user, 'profile'):
+            profile = request.user.profile
+            tags['is_verified'] = profile.is_verified
+            tags['gender'] = profile.gender
+            tags['location'] = profile.location
+    return tags
+
+POSTHOG_MW_EXTRA_TAGS = add_user_tags
+
+def should_track_request(request):
+    """Filter requests to track"""
+    # Don't track health checks, admin, or static files
+    if request.path.startswith(('/health', '/admin', '/static', '/media')):
+        return False
+    return True
+
+POSTHOG_MW_REQUEST_FILTER = should_track_request
+
+def clean_tags(tags):
+    """Clean and modify default tags"""
+    # Remove sensitive data
+    tags.pop('user_agent', None)
+    return tags
+
+POSTHOG_MW_TAG_MAP = clean_tags
+
+# Analytics Configuration
+ANALYTICS_ENABLED = config('ANALYTICS_ENABLED', default=True, cast=bool)
+ANALYTICS_RETENTION_DAYS = config('ANALYTICS_RETENTION_DAYS', default=365, cast=int)
+ANALYTICS_BATCH_SIZE = config('ANALYTICS_BATCH_SIZE', default=1000, cast=int)
+
+# AI Services Configuration
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+AI_SERVICES_ENABLED = config('AI_SERVICES_ENABLED', default=True, cast=bool)
+
+# Celery Configuration for Analytics
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+# Analytics Task Configuration
+CELERY_BEAT_SCHEDULE = {
+    'process-daily-metrics': {
+        'task': 'analytics.tasks.process_daily_metrics_calculation',
+        'schedule': 60.0 * 60.0,  # Every hour
+    },
+    'generate-user-insights': {
+        'task': 'analytics.tasks.generate_predictive_insights',
+        'schedule': 60.0 * 60.0 * 6,  # Every 6 hours
+    },
+    'detect-anomalies': {
+        'task': 'analytics.tasks.detect_anomalies_batch',
+        'schedule': 60.0 * 30,  # Every 30 minutes
+    },
+    'cleanup-analytics-data': {
+        'task': 'analytics.tasks.cleanup_old_analytics_data',
+        'schedule': 60.0 * 60.0 * 24,  # Daily
+    },
+    'generate-daily-summary': {
+        'task': 'analytics.tasks.generate_daily_insights_summary',
+        'schedule': 60.0 * 60.0 * 24,  # Daily
+    },
+}
