@@ -13,26 +13,27 @@ erDiagram
 
     %% -------------------- EVENTS (Green Theme) --------------------
     AUTH_USER ||--o{ EVENT : "1 host can create many events"
-    EVENT ||--o{ EVENT_INTEREST_MAP : "event categorized by multiple interests"
-    EVENT_INTEREST ||--o{ EVENT_INTEREST_MAP : "many-to-many mapping"
     EVENT ||--o{ EVENT_REQUEST : "users send requests to join event"
     AUTH_USER ||--o{ EVENT_REQUEST : "1 user can request many events"
     EVENT ||--o{ EVENT_INVITE : "host can invite multiple users"
     AUTH_USER ||--o{ EVENT_INVITE : "users can receive many invites"
     EVENT ||--o{ EVENT_ATTENDEE : "event has attendees after approval/payment"
-    EVENT_ATTENDEE ||--|| TICKET_SECRET : "each attendee has one secret ticket"
-    EVENT ||--o{ CAPACITY_RESERVATION : "temporary holds for paid/free events"
-    AUTH_USER ||--o{ CAPACITY_RESERVATION : "user can have multiple reservations"
-    EVENT ||--o{ EVENT_IMAGE : "event can have multiple images"
     VENUE ||--o{ EVENT : "venue hosts multiple events"
+
+    %% -------------------- ATTENDANCE (Yellow Theme) --------------------
+    EVENT ||--o{ ATTENDANCE_RECORD : "event has attendance records"
+    AUTH_USER ||--o{ ATTENDANCE_RECORD : "user has attendance records"
+    ATTENDANCE_RECORD ||--o{ ATTENDANCE_OTP : "attendance record has check-in OTPs"
 
     %% -------------------- PAYMENTS (Orange Theme) --------------------
     AUTH_USER ||--o{ PAYMENT_ORDER : "user can have many orders"
     EVENT ||--o{ PAYMENT_ORDER : "orders can be tied to events"
+    PAYMENT_ORDER ||--o{ PAYMENT_TRANSACTION : "order has multiple transactions"
+    PAYMENT_ORDER ||--o{ PAYMENT_WEBHOOK : "order has webhook logs"
 
-    %% -------------------- NOTIFICATIONS & AUDIT (Purple Theme) --------------------
-    AUTH_USER ||--o{ NOTIFICATION : "user receives many notifications"
+    %% -------------------- AUDIT (Purple Theme) --------------------
     AUTH_USER ||--o{ AUDIT_LOG : "user can be actor of many logs"
+    AUTH_USER ||--o{ AUDIT_LOG_SUMMARY : "user has audit summaries"
 
     %% -------------------- TABLE DEFINITIONS --------------------
     %% All tables include created_at and updated_at
@@ -40,8 +41,9 @@ erDiagram
     %% Color Definitions for Table Categories
     classDef userTables fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#1565c0
     classDef eventTables fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#2e7d32
+    classDef attendanceTables fill:#fffde7,stroke:#f9a825,stroke-width:2px,color:#e65100
     classDef paymentTables fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
-    classDef systemTables fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#6a1b9a
+    classDef auditTables fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#6a1b9a
     classDef junctionTables fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#424242
 
     AUTH_USER {
@@ -78,8 +80,9 @@ erDiagram
     USER_PHONE_OTP {
         BIGINT id PK
         STRING phone_number "Phone number for OTP"
-        TEXT otp_hash "Hashed OTP"
-        TEXT otp_salt "Salt for hashing"
+        STRING otp_code "OTP code"
+        STRING otp_type "Type of OTP (signup, login, etc.)"
+        STRING status "OTP verification status"
         BOOLEAN is_verified
         INT attempts
         DATETIME created_at
@@ -107,61 +110,42 @@ erDiagram
 
     VENUE {
         BIGINT id PK
-        UUID uuid
         STRING name
-        TEXT address
-        NUMERIC latitude
-        NUMERIC longitude
-        JSONB metadata "Extra info, accessibility, capacity hints"
+        STRING address
+        STRING city
+        STRING venue_type "Indoor, outdoor, virtual, hybrid"
+        INT capacity
+        FLOAT latitude
+        FLOAT longitude
+        BOOLEAN is_active
         DATETIME created_at
         DATETIME updated_at
     }
 
     EVENT {
         BIGINT id PK
-        UUID uuid
-        BIGINT host_user_id FK
+        BIGINT host_id FK "FK to AUTH_USER"
         STRING title
-        STRING slug
-        STRING mood "Party, Picnic, Travel etc."
         TEXT description
-        BIGINT venue_id FK
-        STRING venue_text "Custom venue if not in VENUE table"
-        DATE event_date
-        TIME start_time
-        STRING duration
-        INT capacity
-        BOOLEAN is_paid
-        NUMERIC ticket_price
-        STRING gst_number
-        NUMERIC gst_percent
-        BOOLEAN allow_plus_one
-        STRING allowed_genders "all, male, female, non-binary"
-        JSONB cover_images "Array of 1-3 URLs"
-        BOOLEAN is_published
-        BOOLEAN is_active
+        DATETIME start_time
+        DATETIME end_time
+        BIGINT venue_id FK "FK to VENUE"
+        STRING status "draft, published, cancelled, completed, postponed"
+        BOOLEAN is_public
+        INT max_capacity
         INT going_count
-        INT requests_count
-        DATETIME created_at
-        DATETIME updated_at
-    }
-
-    EVENT_INTEREST_MAP {
-        BIGINT id PK
-        BIGINT event_id FK
-        BIGINT eventinterest_id FK
+        JSONB cover_images "Array of cover image URLs"
+        BOOLEAN is_active
         DATETIME created_at
         DATETIME updated_at
     }
 
     EVENT_REQUEST {
         BIGINT id PK
-        UUID uuid
-        BIGINT event_id FK
-        BIGINT requester_user_id FK
-        TEXT message
+        BIGINT event_id FK "FK to EVENT"
+        BIGINT requester_id FK "FK to AUTH_USER"
         STRING status "pending, accepted, declined, cancelled"
-        TEXT host_message
+        TEXT message
         INT seats_requested
         DATETIME created_at
         DATETIME updated_at
@@ -169,25 +153,10 @@ erDiagram
 
     EVENT_INVITE {
         BIGINT id PK
-        UUID uuid
-        BIGINT event_id FK
-        BIGINT host_user_id FK
-        BIGINT invited_user_id FK
+        BIGINT event_id FK "FK to EVENT"
+        BIGINT invited_user_id FK "FK to AUTH_USER"
         STRING status "pending, accepted, declined"
         TEXT message
-        STRING invite_type "direct, share_link"
-        DATETIME expires_at
-        DATETIME created_at
-        DATETIME updated_at
-    }
-
-    CAPACITY_RESERVATION {
-        BIGINT id PK
-        UUID reservation_key
-        BIGINT event_id FK
-        BIGINT user_id FK
-        INT seats_reserved
-        BOOLEAN consumed
         DATETIME expires_at
         DATETIME created_at
         DATETIME updated_at
@@ -195,28 +164,36 @@ erDiagram
 
     EVENT_ATTENDEE {
         BIGINT id PK
-        UUID uuid
-        BIGINT event_id FK
-        BIGINT user_id FK
-        BIGINT request_id FK
-        STRING ticket_type "standard, VIP etc."
-        INT seats
-        BOOLEAN is_paid
-        NUMERIC price_paid
-        NUMERIC platform_fee
+        BIGINT event_id FK "FK to EVENT"
+        BIGINT user_id FK "FK to AUTH_USER"
         STRING status "going, not_going, checked_in, cancelled"
         DATETIME checked_in_at
+        INT seats
         DATETIME created_at
         DATETIME updated_at
     }
 
-    TICKET_SECRET {
+    ATTENDANCE_RECORD {
         BIGINT id PK
-        BIGINT ticket_id FK
-        TEXT secret_hash
-        TEXT secret_salt
-        BOOLEAN is_redeemed
-        DATETIME redeemed_at
+        BIGINT event_id FK "FK to EVENT"
+        BIGINT user_id FK "FK to AUTH_USER"
+        STRING status "going, not_going, checked_in, cancelled"
+        STRING payment_status "unpaid, paid, refunded"
+        STRING ticket_secret "Unique ticket secret"
+        INT seats
+        DATETIME checked_in_at
+        DATETIME checked_out_at
+        TEXT notes
+        DATETIME created_at
+        DATETIME updated_at
+    }
+
+    ATTENDANCE_OTP {
+        BIGINT id PK
+        BIGINT attendance_record_id FK "FK to ATTENDANCE_RECORD"
+        STRING otp_code "Check-in OTP code"
+        BOOLEAN is_used
+        DATETIME expires_at
         DATETIME created_at
         DATETIME updated_at
     }
@@ -224,15 +201,47 @@ erDiagram
     PAYMENT_ORDER {
         BIGINT id PK
         UUID uuid
-        STRING order_reference
-        BIGINT user_id FK
-        BIGINT event_id FK
-        NUMERIC amount
-        STRING currency
-        STRING payment_provider
+        BIGINT event_id FK "FK to EVENT"
+        BIGINT user_id FK "FK to AUTH_USER"
+        STRING order_id "Unique order identifier"
+        DECIMAL amount
+        STRING currency "INR, USD, EUR, GBP"
+        STRING status "pending, completed, failed, refunded"
+        STRING provider "razorpay, stripe, paypal"
         STRING provider_payment_id
         JSONB provider_response
-        STRING status "created, paid, failed, refunded"
+        STRING payment_method
+        STRING transaction_id
+        TEXT failure_reason
+        DECIMAL refund_amount
+        TEXT refund_reason
+        DATETIME refunded_at
+        DATETIME expires_at
+        DATETIME created_at
+        DATETIME updated_at
+    }
+
+    PAYMENT_TRANSACTION {
+        BIGINT id PK
+        BIGINT payment_order_id FK "FK to PAYMENT_ORDER"
+        STRING transaction_type "payment, refund, chargeback"
+        DECIMAL amount
+        STRING provider_transaction_id
+        STRING status "pending, completed, failed"
+        JSONB provider_response
+        TEXT failure_reason
+        DATETIME created_at
+        DATETIME updated_at
+    }
+
+    PAYMENT_WEBHOOK {
+        BIGINT id PK
+        BIGINT payment_order_id FK "FK to PAYMENT_ORDER"
+        STRING webhook_type
+        JSONB payload
+        STRING signature
+        BOOLEAN processed
+        TEXT processing_error
         DATETIME created_at
         DATETIME updated_at
     }
@@ -255,30 +264,43 @@ erDiagram
 
     AUDIT_LOG {
         BIGINT id PK
-        BIGINT actor_user_id FK
+        BIGINT user_id FK "FK to AUTH_USER"
+        STRING action "login, logout, create, update, delete, profile_update, password_change"
         STRING object_type
-        BIGINT object_id
-        STRING action "create, update, delete"
-        JSONB payload "Snapshot of data changed"
+        STRING object_id
+        STRING object_uuid
+        STRING ip_address
+        TEXT user_agent
+        STRING session_key
+        JSONB metadata
+        JSONB old_values
+        JSONB new_values
+        STRING severity "low, medium, high, critical"
+        BOOLEAN is_successful
+        TEXT error_message
         DATETIME created_at
         DATETIME updated_at
     }
 
-    EVENT_IMAGE {
+    AUDIT_LOG_SUMMARY {
         BIGINT id PK
-        BIGINT event_id FK
-        TEXT image_url
-        INT position
+        DATE date
+        BIGINT user_id FK "FK to AUTH_USER"
+        STRING action
+        INT count
+        INT successful_count
+        INT failed_count
         DATETIME created_at
         DATETIME updated_at
     }
 
     %% Apply Color Classes to Tables
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP userTables
-    class EVENT,EVENT_INTEREST,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,EVENT_IMAGE,VENUE eventTables
-    class PAYMENT_ORDER,TICKET_SECRET,CAPACITY_RESERVATION paymentTables
-    class NOTIFICATION,AUDIT_LOG systemTables
-    class USER_PROFILE_EVENT_INTERESTS,EVENT_INTEREST_MAP junctionTables
+    class EVENT,EVENT_INTEREST,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE eventTables
+    class ATTENDANCE_RECORD,ATTENDANCE_OTP attendanceTables
+    class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
+    class AUDIT_LOG,AUDIT_LOG_SUMMARY auditTables
+    class USER_PROFILE_EVENT_INTERESTS junctionTables
 ```
 
 ---
@@ -291,9 +313,11 @@ This database is designed to power a phone application for hosting and attending
 
 - **User registration and verification** via phone/OTP
 - **Detailed user profiles** with interests and preferences
-- **Event hosting** with rich information (mood, type, location, capacity, paid/free, etc.)
-- **Event attendance workflow**: requests, invites, approvals, reservations, payments, ticketing
-- **Notifications and audit tracking**
+- **Event hosting** with rich information (title, description, venue, capacity, etc.)
+- **Event attendance workflow**: requests, invites, approvals, attendance tracking, payments
+- **Comprehensive payment system** with multiple providers and transaction tracking
+- **Advanced attendance management** with check-in/check-out and OTP verification
+- **Complete audit logging** for security and compliance
 - **Scalable, secure, maintainable, normalized schema** with extendability for future features
 
 The database is implemented in **PostgreSQL** and designed to work seamlessly with **Django ORM** for model management and **FastAPI** for REST API endpoints.
@@ -466,12 +490,56 @@ The database is implemented in **PostgreSQL** and designed to work seamlessly wi
 - **Relationships:**
   - Many-to-one: `EVENT`
 
-#### **2.14 Audit Log**
-**Table:** `AUDIT_LOG`
-- **Purpose:** Immutable log of all changes for security, troubleshooting, and compliance
-- **Fields:** `actor_user_id`, `object_type`, `object_id`, `action`, `payload`, `created_at`, `updated_at`
-- **Logic:** Captures who did what, when, and what data changed
-- **Relationships:** Actor links to `AUTH_USER`
+#### **2.14 Attendance Management**
+**Tables:** `ATTENDANCE_RECORD`, `ATTENDANCE_OTP`
+
+##### **2.14.1 ATTENDANCE_RECORD**
+- **Purpose:** Comprehensive attendance tracking with payment and check-in management
+- **Fields:** `event_id`, `user_id`, `status`, `payment_status`, `ticket_secret`, `seats`, `checked_in_at`, `checked_out_at`, `notes`
+- **Logic:** Tracks user attendance with payment status and check-in/check-out timestamps
+- **Relationships:** Many-to-one with `EVENT` and `AUTH_USER`
+
+##### **2.14.2 ATTENDANCE_OTP**
+- **Purpose:** OTP-based check-in system for event attendance
+- **Fields:** `attendance_record_id`, `otp_code`, `is_used`, `expires_at`
+- **Logic:** Generates time-limited OTPs for secure check-in verification
+- **Relationships:** Many-to-one with `ATTENDANCE_RECORD`
+
+#### **2.15 Payment System**
+**Tables:** `PAYMENT_ORDER`, `PAYMENT_TRANSACTION`, `PAYMENT_WEBHOOK`
+
+##### **2.15.1 PAYMENT_ORDER**
+- **Purpose:** Central payment order management with comprehensive tracking
+- **Fields:** `event_id`, `user_id`, `order_id`, `amount`, `currency`, `status`, `provider`, `provider_payment_id`, `refund_amount`, `refund_reason`, `expires_at`
+- **Logic:** Tracks payment orders with provider integration and refund management
+- **Relationships:** Many-to-one with `EVENT` and `AUTH_USER`
+
+##### **2.15.2 PAYMENT_TRANSACTION**
+- **Purpose:** Individual transaction tracking within payment orders
+- **Fields:** `payment_order_id`, `transaction_type`, `amount`, `provider_transaction_id`, `status`, `provider_response`
+- **Logic:** Records individual payment, refund, and chargeback transactions
+- **Relationships:** Many-to-one with `PAYMENT_ORDER`
+
+##### **2.15.3 PAYMENT_WEBHOOK**
+- **Purpose:** Webhook tracking for payment provider notifications
+- **Fields:** `payment_order_id`, `webhook_type`, `payload`, `signature`, `processed`, `processing_error`
+- **Logic:** Captures and processes webhook notifications from payment providers
+- **Relationships:** Many-to-one with `PAYMENT_ORDER`
+
+#### **2.16 Audit System**
+**Tables:** `AUDIT_LOG`, `AUDIT_LOG_SUMMARY`
+
+##### **2.16.1 AUDIT_LOG**
+- **Purpose:** Comprehensive audit logging for security and compliance
+- **Fields:** `user_id`, `action`, `object_type`, `object_id`, `object_uuid`, `ip_address`, `user_agent`, `severity`, `is_successful`, `old_values`, `new_values`
+- **Logic:** Captures all system actions with detailed context and change tracking
+- **Relationships:** Many-to-one with `AUTH_USER`
+
+##### **2.16.2 AUDIT_LOG_SUMMARY**
+- **Purpose:** Daily audit log statistics and reporting
+- **Fields:** `date`, `user_id`, `action`, `count`, `successful_count`, `failed_count`
+- **Logic:** Provides aggregated audit statistics for reporting and analysis
+- **Relationships:** Many-to-one with `AUTH_USER`
 
 ---
 
@@ -509,10 +577,14 @@ Host creates event → users request/are invited → host approves → capacity 
 | **1-to-many** | `EVENT` → `EVENT_REQUEST` | Event receives multiple join requests |
 | **1-to-many** | `EVENT` → `EVENT_INVITE` | Host can invite multiple users |
 | **1-to-many** | `EVENT` → `EVENT_ATTENDEE` | Tracks confirmed participants |
-| **1-to-many** | `EVENT` → `CAPACITY_RESERVATION` | Temporary holds for seat reservation |
+| **1-to-many** | `EVENT` → `ATTENDANCE_RECORD` | Event has attendance records |
+| **1-to-many** | `EVENT` → `PAYMENT_ORDER` | Event can have multiple payment orders |
+| **1-to-many** | `PAYMENT_ORDER` → `PAYMENT_TRANSACTION` | Order can have multiple transactions |
+| **1-to-many** | `PAYMENT_ORDER` → `PAYMENT_WEBHOOK` | Order can have multiple webhooks |
+| **1-to-many** | `ATTENDANCE_RECORD` → `ATTENDANCE_OTP` | Attendance record can have multiple OTPs |
 | **M-to-M** | `USER_PROFILE` ↔ `EVENT_INTEREST` | Users have multiple interests |
-| **M-to-M** | `EVENT` ↔ `EVENT_INTEREST` | Events can belong to multiple categories |
-| **1-to-1** | `EVENT_ATTENDEE` → `TICKET_SECRET` | Each ticket has a unique secret |
+| **1-to-many** | `AUTH_USER` → `AUDIT_LOG` | User can have multiple audit logs |
+| **1-to-many** | `AUTH_USER` → `AUDIT_LOG_SUMMARY` | User can have multiple audit summaries |
 
 ---
 
