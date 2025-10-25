@@ -1,40 +1,28 @@
 # Loopin Backend
 
-A modern mobile backend built with Django + FastAPI, featuring phone authentication, PostgreSQL database, and Docker containerization.
+A comprehensive mobile backend built with Django + FastAPI, featuring **phone number-based authentication with OTP verification**, PostgreSQL database, and Docker containerization. This project combines the power of Django's ORM and admin interface with FastAPI's high-performance API endpoints in a clean, modular architecture.
 
-## 📋 Table of Contents
+## 🚀 Features
 
-### 🏗️ System Architecture
-- [Architecture Overview](#-architecture-overview)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Database Schema](#-database-schema)
-- [Detailed Architecture](#-detailed-architecture)
+- **Django 5.2** for ORM, migrations, and admin interface
+- **FastAPI** for high-performance API endpoints
+- **📱 Phone Authentication** with 4-digit SMS OTP verification via Twilio
+- **JWT Authentication** with secure token-based auth
+- **PostgreSQL** database with persistent storage (Supabase cloud)
+- **Docker & Docker Compose** for containerization
+- **Swagger UI** for API documentation
+- **CORS** support for mobile clients
+- **Async/Await** support with proper Django ORM integration
+- **Modular Architecture** with clean separation of concerns
+- **🎯 Lead Tracking** for unverified users
+- **👤 Profile Management** with comprehensive validation
+- **🎪 Event Interests** with dynamic data management
+- **📸 Profile Pictures** with URL validation
+- **🌏 India Timezone** support (Asia/Kolkata)
 
-### 🐳 Infrastructure & DevOps
-- [Docker Configuration](#-docker-configuration)
-- [Development Environment](#-development-environment)
-- [Production Deployment](#-production-deployment)
-- [Monitoring & Logging](#-monitoring--logging)
+## 🏗️ Architecture
 
-### 📚 Documentation & APIs
-- [Module Documentation](#-module-documentation)
-- [API Reference](#-api-reference)
-- [Development Guides](#-development-guides)
-
-### 🚀 Getting Started
-- [Project Setup Guide](#-project-setup-guide)
-- [First Steps](#-first-steps)
-
-### 🎯 Development Workflow
-- [Code Organization](#-code-organization)
-- [Testing Strategy](#-testing-strategy)
-- [Deployment Process](#-deployment-process)
-- [Contributing Guidelines](#-contributing-guidelines)
-
-## 🏗️ Architecture Overview
-
-### System Architecture
+### System Overview
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Mobile Apps   │────│   FastAPI API    │────│   Supabase      │
@@ -42,8 +30,8 @@ A modern mobile backend built with Django + FastAPI, featuring phone authenticat
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                               │
                        ┌──────────────────┐
-                       │   Django Admin    │
-                       │   (/admin/*)     │
+                       │   Django Admin   │
+                       │   (/django/*)    │
                        └──────────────────┘
                               │
                        ┌──────────────────┐
@@ -52,477 +40,654 @@ A modern mobile backend built with Django + FastAPI, featuring phone authenticat
                        └──────────────────┘
 ```
 
-### Request Flow
-1. **Mobile App** → **FastAPI** → **Authentication** → **Business Logic**
-2. **Admin Panel** → **Django Admin** → **Database Management**
-3. **Background Tasks** → **Celery** → **Redis** → **External Services**
+### 📱 Phone Authentication System
 
-### Data Flow
-1. **User Registration** → **Phone OTP** → **Profile Creation** → **Database**
-2. **Event Management** → **Payment Processing** → **Attendance Tracking**
-3. **Analytics** → **Audit Logging** → **Notifications** → **User Engagement**
+The system implements a comprehensive phone number-based authentication flow with OTP verification, lead tracking, and profile management.
 
-## 🔧 Tech Stack
+**📋 For detailed documentation, flowcharts, and API examples, see:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
 
-### Core Backend Technologies
-| Component | Technology | Purpose | Version |
-|-----------|------------|---------|---------|
-| **Web Framework** | Django | ORM, migrations, admin interface | 5.2 |
-| **API Framework** | FastAPI | High-performance API endpoints | Latest |
-| **Database** | PostgreSQL | Primary data storage | 15+ |
-| **Cache** | Redis | Session storage, caching | 7+ |
-| **Message Broker** | Redis | Celery task queue | 7+ |
+#### Key Components:
+- **🔐 OTP Verification**: 4-digit SMS OTP via Twilio
+- **🎯 Lead Tracking**: Unverified users stored as leads for business analytics
+- **👤 Profile Management**: Comprehensive user profile with validation
+- **🎪 Event Interests**: Dynamic interest management system
+- **📸 Profile Pictures**: URL-based image validation (1-6 images)
+- **🛡️ Security**: JWT tokens, input validation, age verification (18+)
 
-### Authentication & Security
-| Component | Technology | Purpose | Integration |
-|-----------|------------|---------|-------------|
-| **Phone Auth** | Twilio SMS | OTP delivery service | REST API |
-| **JWT Tokens** | PyJWT | Secure authentication | Custom implementation |
-| **CORS** | FastAPI CORS | Cross-origin requests | Middleware |
-| **Password Hashing** | Django | Secure password storage | Built-in |
+## 🛠️ Development Setup
 
-### Infrastructure & DevOps
-| Component | Technology | Purpose | Configuration |
-|-----------|------------|---------|---------------|
-| **Containerization** | Docker | Application packaging | Multi-stage builds |
-| **Orchestration** | Docker Compose | Service management | Development/Production |
-| **Reverse Proxy** | Nginx | Static files, load balancing | Production only |
-| **WSGI Server** | Gunicorn | Production web server | Multi-worker |
-| **Task Queue** | Celery | Background processing | Redis broker |
-| **Monitoring** | Flower | Celery monitoring | Web interface |
+### Prerequisites
 
-### External Services
-| Service | Provider | Purpose | Configuration |
-|---------|----------|---------|---------------|
-| **Database Hosting** | Supabase | Cloud PostgreSQL | Transaction pooler |
-| **SMS Service** | Twilio | OTP delivery | REST API |
-| **File Storage** | Local/Cloud | Media files | Configurable |
+- **Docker** and **Docker Compose** installed
+- **Git** for version control
+- **Twilio Account** for SMS OTP (free trial available)
+- Basic understanding of Django and FastAPI
 
-### Development Tools
-| Tool | Purpose | Integration |
-|------|--------|-------------|
-| **Git** | Version control | GitHub integration |
-| **Docker** | Development environment | Local development |
-| **Pytest** | Testing framework | Unit & integration tests |
-| **Coverage** | Test coverage | Code quality metrics |
-| **Swagger UI** | API documentation | Auto-generated |
+### Step-by-Step Setup for New Developers
+
+#### 1. Clone and Navigate to Project
+
+```bash
+git clone https://github.com/LOOPINX-CIRCLE/LoopinBackend.git
+cd LoopinBackend
+```
+
+#### 2. Environment Configuration
+
+**⚠️ Important**: The project requires a `.env` file with sensitive credentials. Create it from the example:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit with your actual credentials
+nano .env
+```
+
+**Required Environment Variables**:
+```bash
+# Django Settings
+SECRET_KEY=your-very-long-and-secure-secret-key
+DEBUG=True
+DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev
+
+# Database Configuration (Supabase)
+DATABASE_URL=postgresql://username:password@host:port/database
+
+# JWT Settings
+JWT_SECRET_KEY=your-jwt-secret-key
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Twilio Configuration (Get from Twilio Console)
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_PHONE_NUMBER=+15005550006
+TWILIO_TEST_MODE=true  # Set to false for production
+
+# CORS Settings
+ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+```
+
+#### 3. Build and Start Docker Containers
+
+```bash
+# Build and start all services in the background
+docker-compose up -d --build
+
+# Check that services are running
+docker-compose ps
+```
+
+This command will:
+- Build the Python/Django/FastAPI application container
+- Connect to external Supabase PostgreSQL database
+- Set up networking between containers
+- Mount volumes for persistent data
+
+**Note**: The application will connect to Supabase database automatically when ready.
+
+#### 4. Run Database Migrations
+
+```bash
+# Run migrations inside the web container
+docker-compose exec web python manage.py migrate
+
+# Create database tables for all apps
+# This sets up User tables, UserProfile, PhoneOTP, EventInterest, and other models
+```
+
+#### 5. Create Django Superuser
+
+```bash
+# Create an admin user for Django admin interface
+docker-compose exec web python manage.py createsuperuser
+
+# Follow the prompts to set username, email, and password
+# Example: admin / admin@example.com / securepassword123
+
+# Alternative: Create superuser programmatically
+docker-compose exec web python manage.py shell -c "
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(username='admin').exists():
+    User.objects.create_superuser('admin', 'admin@example.com', 'admin123')
+    print('Superuser created: admin/admin123')
+else:
+    print('Superuser already exists')
+"
+```
+
+#### 6. Load Event Interests Data
+
+```bash
+# Load default event interests for the application
+docker-compose exec web python manage.py shell -c "
+from users.models import EventInterest
+interests = [
+    'Music & Concerts', 'Sports & Fitness', 'Food & Dining',
+    'Art & Culture', 'Technology', 'Travel & Adventure',
+    'Business & Networking', 'Health & Wellness',
+    'Education & Learning', 'Entertainment'
+]
+for interest in interests:
+    EventInterest.objects.get_or_create(name=interest)
+print('Event interests loaded successfully')
+"
+```
+
+#### 7. Collect Static Files
+
+```bash
+# Collect all static files for production serving
+docker-compose exec web python manage.py collectstatic --noinput
+```
+
+#### 8. Verify Installation
+
+```bash
+# Test API health endpoint
+curl http://localhost:8000/api/health
+
+# Access services:
+# - FastAPI Swagger UI: http://localhost:8000/api/docs
+# - Django Admin: http://localhost:8000/django/admin/
+# - API Root: http://localhost:8000/api/
+# - Phone Auth Documentation: http://localhost:8000/PHONE_AUTHENTICATION.md
+```
+
+#### 9. Run Tests
+
+```bash
+# Run Django tests
+docker-compose exec web python manage.py test
+
+# Run FastAPI tests
+docker-compose exec web python -m pytest tests/fastapi/
+
+# Run all tests
+docker-compose exec web python -m pytest
+```
 
 ## 📁 Project Structure
 
-### Directory Organization
+This project follows a clean, standards-based structure that separates concerns and maintains scalability:
+
 ```
-.
-├── api
-│   ├── docs
-│   │   └── README.md
-│   ├── health.py
-│   ├── __init__.py
-│   ├── main.py
-│   ├── __pycache__
-│   │   ├── __init__.cpython-313.pyc
-│   │   └── main.cpython-313.pyc
-│   ├── routers
-│   │   ├── auth.py
+loopin_backend/
+├── 🐳 Docker Configuration
+│   ├── docker-compose.yml       # Multi-container orchestration
+│   └── Dockerfile              # Python application container
+│
+├── 🔧 Django Project (loopin_backend/)
+│   ├── asgi.py                 # ASGI application (combines Django + FastAPI)
+│   ├── wsgi.py                 # WSGI application (Django only)
+│   ├── urls.py                 # Root URL configuration
+│   └── settings/               # Environment-specific settings
+│       ├── __init__.py         # Settings module initialization
+│       ├── base.py             # Common settings for all environments
+│       ├── dev.py              # Development-specific settings
+│       └── prod.py             # Production-specific settings
+│
+├── 👥 Django App (users/)
+│   ├── models.py               # UserProfile, PhoneOTP, EventInterest models
+│   ├── admin.py                # Django admin configuration with lead tracking
+│   ├── apps.py                 # App configuration
+│   ├── auth_router.py          # 📱 Phone authentication endpoints (FastAPI)
+│   ├── services.py             # 🔐 Twilio SMS service
+│   ├── schemas.py              # 📋 Pydantic request/response models with validation
+│   ├── migrations/             # Database schema migrations
 │   │   ├── __init__.py
-│   │   ├── __pycache__
-│   │   │   ├── auth.cpython-313.pyc
-│   │   │   ├── __init__.cpython-313.pyc
-│   │   │   └── users.cpython-313.pyc
-│   │   └── users.py
-│   ├── schemas
-│   │   └── __init__.py
-│   └── services
-│       └── __init__.py
-├── attendances
-│   ├── admin.py
-│   ├── apps.py
-│   ├── docs
-│   │   └── README.md
-│   ├── __init__.py
-│   ├── migrations
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── tests.py
-│   └── views.py
-├── audit
-│   ├── admin.py
-│   ├── apps.py
-│   ├── docs
-│   │   └── README.md
-│   ├── __init__.py
-│   ├── migrations
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── tests.py
-│   └── views.py
-├── core
-│   ├── base_models.py
-│   ├── choices.py
-│   ├── db_utils.py
-│   ├── exceptions.py
-│   ├── __init__.py
-│   ├── middleware
-│   │   ├── auth_middleware.py
-│   │   ├── exception_handler.py
-│   │   └── request_logging.py
-│   ├── permissions.py
-│   ├── __pycache__
-│   │   ├── base_models.cpython-313.pyc
-│   │   └── __init__.cpython-313.pyc
-│   ├── signals
-│   │   ├── notification_events.py
-│   │   └── user_activity.py
-│   └── utils
-│       ├── cache.py
+│   │   ├── 0001_initial.py
+│   │   ├── 0004_auto_20251006_1649.py
+│   │   ├── 0005_eventinterest_userprofile_gender_and_more.py
+│   │   └── 0006_remove_userprofile_avatar_remove_userprofile_email.py
+│   ├── serializers/            # 📦 Modular DRF serializers
+│   │   ├── __init__.py         # Clean imports from serializers
+│   │   └── user_serializers.py # User-related serializers
+│   ├── views/                  # 📦 Modular Django views
+│   │   ├── __init__.py         # Clean imports from views
+│   │   └── user_views.py       # User-related DRF views
+│   └── tests/                  # 🧪 App-specific tests
 │       ├── __init__.py
-│       └── logger.py
-├── docker-compose.dev.yml
-├── docker-compose.yml
-├── Dockerfile
-├── docs
-│   ├── ARCHITECTURE_OVERVIEW.md
-│   ├── DOCKER_GUIDE.md
-│   ├── erd_doc_fixed.md
-│   ├── INSTALLATION.md
-│   └── README.md
-├── events
-│   ├── admin.py
-│   ├── apps.py
-│   ├── docs
-│   │   └── README.md
-│   ├── __init__.py
-│   ├── migrations
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── tests.py
-│   └── views.py
-├── loopin_backend
-│   ├── asgi.py
-│   ├── __init__.py
-│   ├── __pycache__
-│   │   ├── asgi.cpython-313.pyc
-│   │   ├── db_utils.cpython-313.pyc
-│   │   ├── __init__.cpython-312.pyc
-│   │   ├── __init__.cpython-313.pyc
-│   │   ├── settings.cpython-312.pyc
-│   │   ├── urls.cpython-313.pyc
-│   │   └── wsgi.cpython-313.pyc
-│   ├── settings
-│   │   ├── base.py
-│   │   ├── dev.py
+│       └── test_users.py       # Django model/serializer tests
+│
+├── 🚀 FastAPI Application (api/)
+│   ├── main.py                 # FastAPI app initialization and configuration
+│   └── routers/                # 📡 Feature-based API routes
+│       ├── __init__.py         # Router module initialization
+│       ├── auth.py             # 🔐 Legacy authentication endpoints
+│       └── users.py            # 👥 User management endpoints
+│
+├── 🧪 Unified Testing (tests/)
+│   ├── __init__.py             # Test module initialization
+│   ├── django/                 # 🏗️ Django-specific tests
 │   │   ├── __init__.py
-│   │   ├── prod.py
-│   │   └── __pycache__
-│   │       ├── base.cpython-313.pyc
-│   │       ├── dev.cpython-313.pyc
-│   │       ├── __init__.cpython-313.pyc
-│   │       └── prod.cpython-313.pyc
-│   ├── urls.py
-│   └── wsgi.py
-├── Makefile
-├── manage.py
-├── media
-├── nginx.conf
-├── notifications
-│   ├── admin.py
-│   ├── apps.py
-│   ├── docs
-│   │   └── README.md
-│   ├── __init__.py
-│   ├── migrations
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── tests.py
-│   └── views.py
-├── payments
-│   ├── admin.py
-│   ├── apps.py
-│   ├── docs
-│   │   └── README.md
-│   ├── __init__.py
-│   ├── migrations
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── tests.py
-│   └── views.py
-├── __pycache__
-│   └── manage.cpython-313.pyc
-├── README.md
-├── requirements.txt
-├── staticfiles
-├── tests
-│   ├── django
-│   │   ├── __init__.py
-│   │   ├── __pycache__
-│   │   │   ├── __init__.cpython-313.pyc
-│   │   │   └── test_users.cpython-313.pyc
-│   │   └── test_users.py
-│   ├── fastapi
-│   │   ├── __init__.py
-│   │   ├── __pycache__
-│   │   │   ├── __init__.cpython-313.pyc
-│   │   │   ├── test_auth.cpython-313.pyc
-│   │   │   └── test_integration.cpython-313.pyc
-│   │   ├── test_auth.py
-│   │   └── test_integration.py
-│   ├── __init__.py
-│   └── __pycache__
-│       └── __init__.cpython-313.pyc
-└── users
-    ├── admin.py
-    ├── apps.py
-    ├── auth_router.py
-    ├── docs
-    │   ├── PHONE_AUTHENTICATION.md
-    │   └── README.md
-    ├── __init__.py
-    ├── migrations
-    │   ├── 0001_initial.py
-    │   ├── 0002_alter_userprofile_options_userprofile_email_and_more.py
-    │   ├── 0003_phoneotp.py
-    │   ├── 0004_auto_20251006_1649.py
-    │   ├── 0005_eventinterest_userprofile_gender_and_more.py
-    │   ├── 0006_remove_userprofile_avatar_remove_userprofile_email.py
-    │   ├── __init__.py
-    │   └── __pycache__
-    │       ├── 0001_initial.cpython-313.pyc
-    │       └── __init__.cpython-313.pyc
-    ├── models.py
-    ├── __pycache__
-    │   ├── admin.cpython-313.pyc
-    │   ├── apps.cpython-313.pyc
-    │   ├── auth_router.cpython-313.pyc
-    │   ├── __init__.cpython-313.pyc
-    │   ├── models.cpython-313.pyc
-    │   └── services.cpython-313.pyc
-    ├── schemas.py
-    ├── serializers
-    │   ├── __init__.py
-    │   ├── __pycache__
-    │   │   ├── __init__.cpython-313.pyc
-    │   │   └── user_serializers.cpython-313.pyc
-    │   └── user_serializers.py
-    ├── services.py
-    ├── tests
-    │   ├── __init__.py
-    │   ├── __pycache__
-    │   │   ├── __init__.cpython-313.pyc
-    │   │   └── test_users.cpython-313.pyc
-    │   ├── README.md
-    │   ├── test_auth_working.py
-    │   ├── test_comprehensive_auth.py
-    │   ├── test_schemas.py
-    │   ├── test_services.py
-    │   └── test_users.py
-    └── views
-        ├── __init__.py
-        ├── __pycache__
-        │   ├── __init__.cpython-313.pyc
-        │   └── user_views.cpython-313.pyc
-        └── user_views.py
-
-53 directories, 156 files
+│   │   └── test_users.py       # Django integration tests
+│   └── fastapi/                # ⚡ FastAPI-specific tests
+│       ├── __init__.py
+│       ├── test_auth.py        # Authentication endpoint tests
+│       └── test_integration.py # Cross-endpoint integration tests
+│
+├── 📂 Static & Media Files
+│   ├── staticfiles/            # 🔄 Collected static files (CSS, JS, images)
+│   └── media/                  # 🔄 User-uploaded files (avatars, documents)
+│
+└── 📋 Configuration Files
+    ├── manage.py               # Django management commands
+    ├── requirements.txt        # Python dependencies (includes Twilio)
+    ├── .env.example            # Environment variables template
+    ├── .gitignore              # Git ignore rules
+    ├── README.md              # This comprehensive guide
+    └── PHONE_AUTHENTICATION.md # 📱 Detailed phone auth documentation
 ```
 
-### Module Responsibilities
-| Module | Purpose | Key Components | Documentation |
-|--------|---------|----------------|---------------|
-| **users** | Authentication & user management | Phone OTP, profiles, interests | [users/docs/](./users/docs/) |
-| **events** | Event creation & management | Venues, requests, invites | [events/docs/](./events/docs/) |
-| **attendances** | Check-in/check-out system | Records, OTP validation | [attendances/docs/](./attendances/docs/) |
-| **payments** | Payment processing | Orders, transactions, webhooks | [payments/docs/](./payments/docs/) |
-| **audit** | System auditing | Logs, compliance tracking | [audit/docs/](./audit/docs/) |
-| **notifications** | User communication | Messages, alerts | [notifications/docs/](./notifications/docs/) |
-| **api** | FastAPI endpoints | Mobile API, health checks | [api/docs/](./api/docs/) |
+### Detailed Folder Explanations
 
-### Code Organization Principles
-1. **Separation of Concerns**: Each module handles specific business logic
-2. **Modular Design**: Independent, reusable components
-3. **Clear Interfaces**: Well-defined APIs between modules
-4. **Documentation**: Each module maintains its own documentation
-5. **Testing**: Comprehensive test coverage per module
+#### `loopin_backend/` - Django Project Core
+- **Purpose**: Contains Django project configuration and ASGI/WSGI applications
+- **Key Files**:
+  - `asgi.py`: Combines Django + FastAPI into single ASGI application
+  - `settings/`: Environment-specific configurations (dev/prod separation)
+  - `urls.py`: Root URL routing (only Django admin, FastAPI handles `/api/*`)
 
-## 🗄️ Database Schema
+#### `users/` - Django App for User Management
+- **Purpose**: Django app handling user models, admin interface, and phone authentication
+- **Key Files**:
+  - `auth_router.py`: **NEW** - Phone authentication endpoints (FastAPI)
+  - `services.py`: **NEW** - Twilio SMS service integration
+  - `schemas.py`: **NEW** - Pydantic validation models
+  - `models.py`: UserProfile, PhoneOTP, EventInterest models
+  - `admin.py`: Enhanced admin with lead tracking
+- **Modular Structure**:
+  - `serializers/`: One file per feature (e.g., `user_serializers.py`)
+  - `views/`: One file per feature (e.g., `user_views.py`)
+  - `tests/`: App-specific unit tests
+- **Benefits**: Clean imports, easy to scale, maintainable
 
-### Database Architecture
-The system uses a comprehensive PostgreSQL database schema with proper relationships, constraints, and indexing for optimal performance.
+#### `api/` - FastAPI Application
+- **Purpose**: High-performance API endpoints for mobile clients
+- **Structure**:
+  - `main.py`: FastAPI app initialization, middleware, CORS
+  - `routers/`: Feature-based routing (auth, users, etc.)
+- **Separation**: Completely independent from Django views
 
-**📋 For complete database documentation and ERD diagrams, see:**
-**[🗄️ docs/erd_doc_fixed.md](./docs/erd_doc_fixed.md)**
+#### `tests/` - Framework-Specific Testing
+- **Purpose**: Organized testing by framework type
+- **Structure**:
+  - `django/`: Django model, serializer, and integration tests
+  - `fastapi/`: FastAPI endpoint and integration tests
+- **Benefits**: Clear test organization, framework-specific test utilities
 
-### Core Entities & Relationships
-| Entity | Purpose | Key Relationships |
-|--------|---------|-------------------|
-| **UserProfile** | User authentication & profiles | One-to-One with User |
-| **PhoneOTP** | OTP verification system | One-to-One with User |
-| **EventInterest** | Dynamic event categories | Many-to-Many with UserProfile |
-| **Event** | Event management | One-to-Many with User (host) |
-| **EventRequest** | Event join requests | Many-to-One with Event & User |
-| **AttendanceRecord** | Check-in/check-out tracking | Many-to-One with Event & User |
-| **PaymentOrder** | Payment processing | Many-to-One with Event & User |
-| **AuditLog** | System auditing | Many-to-One with User |
-| **Notification** | User communications | Many-to-One with User |
+## 🎯 Development Strategy & Best Practices
 
-### Database Features
-- **ACID Compliance**: Full transaction support
-- **Referential Integrity**: Foreign key constraints
-- **Indexing Strategy**: Optimized for common queries
-- **Data Validation**: Database-level constraints
-- **Audit Trail**: Complete change tracking
-- **Soft Deletes**: Data preservation with logical deletion
+### Coding Standards
 
-## 🏗️ Detailed Architecture
+#### 1. **Naming Conventions** (PEP 8 Compliant)
+```python
+# Files & Modules: snake_case
+user_views.py, test_auth.py, user_serializers.py
 
-### Comprehensive Technical Architecture
-For detailed technical architecture, component interactions, and architectural decisions:
+# Classes: PascalCase
+class UserProfile(models.Model):
+class UserSerializer(serializers.ModelSerializer):
+class UserListCreateView(generics.ListCreateAPIView):
 
-**📋 Complete architecture documentation:**
-**[🏗️ docs/ARCHITECTURE_OVERVIEW.md](./docs/ARCHITECTURE_OVERVIEW.md)**
+# Functions & Variables: snake_case
+def get_current_user():
+def create_access_token():
+user_data = request.json
+access_token = "..."
 
-### Key Architectural Components
-- **Core Package**: Shared utilities, base models, and common functionality
-- **Modular Django Apps**: Standardized app structure with verbose names
-- **Organized API Layer**: Separated authentication and user management routers
-- **Service Architecture**: Clear separation of concerns and responsibilities
-- **Security Architecture**: Comprehensive authentication and authorization system
+# Constants: UPPER_SNAKE_CASE
+SECRET_KEY = "..."
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30
+```
 
-## 🐳 Docker Configuration
+#### 2. **Modular Organization**
 
-### Development Environment
-| Service | Purpose | Port | Configuration |
-|---------|--------|------|--------------|
-| **web** | Django + FastAPI app | 8000 | Hot reload, debug mode |
-| **postgres** | PostgreSQL database | 5432 | Persistent data |
-| **redis** | Cache & message broker | 6379 | Session storage |
-| **celery** | Background tasks | - | Async processing |
-| **celery-beat** | Scheduled tasks | - | Cron-like scheduling |
-| **flower** | Celery monitoring | 5555 | Task monitoring |
+**For Django Apps**:
+```python
+# users/serializers/__init__.py
+from .user_serializers import *
 
-### Production Environment
-| Component | Technology | Purpose | Configuration |
-|-----------|------------|---------|---------------|
-| **Reverse Proxy** | Nginx | Static files, load balancing | Production only |
-| **WSGI Server** | Gunicorn | Multi-worker web server | Production only |
-| **Database** | Supabase | Cloud PostgreSQL | Transaction pooler |
-| **Cache** | Redis | Session & cache storage | Persistent |
-| **Monitoring** | Flower | Task monitoring | Web interface |
+# users/views/__init__.py  
+from .user_views import *
 
-**📋 For complete Docker setup and management, see:**
-**[🐳 docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md)**
+# Clean imports in other files
+from users.serializers import UserSerializer
+from users.views import UserListCreateView
+```
 
-## 🚀 API Reference
+**For FastAPI Routers**:
+```python
+# api/main.py
+from api.routers import auth, users
 
-### API Endpoints Overview
-| Endpoint Category | Base URL | Purpose |
-|-------------------|----------|---------|
-| **Authentication** | `/api/auth/` | Phone OTP, user management |
-| **Events** | `/api/events/` | Event CRUD operations |
-| **Attendances** | `/api/attendances/` | Check-in/check-out |
-| **Payments** | `/api/payments/` | Payment processing |
-| **Health** | `/api/health` | System health check |
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(users.router, prefix="/users", tags=["Users"])
+```
+
+#### 3. **Separation of Concerns**
+
+| Component | Responsibility | Location |
+|-----------|---------------|----------|
+| **Django Models** | Database schema, ORM | `users/models.py` |
+| **Django Admin** | Admin interface | `users/admin.py` |
+| **DRF Serializers** | Data validation/serialization | `users/serializers/` |
+| **DRF Views** | Web API endpoints | `users/views/` |
+| **FastAPI Routers** | Mobile API endpoints | `api/routers/` |
+| **Tests** | Framework-specific testing | `tests/django/`, `tests/fastapi/` |
+
+### Adding New Features
+
+#### Adding a New Django App
+```bash
+# 1. Create the app
+docker-compose exec web python manage.py startapp new_app
+
+# 2. Create modular structure
+mkdir new_app/serializers new_app/views new_app/tests
+touch new_app/serializers/__init__.py
+touch new_app/views/__init__.py  
+touch new_app/tests/__init__.py
+
+# 3. Add to INSTALLED_APPS in settings/base.py
+LOCAL_APPS = [
+    'users',
+    'new_app',  # Add here
+]
+```
+
+#### Adding a New FastAPI Router
+```python
+# 1. Create new router file: api/routers/new_feature.py
+from fastapi import APIRouter
+router = APIRouter()
+
+@router.get("/")
+async def list_items():
+    return {"items": []}
+
+# 2. Import and include in api/main.py
+from api.routers import auth, users, new_feature
+
+app.include_router(new_feature.router, prefix="/new-feature", tags=["New Feature"])
+```
+
+#### Adding Tests
+```python
+# Django tests: tests/django/test_new_feature.py
+from django.test import TestCase
+
+class NewFeatureTest(TestCase):
+    def test_something(self):
+        pass
+
+# FastAPI tests: tests/fastapi/test_new_feature.py  
+from fastapi.testclient import TestClient
+
+def test_new_endpoint():
+    # Test FastAPI endpoints
+    pass
+```
+
+## 🐳 Dockerized Development Best Practices
+
+### Working with Containers
+
+```bash
+# Always run commands inside containers for consistency
+docker-compose exec web python manage.py makemigrations
+docker-compose exec web python manage.py migrate
+docker-compose exec web python manage.py shell
+docker-compose exec web python manage.py test
+
+# View logs
+docker-compose logs web
+docker-compose logs db
+
+# Restart services
+docker-compose restart web
+docker-compose restart db
+```
+
+### Environment Management
+
+```bash
+# Development
+export ENVIRONMENT=dev  # Uses settings/dev.py
+
+# Production  
+export ENVIRONMENT=prod  # Uses settings/prod.py
+
+# Override individual settings
+export DEBUG=False
+export SECRET_KEY=production-secret-key
+```
+
+### Volume Management
+
+```yaml
+# docker-compose.yml volumes ensure data persistence
+volumes:
+  - static_volume:/app/staticfiles  # Static files persist
+  - media_volume:/app/media        # User uploads persist
+  - postgres_data:/var/lib/postgresql/data/  # Database persists
+```
+
+### Database Operations
+
+```bash
+# Backup database
+docker-compose exec db pg_dump -U postgres loopin_db > backup.sql
+
+# Restore database
+docker-compose exec -T db psql -U postgres loopin_db < backup.sql
+
+# Access database directly
+docker-compose exec db psql -U postgres loopin_db
+```
+
+## 📚 API Documentation
 
 ### Access Points
 - **FastAPI Swagger UI**: `http://localhost:8000/api/docs`
-- **Django Admin**: `http://localhost:8000/admin/`
+- **Django Admin**: `http://localhost:8000/django/admin/`
 - **API Root**: `http://localhost:8000/api/`
-- **Flower Monitoring**: `http://localhost:5555`
 
-### Authentication System
-**📋 Complete authentication documentation, flowcharts, and API examples:**
-**[📱 users/docs/PHONE_AUTHENTICATION.md](./users/docs/PHONE_AUTHENTICATION.md)**
+### 📱 Phone Authentication API
 
-#### Authentication Flow
-1. **Phone Registration** → **OTP Verification** → **Profile Completion** → **JWT Token**
-2. **Lead Tracking** → **User Conversion** → **Profile Management** → **Event Participation**
+**📋 Complete API documentation, testing commands, and examples:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
 
-## 🚀 Getting Started
+#### Quick Start:
+1. **Send OTP**: `POST /api/auth/signup` or `POST /api/auth/login`
+2. **Verify OTP**: `POST /api/auth/verify-otp` or `POST /api/auth/verify-login`
+3. **Complete Profile**: `POST /api/auth/complete-profile`
+4. **Get Profile**: `GET /api/auth/profile`
+5. **Event Interests**: `GET /api/auth/event-interests`
 
-### Project Setup Guide
-**📋 For step-by-step setup instructions, see:**
-**[🚀 docs/INSTALLATION.md](./docs/INSTALLATION.md)**
+## 🧪 Testing Strategy
 
-### First Steps
-1. **Environment Setup**: Configure `.env` file with credentials
-2. **Docker Setup**: Build and start all services
-3. **Database Setup**: Run migrations and create superuser
-4. **API Testing**: Test endpoints via Swagger UI
-5. **Authentication Flow**: Test phone OTP system
+### Test Organization
+```bash
+# Run specific test types
+python manage.py test users.tests         # Django app tests
+python -m pytest tests/django/           # Django integration tests  
+python -m pytest tests/fastapi/          # FastAPI endpoint tests
+python -m pytest                         # All tests
+```
 
-## 🎯 Development Workflow
+### Test Coverage
+```bash
+# Install coverage
+pip install coverage
 
-### Code Organization
-| Layer | Technology | Purpose | Location |
-|-------|------------|---------|----------|
-| **Models** | Django ORM | Database schema | `*/models.py` |
-| **Serializers** | DRF | Data validation | `*/serializers/` |
-| **Views** | Django Views | Web interface | `*/views/` |
-| **API Routes** | FastAPI | Mobile API | `api/routers/` |
-| **Tests** | Pytest/Django | Test coverage | `tests/` |
-| **Documentation** | Markdown | Module docs | `*/docs/` |
+# Run with coverage
+coverage run --source='.' manage.py test
+coverage run -m pytest
+coverage report
+coverage html  # Generates HTML report
+```
 
-### Testing Strategy
-| Test Type | Framework | Coverage | Location |
-|-----------|-----------|----------|----------|
-| **Unit Tests** | Django TestCase | Models, serializers | `tests/django/` |
-| **API Tests** | FastAPI TestClient | Endpoints | `tests/fastapi/` |
-| **Integration Tests** | Pytest | Cross-module | `tests/` |
-| **Coverage** | Coverage.py | Code metrics | Reports |
+## 🚀 Deployment
 
-### Deployment Process
-1. **Development** → **Testing** → **Staging** → **Production**
-2. **Docker Build** → **Database Migration** → **Service Deployment** → **Health Check**
-3. **Monitoring** → **Logging** → **Performance** → **Maintenance**
+### Production Checklist
+- [ ] Update `SECRET_KEY` and `JWT_SECRET_KEY`
+- [ ] Set `DEBUG=False`
+- [ ] Configure `ALLOWED_HOSTS`
+- [ ] Set strong database credentials
+- [ ] Configure SSL certificates
+- [ ] Set up proper CORS origins
+- [ ] **Configure live Twilio credentials**
+- [ ] **Set `TWILIO_TEST_MODE=false`**
+- [ ] Set up monitoring and logging
 
-### Contributing Guidelines
-1. **Branch Strategy**: `feature/` → `staging` → `main`
-2. **Code Standards**: PEP 8, type hints, documentation
-3. **Testing**: Comprehensive test coverage required
-4. **Documentation**: Update relevant documentation
-5. **Review Process**: Code review before merge
+### Environment Variables for Production
+```bash
+SECRET_KEY=your-production-secret-key
+JWT_SECRET_KEY=your-production-jwt-key
+DEBUG=False
+ENVIRONMENT=prod
+ALLOWED_HOSTS=yourdomain.com,api.yourdomain.com
 
-## 📚 Module Documentation
+# Supabase Database
+DATABASE_URL=postgresql://username:password@host:port/database
 
-### Documentation Structure
-This project follows a modular documentation structure where each module maintains its own comprehensive documentation:
+# Live Twilio Configuration
+TWILIO_ACCOUNT_SID=your_live_account_sid
+TWILIO_AUTH_TOKEN=your_live_auth_token
+TWILIO_PHONE_NUMBER=+15005550006
+TWILIO_TEST_MODE=false
+```
 
-### 🏗️ Core Infrastructure
-- **[docs/README.md](./docs/README.md)** - Global documentation hub
-- **[docs/ARCHITECTURE_OVERVIEW.md](./docs/ARCHITECTURE_OVERVIEW.md)** - Comprehensive technical architecture documentation
-- **[docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md)** - Docker setup and development guide
-- **[docs/erd_doc_fixed.md](./docs/erd_doc_fixed.md)** - Database schema and ERD diagrams
+## 🎯 Maintaining Code Quality
 
-### 👥 User Management
-- **[users/docs/README.md](./users/docs/README.md)** - User module overview and features
-- **[users/docs/PHONE_AUTHENTICATION.md](./users/docs/PHONE_AUTHENTICATION.md)** - Complete phone authentication system documentation
+### Pre-commit Checklist
+- [ ] All tests pass: `python -m pytest`
+- [ ] Code follows naming conventions
+- [ ] New features include tests
+- [ ] Documentation updated
+- [ ] No linting errors
+- [ ] Migrations created if needed
+- [ ] **Phone authentication flow tested**
 
-### 🎪 Event Management
-- **[events/docs/README.md](./events/docs/README.md)** - Event creation, management, and user interactions
+### Code Review Guidelines
+- [ ] Proper separation between Django and FastAPI code
+- [ ] Consistent naming conventions followed
+- [ ] Modular organization maintained
+- [ ] Tests cover new functionality
+- [ ] Security considerations addressed
+- [ ] **Phone authentication security reviewed**
+- [ ] **Twilio credentials properly secured**
 
-### ✅ Attendance Tracking
-- **[attendances/docs/README.md](./attendances/docs/README.md)** - Check-in/check-out processes and ticket validation
+## 📝 Contributing Guidelines
 
-### 💳 Payment Processing
-- **[payments/docs/README.md](./payments/docs/README.md)** - Payment processing, orders, and transaction management
+When contributing to this project, please:
 
-### 🔍 Audit & Compliance
-- **[audit/docs/README.md](./audit/docs/README.md)** - System auditing, logging, and compliance tracking
+1. **Follow the established structure**: Place code in appropriate folders (`serializers/`, `views/`, `routers/`)
+2. **Maintain naming conventions**: Use snake_case for files/functions, PascalCase for classes
+3. **Write tests**: Add tests in the correct framework folder (`tests/django/` or `tests/fastapi/`)
+4. **Update documentation**: Keep README and docstrings current
+5. **Use Docker**: Run all commands within containers for consistency
+6. **Test phone authentication**: Ensure OTP flow works correctly
+7. **Secure credentials**: Never commit `.env` files or sensitive data
 
-### 📢 Notifications
-- **[notifications/docs/README.md](./notifications/docs/README.md)** - User notifications and communication system
+### Git Branching Strategy
 
-### 🚀 API Documentation
-- **[api/docs/README.md](./api/docs/README.md)** - FastAPI endpoints and mobile API documentation
+This project follows a **staging-based branching workflow** for safe development and deployment:
 
-## 🔧 Development Guides
+```
+main (production) ← staging ← feature/your-feature
+```
 
-### Quick Setup
-1. **Clone Repository**: `git clone https://github.com/LOOPINX-CIRCLE/LoopinBackend.git`
-2. **Follow Setup Guide**: See [docs/INSTALLATION.md](./docs/INSTALLATION.md) for detailed instructions
-3. **Start Development**: Use Docker commands from [docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md)
+#### Development Workflow
+
+**1. Always cut new branches from staging:**
+```bash
+# Switch to staging branch
+git checkout staging
+
+# Pull latest changes from staging
+git pull origin staging
+
+# Create new feature branch from staging
+git checkout -b feature/new-api-endpoint
+
+# OR for bug fixes:
+git checkout -b bugfix/fix-authentication
+
+# OR for updates:
+git checkout -b update/dependency-upgrade
+```
+
+**2. Make your changes following project structure:**
+```bash
+# Add your code (following the established patterns):
+# - New router: api/routers/new_feature.py
+# - New tests: tests/fastapi/test_new_feature.py
+# - Update serializers: users/serializers/new_serializers.py
+```
+
+**3. Test your changes:**
+```bash
+# Run tests to ensure everything works
+docker-compose exec web python -m pytest tests/fastapi/test_new_feature.py
+docker-compose exec web python manage.py test
+```
+
+**4. Commit and push your feature branch:**
+```bash
+git add .
+git commit -m "Add new API endpoint for feature X
+
+- Implement new endpoint in api/routers/new_feature.py
+- Add comprehensive tests in tests/fastapi/test_new_feature.py
+- Update documentation with new endpoint usage"
+
+# Push to your feature branch
+git push origin feature/new-api-endpoint
+```
+
+**5. Create Pull Request:**
+- **Target**: `staging` branch (NOT main)
+- **Source**: Your feature branch
+- **Review**: Wait for code review and approval
+- **Merge**: Merge into staging for testing
+
+**6. After staging validation, merge staging → main:**
+```bash
+# Once staging is stable and tested:
+git checkout main
+git pull origin main
+git merge staging
+git push origin main
+```
+
+### Branch Naming Conventions
+
+Use descriptive branch names with prefixes:
+
+```bash
+feature/user-authentication    # New features
+feature/api-pagination        # API improvements
+feature/mobile-push-notifications
+
+bugfix/jwt-token-expiry       # Bug fixes
+bugfix/user-profile-upload    # Critical fixes
+
+update/django-5-3             # Dependency updates
+update/security-patches       # Security updates
+
+hotfix/production-login-bug   # Emergency production fixes
+```
 
 ---
 
-## 🏆 System Overview
+## 🏆 Final Notes
 
 This project structure is designed for **long-term maintainability** and **team collaboration**. By following these conventions consistently, you ensure:
 
@@ -534,5 +699,18 @@ This project structure is designed for **long-term maintainability** and **team 
 - **Lead Management**: Comprehensive user tracking and conversion
 
 **Remember**: Consistency is key. Follow this structured approach religiously to maintain a professional, enterprise-grade codebase that scales with your team and requirements.
+
+### 📱 System Features
+
+**📋 For complete feature details, validation rules, and implementation specifics:**
+**[📱 PHONE_AUTHENTICATION.md](./PHONE_AUTHENTICATION.md)**
+
+**Core Features:**
+- ✅ **Phone Authentication** with 4-digit OTP
+- ✅ **Lead Tracking** for business analytics
+- ✅ **Profile Management** with comprehensive validation
+- ✅ **Event Interests** dynamic system
+- ✅ **Admin Interface** with lead management
+- ✅ **Security** with JWT and input validation
 
 Happy coding! 🚀
