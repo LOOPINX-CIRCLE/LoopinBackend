@@ -2,8 +2,8 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from loopin_backend.base_models import TimeStampedModel
-from loopin_backend.choices import (
+from core.base_models import TimeStampedModel
+from core.choices import (
     AUDIT_ACTION_CHOICES,
 )
 

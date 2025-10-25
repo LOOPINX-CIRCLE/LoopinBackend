@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # Include routers
-# app.include_router(auth.router, prefix="/auth", tags=["Authentication"])  # Disabled - using phone auth instead
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 
 # Phone auth router will be imported in asgi.py after Django is set up

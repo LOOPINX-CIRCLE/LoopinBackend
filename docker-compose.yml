@@ -1,19 +1,156 @@
+version: '3.8'
+
 services:
+  # Main Django Application
   web:
     build: .
-    command: gunicorn loopin_backend.asgi:application -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      - logs_volume:/app/logs
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
       - DATABASE_URL=${DATABASE_URL}
-    network_mode: "host"
+      - DEBUG=True
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - loopin_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - loopin_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-loopin}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - loopin_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker (for background tasks)
+  celery:
+    build: .
+    command: celery -A loopin_backend worker --loglevel=info --concurrency=2
+    volumes:
+      - .:/app
+      - logs_volume:/app/logs
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - loopin_network
+    restart: unless-stopped
+
+  # Celery Beat (for scheduled tasks)
+  celery-beat:
+    build: .
+    command: celery -A loopin_backend beat --loglevel=info
+    volumes:
+      - .:/app
+      - logs_volume:/app/logs
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - loopin_network
+    restart: unless-stopped
+
+  # Celery Flower (for monitoring)
+  flower:
+    build: .
+    command: celery -A loopin_backend flower --port=5555
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - loopin_network
+    restart: unless-stopped
+
+  # Nginx (for static files and reverse proxy) - DISABLED FOR DEVELOPMENT
+  # Uncomment for production deployment
+  # nginx:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - static_volume:/app/staticfiles:ro
+  #     - media_volume:/app/media:ro
+  #   depends_on:
+  #     - web
+  #   networks:
+  #     - loopin_network
+  #   restart: unless-stopped
 
 volumes:
+  postgres_data:
+  redis_data:
   static_volume:
   media_volume:
+  logs_volume:
+
+networks:
+  loopin_network:
+    driver: bridge

@@ -32,24 +32,3 @@ httpx
 
 # Analytics
 posthog==3.7.1
-
-# AI and ML
-openai==1.54.4
-scikit-learn==1.5.2
-numpy==1.26.4
-pandas==2.2.2
-nltk==3.9.1
-textblob==0.17.1
-
-# Async Processing
-celery==5.4.0
-redis==5.2.0
-kombu==5.4.0
-
-# Data Processing
-python-dateutil==2.9.0
-pytz==2024.2
-
-# Monitoring and Performance
-psutil==6.1.0
-prometheus-client==0.21.1
