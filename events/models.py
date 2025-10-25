@@ -2,8 +2,8 @@
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
-from loopin_backend.base_models import TimeStampedModel
-from loopin_backend.choices import (
+from core.base_models import TimeStampedModel
+from core.choices import (
     EVENT_STATUS_CHOICES,
     ATTENDANCE_STATUS_CHOICES,
     REQUEST_STATUS_CHOICES,

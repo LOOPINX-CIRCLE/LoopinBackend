@@ -1,0 +1,51 @@
+# Development overrides for docker-compose
+# This file extends the main docker-compose.yml for development
+version: '3.8'
+
+services:
+  web:
+    # Override command for development
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      - DEBUG=True
+      - DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev
+    volumes:
+      - .:/app
+      - /app/__pycache__
+      - /app/.git
+    # Enable hot reload
+    stdin_open: true
+    tty: true
+
+  # Development database with exposed ports
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=loopin_dev
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dev_password
+
+  # Redis for development
+  redis:
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb
+
+  # Celery worker for development
+  celery:
+    command: celery -A loopin_backend worker --loglevel=debug --concurrency=1
+    environment:
+      - DEBUG=True
+
+  # Celery beat for development
+  celery-beat:
+    command: celery -A loopin_backend beat --loglevel=debug
+
+  # Flower for monitoring (development)
+  flower:
+    ports:
+      - "5555:5555"
+    environment:
+      - FLOWER_BASIC_AUTH=admin:admin
+

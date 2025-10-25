@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import random
 import string
 
-from loopin_backend.base_models import TimeStampedModel
-from loopin_backend.choices import (
+from core.base_models import TimeStampedModel
+from core.choices import (
     GENDER_CHOICES,
     OTP_STATUS_CHOICES,
     OTP_TYPE_CHOICES,

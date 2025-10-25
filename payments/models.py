@@ -3,8 +3,8 @@ from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
-from loopin_backend.base_models import TimeStampedModel
-from loopin_backend.choices import (
+from core.base_models import TimeStampedModel
+from core.choices import (
     PAYMENT_STATUS_CHOICES,
     PAYMENT_PROVIDER_CHOICES,
     CURRENCY_CHOICES,
