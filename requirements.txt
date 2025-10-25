@@ -20,6 +20,7 @@ python-multipart==0.0.12
 python-decouple==3.8
 python-dotenv==1.0.1
 dj-database-url==2.2.0
+django-environ==0.11.2
 
 # Utilities
 pydantic[email]==2.10.2
@@ -29,6 +30,3 @@ email-validator==2.1.1
 # Twilio for SMS OTP
 twilio==9.3.2
 httpx
-
-# Analytics
-posthog==3.7.1
