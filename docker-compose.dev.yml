@@ -1,51 +1,80 @@
-# Development overrides for docker-compose
-# This file extends the main docker-compose.yml for development
-version: '3.8'
+# Development docker-compose configuration
+# Complete standalone development setup
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: loopin_postgres_dev
+    environment:
+      POSTGRES_DB: loopin_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev_password
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache and Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: loopin_redis_dev
+    command: redis-server --appendonly yes --maxmemory 256mb
+    volumes:
+      - redis_data_dev:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Django + FastAPI Web Application
   web:
-    # Override command for development
-    command: python manage.py runserver 0.0.0.0:8000
+    build: .
+    container_name: loopin_web_dev
+    command: python3 -m uvicorn loopin_backend.asgi:application --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+      - static_volume_dev:/app/staticfiles
+      - media_volume_dev:/app/media
+      - /app/__pycache__
+      - /app/.git
+    ports:
+      - "8000:8000"
     environment:
       - DEBUG=True
       - DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev
-    volumes:
-      - .:/app
-      - /app/__pycache__
-      - /app/.git
-    # Enable hot reload
+      - DATABASE_URL=postgresql://postgres:dev_password@postgres:5432/loopin_dev
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     stdin_open: true
     tty: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Development database with exposed ports
-  postgres:
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_DB=loopin_dev
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=dev_password
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  static_volume_dev:
+  media_volume_dev:
 
-  # Redis for development
-  redis:
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb
-
-  # Celery worker for development
-  celery:
-    command: celery -A loopin_backend worker --loglevel=debug --concurrency=1
-    environment:
-      - DEBUG=True
-
-  # Celery beat for development
-  celery-beat:
-    command: celery -A loopin_backend beat --loglevel=debug
-
-  # Flower for monitoring (development)
-  flower:
-    ports:
-      - "5555:5555"
-    environment:
-      - FLOWER_BASIC_AUTH=admin:admin
+networks:
+  default:
+    name: loopin_network_dev
 

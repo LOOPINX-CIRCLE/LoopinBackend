@@ -71,24 +71,24 @@ shell:
 
 # Django management commands
 migrate:
-	docker-compose exec web python manage.py migrate
+	docker-compose exec web python3 manage.py migrate
 
 makemigrations:
-	docker-compose exec web python manage.py makemigrations
+	docker-compose exec web python3 manage.py makemigrations
 
 collectstatic:
-	docker-compose exec web python manage.py collectstatic --noinput
+	docker-compose exec web python3 manage.py collectstatic --noinput
 
 createsuperuser:
-	docker-compose exec web python manage.py createsuperuser
+	docker-compose exec web python3 manage.py createsuperuser
 
 # Run tests
 test:
-	docker-compose exec web python manage.py test
+	docker-compose exec web python3 manage.py test
 
 # Database operations
 db-reset:
-	docker-compose exec web python manage.py flush --noinput
+	docker-compose exec web python3 manage.py flush --noinput
 
 # Celery operations
 celery-shell:
