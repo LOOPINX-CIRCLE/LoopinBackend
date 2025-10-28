@@ -18,6 +18,9 @@ RUN apt-get update \
         netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip to latest version
+RUN pip install --upgrade pip
+
 # Install Python dependencies
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
