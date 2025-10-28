@@ -24,7 +24,7 @@ dj-database-url==2.2.0
 # Utilities
 pydantic[email]==2.10.3
 pydantic-settings==2.6.1
-email-validator==2.3.1
+email-validator==2.3.0
 
 # Twilio for SMS OTP
 twilio==9.3.2
