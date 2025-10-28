@@ -239,7 +239,7 @@ class HostLeadAdmin(admin.ModelAdmin):
     list_display = ('full_name', 'email', 'is_contacted', 'is_converted', 'status_badge', 'created_at', 'days_since_submission')
     list_filter = ('is_contacted', 'is_converted', 'created_at', 'updated_at')
     search_fields = ('first_name', 'last_name', 'email', 'notes')
-    readonly_fields = ('created_at', 'updated_at', 'days_since_submission')
+    readonly_fields = ('created_at', 'updated_at')
     date_hierarchy = 'created_at'
     actions = ['mark_as_contacted', 'mark_as_converted', 'mark_as_uncontacted']
     ordering = ('-created_at',)
@@ -250,17 +250,12 @@ class HostLeadAdmin(admin.ModelAdmin):
             'description': 'Basic contact information of the potential host'
         }),
         ('Lead Status', {
-            'fields': ('is_contacted', 'is_converted', 'status_badge'),
+            'fields': ('is_contacted', 'is_converted'),
             'description': 'Track lead progress and conversion status'
         }),
         ('Internal Notes', {
             'fields': ('notes',),
             'description': 'Add any notes about communication or follow-ups'
-        }),
-        ('Statistics', {
-            'fields': ('days_since_submission',),
-            'classes': ('collapse',),
-            'description': 'Time since lead submission'
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
