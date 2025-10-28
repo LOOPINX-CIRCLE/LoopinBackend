@@ -121,3 +121,27 @@ class PhoneOTP(models.Model):
         verbose_name = "Phone OTP"
         verbose_name_plural = "Phone OTPs"
         ordering = ['-created_at']
+
+
+class HostLead(models.Model):
+    """Model for storing 'Become a Host' lead information"""
+    first_name = models.CharField(max_length=100, help_text="First name of the potential host")
+    last_name = models.CharField(max_length=100, help_text="Last name of the potential host")
+    email = models.EmailField(unique=True, help_text="Email address of the potential host")
+    
+    # Additional fields for tracking
+    is_contacted = models.BooleanField(default=False, help_text="Whether the lead has been contacted")
+    is_converted = models.BooleanField(default=False, help_text="Whether the lead became a host")
+    notes = models.TextField(blank=True, help_text="Internal notes about the lead")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} ({self.email})"
+    
+    class Meta:
+        verbose_name = "Host Lead"
+        verbose_name_plural = "Host Leads"
+        ordering = ['-created_at']
