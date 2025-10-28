@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from django.shortcuts import render
-from .models import UserProfile, EventInterest, PhoneOTP
+from .models import UserProfile, EventInterest, PhoneOTP, HostLead
 
 # Register your models here.
 
@@ -232,6 +232,129 @@ class PhoneOTPAdmin(admin.ModelAdmin):
 admin.site.site_header = "Loopin Backend Administration"
 admin.site.site_title = "Loopin Admin"
 admin.site.index_title = "Welcome to Loopin Backend Administration"
+
+@admin.register(HostLead)
+class HostLeadAdmin(admin.ModelAdmin):
+    """Admin for 'Become a Host' Lead Management"""
+    list_display = ('full_name', 'email', 'is_contacted', 'is_converted', 'status_badge', 'created_at', 'days_since_submission')
+    list_filter = ('is_contacted', 'is_converted', 'created_at', 'updated_at')
+    search_fields = ('first_name', 'last_name', 'email', 'notes')
+    readonly_fields = ('created_at', 'updated_at', 'days_since_submission')
+    date_hierarchy = 'created_at'
+    actions = ['mark_as_contacted', 'mark_as_converted', 'mark_as_uncontacted']
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Lead Information', {
+            'fields': ('first_name', 'last_name', 'email'),
+            'description': 'Basic contact information of the potential host'
+        }),
+        ('Lead Status', {
+            'fields': ('is_contacted', 'is_converted', 'status_badge'),
+            'description': 'Track lead progress and conversion status'
+        }),
+        ('Internal Notes', {
+            'fields': ('notes',),
+            'description': 'Add any notes about communication or follow-ups'
+        }),
+        ('Statistics', {
+            'fields': ('days_since_submission',),
+            'classes': ('collapse',),
+            'description': 'Time since lead submission'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+            'description': 'Automatically managed timestamps'
+        }),
+    )
+    
+    def full_name(self, obj):
+        """Display full name"""
+        return f"{obj.first_name} {obj.last_name}"
+    full_name.short_description = 'Name'
+    
+    def status_badge(self, obj):
+        """Get status with color-coded emoji"""
+        if obj.is_converted:
+            return '✅ Converted to Host'
+        elif obj.is_contacted:
+            return '📞 Contacted - Awaiting Response'
+        else:
+            return '🆕 New Lead - Action Needed'
+    status_badge.short_description = 'Status'
+    
+    def days_since_submission(self, obj):
+        """Calculate days since submission"""
+        from django.utils import timezone
+        delta = timezone.now() - obj.created_at
+        days = delta.days
+        if days == 0:
+            return '📅 Today'
+        elif days == 1:
+            return '📅 1 day ago'
+        elif days < 7:
+            return f'📅 {days} days ago'
+        elif days < 30:
+            return f'📅 {days // 7} weeks ago'
+        else:
+            return f'📅 {days // 30} months ago'
+    days_since_submission.short_description = 'Age'
+    
+    def mark_as_contacted(self, request, queryset):
+        """Mark selected leads as contacted"""
+        updated = queryset.update(is_contacted=True)
+        self.message_user(request, f'✅ Successfully marked {updated} lead(s) as contacted.')
+    mark_as_contacted.short_description = "Mark selected leads as contacted"
+    
+    def mark_as_converted(self, request, queryset):
+        """Mark selected leads as converted to hosts"""
+        updated = queryset.update(is_converted=True, is_contacted=True)
+        self.message_user(request, f'✅ Successfully marked {updated} lead(s) as converted hosts!')
+    mark_as_converted.short_description = "Mark selected leads as converted (hosts)"
+    
+    def mark_as_uncontacted(self, request, queryset):
+        """Reset contact status for selected leads"""
+        updated = queryset.update(is_contacted=False)
+        self.message_user(request, f'✅ Successfully reset contact status for {updated} lead(s).')
+    mark_as_uncontacted.short_description = "Reset contact status"
+    
+    def export_to_csv(self, request, queryset):
+        """Export selected leads to CSV"""
+        import csv
+        from django.http import HttpResponse
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="host_leads.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['First Name', 'Last Name', 'Email', 'Contacted', 'Converted', 'Submitted Date', 'Notes'])
+        
+        for lead in queryset:
+            writer.writerow([
+                lead.first_name,
+                lead.last_name,
+                lead.email,
+                'Yes' if lead.is_contacted else 'No',
+                'Yes' if lead.is_converted else 'No',
+                lead.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                lead.notes
+            ])
+        
+        return response
+    export_to_csv.short_description = "Export selected leads to CSV"
+    actions.append(export_to_csv)
+    
+    def get_queryset(self, request):
+        """Optimize queryset with all fields"""
+        return super().get_queryset(request).all()
+    
+    def export_new_leads_to_csv(self, request, queryset):
+        """Export only new (uncontacted) leads to CSV"""
+        new_leads = queryset.filter(is_contacted=False)
+        self.export_to_csv(request, new_leads)
+    export_new_leads_to_csv.short_description = "Export new (uncontacted) leads to CSV"
+    actions.append(export_new_leads_to_csv)
 
 # Unregister the default User admin and register our custom one
 admin.site.unregister(User)
