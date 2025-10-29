@@ -5,7 +5,7 @@ Handles 'Become a Host' lead submission and management.
 
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from asgiref.sync import sync_to_async
 from .auth import get_current_user
 
@@ -18,14 +18,14 @@ class HostLeadRequest(BaseModel):
     """Request model for submitting a host lead"""
     first_name: str = Field(..., min_length=1, max_length=100, description="First name")
     last_name: str = Field(..., min_length=1, max_length=100, description="Last name")
-    email: EmailStr = Field(..., description="Email address")
+    phone_number: str = Field(..., min_length=10, max_length=20, description="Phone number")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "first_name": "John",
                 "last_name": "Doe",
-                "email": "john.doe@example.com"
+                "phone_number": "+1234567890"
             }
         }
 
@@ -39,20 +39,20 @@ class HostLeadResponse(BaseModel):
 
 # Sync-to-async helper functions
 @sync_to_async
-def check_existing_lead(email: str):
-    """Check if a lead with the given email exists"""
+def check_existing_lead(phone_number: str):
+    """Check if a lead with the given phone number exists"""
     from users.models import HostLead
-    return HostLead.objects.filter(email=email).first()
+    return HostLead.objects.filter(phone_number=phone_number).first()
 
 
 @sync_to_async
-def create_lead(first_name: str, last_name: str, email: str):
+def create_lead(first_name: str, last_name: str, phone_number: str):
     """Create a new host lead"""
     from users.models import HostLead
     return HostLead.objects.create(
         first_name=first_name,
         last_name=last_name,
-        email=email
+        phone_number=phone_number
     )
 
 
@@ -80,10 +80,10 @@ async def submit_host_lead(request: HostLeadRequest):
     
     - **first_name**: First name of the potential host
     - **last_name**: Last name of the potential host  
-    - **email**: Email address of the potential host
+    - **phone_number**: Phone number of the potential host
     """
     try:
-        existing_lead = await check_existing_lead(request.email)
+        existing_lead = await check_existing_lead(request.phone_number)
         
         if existing_lead:
             return HostLeadResponse(
@@ -92,12 +92,12 @@ async def submit_host_lead(request: HostLeadRequest):
                 data={
                     "first_name": existing_lead.first_name,
                     "last_name": existing_lead.last_name,
-                    "email": existing_lead.email,
+                    "phone_number": existing_lead.phone_number,
                     "submitted_at": existing_lead.created_at.isoformat()
                 }
             )
         
-        host_lead = await create_lead(request.first_name, request.last_name, request.email)
+        host_lead = await create_lead(request.first_name, request.last_name, request.phone_number)
         
         return HostLeadResponse(
             success=True,
@@ -106,7 +106,7 @@ async def submit_host_lead(request: HostLeadRequest):
                 "id": host_lead.id,
                 "first_name": host_lead.first_name,
                 "last_name": host_lead.last_name,
-                "email": host_lead.email,
+                "phone_number": host_lead.phone_number,
                 "submitted_at": host_lead.created_at.isoformat()
             }
         )
@@ -133,7 +133,7 @@ async def get_all_host_leads(current_user=Depends(get_admin_user)):
                 "id": lead.id,
                 "first_name": lead.first_name,
                 "last_name": lead.last_name,
-                "email": lead.email,
+                "phone_number": lead.phone_number,
                 "is_contacted": lead.is_contacted,
                 "is_converted": lead.is_converted,
                 "created_at": lead.created_at.isoformat(),

@@ -236,9 +236,9 @@ admin.site.index_title = "Welcome to Loopin Backend Administration"
 @admin.register(HostLead)
 class HostLeadAdmin(admin.ModelAdmin):
     """Admin for 'Become a Host' Lead Management"""
-    list_display = ('full_name', 'email', 'is_contacted', 'is_converted', 'status_badge', 'created_at', 'days_since_submission')
+    list_display = ('full_name', 'phone_number', 'is_contacted', 'is_converted', 'status_badge', 'created_at', 'days_since_submission')
     list_filter = ('is_contacted', 'is_converted', 'created_at', 'updated_at')
-    search_fields = ('first_name', 'last_name', 'email', 'notes')
+    search_fields = ('first_name', 'last_name', 'phone_number', 'notes')
     readonly_fields = ('created_at', 'updated_at')
     date_hierarchy = 'created_at'
     actions = ['mark_as_contacted', 'mark_as_converted', 'mark_as_uncontacted']
@@ -246,7 +246,7 @@ class HostLeadAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Lead Information', {
-            'fields': ('first_name', 'last_name', 'email'),
+            'fields': ('first_name', 'last_name', 'phone_number'),
             'description': 'Basic contact information of the potential host'
         }),
         ('Lead Status', {
@@ -323,13 +323,13 @@ class HostLeadAdmin(admin.ModelAdmin):
         response['Content-Disposition'] = 'attachment; filename="host_leads.csv"'
         
         writer = csv.writer(response)
-        writer.writerow(['First Name', 'Last Name', 'Email', 'Contacted', 'Converted', 'Submitted Date', 'Notes'])
+        writer.writerow(['First Name', 'Last Name', 'Phone Number', 'Contacted', 'Converted', 'Submitted Date', 'Notes'])
         
         for lead in queryset:
             writer.writerow([
                 lead.first_name,
                 lead.last_name,
-                lead.email,
+                lead.phone_number,
                 'Yes' if lead.is_contacted else 'No',
                 'Yes' if lead.is_converted else 'No',
                 lead.created_at.strftime('%Y-%m-%d %H:%M:%S'),
