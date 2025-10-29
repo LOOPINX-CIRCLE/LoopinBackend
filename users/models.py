@@ -127,7 +127,7 @@ class HostLead(models.Model):
     """Model for storing 'Become a Host' lead information"""
     first_name = models.CharField(max_length=100, help_text="First name of the potential host")
     last_name = models.CharField(max_length=100, help_text="Last name of the potential host")
-    email = models.EmailField(unique=True, help_text="Email address of the potential host")
+    phone_number = models.CharField(max_length=20, unique=True, help_text="Phone number of the potential host")
     
     # Additional fields for tracking
     is_contacted = models.BooleanField(default=False, help_text="Whether the lead has been contacted")
@@ -139,7 +139,7 @@ class HostLead(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.email})"
+        return f"{self.first_name} {self.last_name} ({self.phone_number})"
     
     class Meta:
         verbose_name = "Host Lead"
