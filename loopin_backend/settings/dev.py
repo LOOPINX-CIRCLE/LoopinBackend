@@ -56,8 +56,9 @@ LOGGING = {
     },
 }
 
-# CORS settings for development - Allow all origins
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+# CORS settings for development - Use specific origins from config
+# CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')
 
 # Email backend for development
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
