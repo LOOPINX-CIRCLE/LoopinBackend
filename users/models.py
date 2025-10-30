@@ -128,6 +128,7 @@ class HostLead(models.Model):
     first_name = models.CharField(max_length=100, help_text="First name of the potential host")
     last_name = models.CharField(max_length=100, help_text="Last name of the potential host")
     phone_number = models.CharField(max_length=20, unique=True, help_text="Phone number of the potential host")
+    message = models.TextField(blank=True, help_text="Optional message from the potential host")
     
     # Additional fields for tracking
     is_contacted = models.BooleanField(default=False, help_text="Whether the lead has been contacted")
