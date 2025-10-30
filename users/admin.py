@@ -246,7 +246,7 @@ class HostLeadAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Lead Information', {
-            'fields': ('first_name', 'last_name', 'phone_number'),
+            'fields': ('first_name', 'last_name', 'phone_number', 'message'),
             'description': 'Basic contact information of the potential host'
         }),
         ('Lead Status', {
@@ -323,13 +323,14 @@ class HostLeadAdmin(admin.ModelAdmin):
         response['Content-Disposition'] = 'attachment; filename="host_leads.csv"'
         
         writer = csv.writer(response)
-        writer.writerow(['First Name', 'Last Name', 'Phone Number', 'Contacted', 'Converted', 'Submitted Date', 'Notes'])
+        writer.writerow(['First Name', 'Last Name', 'Phone Number', 'Message', 'Contacted', 'Converted', 'Submitted Date', 'Notes'])
         
         for lead in queryset:
             writer.writerow([
                 lead.first_name,
                 lead.last_name,
                 lead.phone_number,
+                lead.message,
                 'Yes' if lead.is_contacted else 'No',
                 'Yes' if lead.is_converted else 'No',
                 lead.created_at.strftime('%Y-%m-%d %H:%M:%S'),

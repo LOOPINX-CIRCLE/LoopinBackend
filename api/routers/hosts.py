@@ -19,13 +19,15 @@ class HostLeadRequest(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100, description="First name")
     last_name: str = Field(..., min_length=1, max_length=100, description="Last name")
     phone_number: str = Field(..., min_length=10, max_length=20, description="Phone number")
+    message: Optional[str] = Field(None, description="Optional message from the potential host")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "first_name": "John",
                 "last_name": "Doe",
-                "phone_number": "+1234567890"
+                "phone_number": "+1234567890",
+                "message": "I would like to host events in my area"
             }
         }
 
@@ -46,13 +48,14 @@ def check_existing_lead(phone_number: str):
 
 
 @sync_to_async
-def create_lead(first_name: str, last_name: str, phone_number: str):
+def create_lead(first_name: str, last_name: str, phone_number: str, message: Optional[str] = None):
     """Create a new host lead"""
     from users.models import HostLead
     return HostLead.objects.create(
         first_name=first_name,
         last_name=last_name,
-        phone_number=phone_number
+        phone_number=phone_number,
+        message=message or ""
     )
 
 
@@ -81,6 +84,7 @@ async def submit_host_lead(request: HostLeadRequest):
     - **first_name**: First name of the potential host
     - **last_name**: Last name of the potential host  
     - **phone_number**: Phone number of the potential host
+    - **message**: Optional message from the potential host
     """
     try:
         existing_lead = await check_existing_lead(request.phone_number)
@@ -97,7 +101,7 @@ async def submit_host_lead(request: HostLeadRequest):
                 }
             )
         
-        host_lead = await create_lead(request.first_name, request.last_name, request.phone_number)
+        host_lead = await create_lead(request.first_name, request.last_name, request.phone_number, request.message)
         
         return HostLeadResponse(
             success=True,
@@ -107,6 +111,7 @@ async def submit_host_lead(request: HostLeadRequest):
                 "first_name": host_lead.first_name,
                 "last_name": host_lead.last_name,
                 "phone_number": host_lead.phone_number,
+                "message": host_lead.message,
                 "submitted_at": host_lead.created_at.isoformat()
             }
         )
@@ -134,6 +139,7 @@ async def get_all_host_leads(current_user=Depends(get_admin_user)):
                 "first_name": lead.first_name,
                 "last_name": lead.last_name,
                 "phone_number": lead.phone_number,
+                "message": lead.message,
                 "is_contacted": lead.is_contacted,
                 "is_converted": lead.is_converted,
                 "created_at": lead.created_at.isoformat(),
