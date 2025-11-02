@@ -51,8 +51,8 @@ erDiagram
 
     AUTH_USER {
         BIGINT id PK "Primary key, auto-increment"
-        UUID uuid UK "Public unique identifier"
-        STRING username UK "Phone number for authentication"
+        UUID uuid "Public unique identifier"
+        STRING username "Phone number for authentication"
         STRING email "User email address"
         STRING password "Hashed password"
         STRING first_name "First name"
@@ -69,7 +69,7 @@ erDiagram
     USER_PROFILE {
         BIGINT id PK "Primary key"
         BIGINT user_id FK "One-to-One with AUTH_USER"
-        UUID uuid UK "Public unique identifier"
+        UUID uuid "Public unique identifier"
         STRING name "Full name (2-100 chars)"
         STRING phone_number "Contact number"
         TEXT bio "User biography (max 500)"
@@ -86,7 +86,7 @@ erDiagram
 
     USER_PHONE_OTP {
         BIGINT id PK "Primary key"
-        STRING phone_number UK "Phone for OTP"
+        STRING phone_number "Phone for OTP"
         STRING otp_code "4-digit OTP"
         STRING otp_type "signup|login|password_reset|phone_verification|transaction"
         STRING status "pending|verified|expired|failed"
@@ -99,8 +99,8 @@ erDiagram
 
     EVENT_INTEREST {
         BIGINT id PK "Primary key"
-        STRING name UK "Interest name"
-        STRING slug UK "URL-friendly slug"
+        STRING name "Interest name"
+        STRING slug "URL-friendly slug"
         TEXT description "Interest description"
         BOOLEAN is_active "Interest active"
         DATETIME created_at "Creation"
@@ -109,7 +109,7 @@ erDiagram
 
     VENUE {
         BIGINT id PK "Primary key"
-        UUID uuid UK "Public unique identifier"
+        UUID uuid "Public unique identifier"
         STRING name "Venue name (max 150)"
         TEXT address "Full address"
         STRING city "City name (max 100)"
@@ -126,9 +126,9 @@ erDiagram
     EVENT {
         BIGINT id PK "Primary key"
         BIGINT host_id FK "Event host (AUTH_USER)"
-        BIGINT venue_id FK_NULL "Linked venue"
-        UUID uuid UK "Public unique identifier"
-        STRING slug UK "URL-friendly slug"
+        BIGINT venue_id FK "Linked venue (nullable)"
+        UUID uuid "Public unique identifier"
+        STRING slug "URL-friendly slug"
         STRING title "Event title (3-200 chars)"
         TEXT description "Event details (min 10 chars)"
         STRING venue_text "Custom venue text (max 255)"
@@ -171,7 +171,7 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Requested event"
         BIGINT requester_id FK "User requesting"
-        UUID uuid UK "Public unique identifier"
+        UUID uuid "Public unique identifier"
         STRING status "pending|accepted|declined|cancelled|expired"
         TEXT message "Request message"
         TEXT host_message "Host response"
@@ -183,9 +183,9 @@ erDiagram
     EVENT_INVITE {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT host_id FK_NULL "Inviting host"
+        BIGINT host_id FK "Inviting host (nullable)"
         BIGINT invited_user_id FK "Invited user"
-        UUID uuid UK "Public unique identifier"
+        UUID uuid "Public unique identifier"
         STRING invite_type "direct|share_link"
         STRING status "pending|accepted|declined|expired"
         TEXT message "Invite message"
@@ -198,8 +198,8 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
         BIGINT user_id FK "Attending user"
-        BIGINT request_id FK_NULL "Originating request"
-        UUID uuid UK "Public unique identifier"
+        BIGINT request_id FK "Originating request (nullable)"
+        UUID uuid "Public unique identifier"
         STRING ticket_type "standard|vip|early_bird|premium|general|group|couple|family|student|senior_citizen|disabled|other"
         INT seats "Number of seats"
         BOOLEAN is_paid "Payment status"
@@ -215,7 +215,7 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
         BIGINT user_id FK "Reserving user"
-        UUID reservation_key UK "Unique reservation token"
+        UUID reservation_key "Unique reservation token"
         INT seats_reserved "Seats held"
         BOOLEAN consumed "Reservation used"
         DATETIME expires_at "Reservation expiration"
@@ -229,7 +229,7 @@ erDiagram
         BIGINT user_id FK "Attending user"
         STRING status "going|not_going|maybe|checked_in|cancelled"
         STRING payment_status "unpaid|paid|refunded"
-        STRING ticket_secret UK "Unique ticket code"
+        STRING ticket_secret "Unique ticket code"
         INT seats "Number of seats"
         DATETIME checked_in_at "Check-in timestamp"
         DATETIME checked_out_at "Check-out timestamp"
@@ -250,7 +250,7 @@ erDiagram
 
     TICKET_SECRET {
         BIGINT id PK "Primary key"
-        BIGINT attendance_record_id FK_U "Attendance record"
+        BIGINT attendance_record_id FK "Attendance record"
         TEXT secret_hash "Hashed secret"
         TEXT secret_salt "Hashing salt"
         BOOLEAN is_redeemed "Ticket used"
@@ -263,9 +263,9 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
         BIGINT user_id FK "Paying user"
-        UUID uuid UK "Public unique identifier"
+        UUID uuid "Public unique identifier"
         STRING order_reference "Order reference ID"
-        STRING order_id UK "Unique order ID"
+        STRING order_id "Unique order ID"
         DECIMAL amount "Order amount (min 0.01)"
         STRING currency "INR|USD|EUR|GBP"
         STRING status "created|pending|paid|completed|failed|cancelled|refunded|unpaid"
@@ -311,8 +311,8 @@ erDiagram
     NOTIFICATION {
         BIGINT id PK "Primary key"
         BIGINT recipient_id FK "Receiving user"
-        BIGINT sender_id FK_NULL "Sending user"
-        UUID uuid UK "Public unique identifier"
+        BIGINT sender_id FK "Sending user (nullable)"
+        UUID uuid "Public unique identifier"
         STRING type "event_request|event_invite|event_update|event_cancelled|payment_success|payment_failed|reminder|system|promotional"
         STRING title "Notification title (max 200)"
         TEXT message "Notification content"
@@ -326,8 +326,8 @@ erDiagram
 
     AUDIT_LOG {
         BIGINT id PK "Primary key"
-        BIGINT actor_user_id FK_NULL "User who acted"
-        BIGINT user_id FK_NULL "Legacy user FK"
+        BIGINT actor_user_id FK "User who acted (nullable)"
+        BIGINT user_id FK "Legacy user FK (nullable)"
         STRING action "create|update|delete|login|logout|password_change|profile_update"
         STRING object_type "Model type"
         BIGINT object_id "Object ID"
@@ -349,7 +349,7 @@ erDiagram
     AUDIT_LOG_SUMMARY {
         BIGINT id PK "Primary key"
         DATE date "Summary date"
-        BIGINT user_id FK_NULL "User"
+        BIGINT user_id FK "User (nullable)"
         STRING action "Action type"
         INT count "Total actions"
         INT successful_count "Successful"
