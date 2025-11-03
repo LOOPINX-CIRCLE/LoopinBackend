@@ -284,6 +284,7 @@ class EventAdmin(admin.ModelAdmin):
         'is_full_display',
         'capacity_status',
         'revenue_display',
+        'duration_display',
     ]
     fieldsets = (
         (_('Basic Information'), {
@@ -293,7 +294,7 @@ class EventAdmin(admin.ModelAdmin):
             'fields': ('venue', 'venue_text')
         }),
         (_('Event Schedule'), {
-            'fields': ('start_time', 'end_time')
+            'fields': ('start_time', 'end_time', 'duration_display')
         }),
         (_('Capacity & Pricing'), {
             'fields': (
@@ -455,6 +456,24 @@ class EventAdmin(admin.ModelAdmin):
             'FULL' if is_full else 'Available'
         )
     is_full_display.short_description = "Availability"
+    
+    def duration_display(self, obj):
+        """Display event duration in hours"""
+        if not obj.start_time or not obj.end_time:
+            return '-'
+        
+        duration = obj.end_time - obj.start_time
+        total_seconds = duration.total_seconds()
+        hours = total_seconds / 3600
+        
+        if hours < 1:
+            minutes = total_seconds / 60
+            return format_html('<span style="color: blue; font-weight: bold;">{:.1f} min</span>', minutes)
+        elif hours == int(hours):
+            return format_html('<span style="color: blue; font-weight: bold;">{} hr</span>', int(hours))
+        else:
+            return format_html('<span style="color: blue; font-weight: bold;">{:.1f} hr</span>', hours)
+    duration_display.short_description = "Duration"
     
     actions = [
         'publish_events',
