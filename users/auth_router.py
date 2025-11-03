@@ -664,11 +664,25 @@ async def get_user_profile(token: str = Depends(security)):
 
 
 @router.get("/event-interests", response_model=dict)
-async def get_event_interests():
+async def get_event_interests(token: str = Depends(security)):
     """
-    Get all active event interests for profile completion
+    Get all active event interests for profile completion.
+    
+    **Authentication Required**: JWT token must be provided.
     """
     try:
+        # Verify JWT token
+        payload = verify_jwt_token(token.credentials)
+        user_id = payload['user_id']
+        
+        # Verify user exists and is active
+        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Inactive user"
+            )
+        
         event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(is_active=True).order_by('name')))()
         
         interests_data = [
@@ -686,13 +700,19 @@ async def get_event_interests():
             "data": interests_data
         }
         
+    except HTTPException:
+        raise
+    except User.DoesNotExist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
     except Exception as e:
         logger.error(f"Error fetching event interests: {e}")
-        return {
-            "success": False,
-            "message": "Failed to retrieve event interests",
-            "data": []
-        }
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve event interests"
+        )
 
 
 @router.post("/logout", response_model=AuthResponse)
