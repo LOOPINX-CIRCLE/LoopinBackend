@@ -473,12 +473,16 @@ async def create_event_endpoint(
         venue_id = venue.id
         logger.info(f"Auto-created venue {venue.id} for event by user {user.id}")
     
+    # Calculate end_time from start_time and duration_hours
+    from datetime import timedelta
+    end_time = event_data.start_time + timedelta(hours=event_data.duration_hours)
+    
     event = await create_event_with_relationships(
         host=user,
         title=event_data.title,
         description=event_data.description,
         start_time=event_data.start_time,
-        end_time=event_data.end_time,
+        end_time=end_time,
         venue_id=venue_id,
         venue_text=event_data.venue_text,
         status=event_data.status,

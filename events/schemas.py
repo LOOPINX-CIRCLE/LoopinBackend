@@ -5,7 +5,7 @@ Comprehensive validation, documentation, and type safety.
 
 from pydantic import BaseModel, Field, validator, HttpUrl, model_validator, field_validator
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import re
 
@@ -107,7 +107,7 @@ class EventCreate(BaseModel):
     
     # Scheduling
     start_time: datetime = Field(..., description="Event start time")
-    end_time: datetime = Field(..., description="Event end time")
+    duration_hours: float = Field(..., gt=0, description="Event duration in hours (e.g., 2.5 for 2.5 hours)")
     
     # Capacity & Pricing
     max_capacity: int = Field(default=0, ge=0, description="Maximum capacity (0 for unlimited)")
@@ -130,12 +130,6 @@ class EventCreate(BaseModel):
     
     # Event interests
     event_interest_ids: List[int] = Field(default_factory=list, description="Event interest IDs")
-    
-    @validator('end_time')
-    def validate_end_after_start(cls, v, values):
-        if "start_time" in values and v <= values["start_time"]:
-            raise ValueError("End time must be after start time")
-        return v
     
     @validator('status')
     def validate_status(cls, v):
@@ -182,7 +176,7 @@ class EventCreate(BaseModel):
                 "description": "A fun outdoor music festival",
                 "venue_id": 1,
                 "start_time": "2024-07-15T18:00:00Z",
-                "end_time": "2024-07-15T22:00:00Z",
+                "duration_hours": 4,
                 "max_capacity": 100,
                 "is_paid": True,
                 "ticket_price": 50.00,
