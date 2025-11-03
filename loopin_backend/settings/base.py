@@ -4,12 +4,17 @@ This file contains common settings shared across all environments.
 """
 
 import os
+import environ
 from pathlib import Path
 from decouple import config
 import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Initialize django-environ
+env = environ.Env()
+environ.Env.read_env(BASE_DIR / ".env")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-rq1k3nfrru@$ds6bwf$t&3hk*s7bg5ef3it&o@s*6_jbbbfp(j')
@@ -30,7 +35,13 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    'core',  # Core package with shared utilities
     'users',
+    'events',
+    'attendances',
+    'payments',
+    'notifications',
+    'audit',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -69,7 +80,7 @@ ASGI_APPLICATION = 'loopin_backend.asgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 # Import custom database utility for IPv4/IPv6 handling
-from loopin_backend.db_utils import get_database_config
+from core.db_utils import get_database_config
 
 DATABASES = {
     'default': get_database_config(

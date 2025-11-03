@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from django.conf import settings
 
-from api.routers import auth, users, hosts
+from api.routers import auth, users, hosts, events
 
 # Create FastAPI app
 app = FastAPI(
@@ -30,6 +30,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(hosts.router, prefix="/hosts", tags=["Host Leads"])
+app.include_router(events.router)
 
 # Phone auth router will be imported in asgi.py after Django is set up
 

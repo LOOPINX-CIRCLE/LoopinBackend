@@ -151,10 +151,12 @@ async def signup_with_phone(request: PhoneNumberRequest):
         )
     except Exception as e:
         # Catch-all for any unexpected errors
-        logger.error(f"Unexpected error in signup for {request.phone_number if request.phone_number else 'N/A'}: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Unexpected error in signup for {request.phone_number if request.phone_number else 'N/A'}: {e}\n{error_trace}")
         return AuthResponse(
             success=False,
-            message="An unexpected error occurred. Please try again later."
+            message=f"An error occurred: {str(e)}. Please check logs for details."
         )
 
 
