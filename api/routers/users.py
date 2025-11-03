@@ -18,7 +18,7 @@ from core.permissions import PermissionChecker, RoleBasedPermission
 from core.exceptions import AuthorizationError, NotFoundError
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(tags=["users"])
 
 # JWT token scheme
 security = HTTPBearer()
