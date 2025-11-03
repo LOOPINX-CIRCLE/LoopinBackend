@@ -399,7 +399,7 @@ async def list_events(
     search: Optional[str] = Query(None, description="Search in title and description"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results per page"),
-    user: Optional[User] = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
 ):
     """
     List events with comprehensive filtering and pagination.
@@ -425,10 +425,10 @@ async def list_events(
         limit=limit,
     )
     
-    # Filter private events if not authenticated
+    # Filter private events (only show public events or events hosted by user)
     filtered_events = []
     for event in events:
-        if event.is_public or (user and event.host == user):
+        if event.is_public or event.host == user:
             filtered_events.append(event)
     
     return {
@@ -512,8 +512,10 @@ async def list_venues(
     venue_type: Optional[str] = Query(None, description="Filter by venue type"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    user: User = Depends(get_current_user),
 ):
     """List venues with filtering"""
+    # Auth required for venue listing
     @sync_to_async
     def get_venues():
         queryset = Venue.objects.filter(is_active=True)
@@ -558,8 +560,10 @@ async def create_venue_endpoint(
 @router.get("/venues/{venue_id}", response_model=VenueResponse)
 async def get_venue(
     venue_id: int = Path(..., description="Venue ID"),
+    user: User = Depends(get_current_user),
 ):
     """Get venue by ID"""
+    # Auth required for venue access
     venue = await get_venue_by_id(venue_id)
     return VenueResponse.from_orm(venue)
 
@@ -571,7 +575,7 @@ async def get_venue(
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int = Path(..., description="Event ID"),
-    user: Optional[User] = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
 ):
     """
     Get event details by ID with all ERD fields.
@@ -592,15 +596,15 @@ async def get_event(
     
     event = await get_event_with_permissions()
     
-    # Check permissions for soft-deleted events
-    if not event.is_active and (not user or event.host != user):
+    # Check permissions for soft-deleted events (only host can view)
+    if not event.is_active and event.host != user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found",
         )
     
-    # Check permissions for private events
-    if not event.is_public and (not user or event.host != user):
+    # Check permissions for private events (only host can view)
+    if not event.is_public and event.host != user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to view this event",
