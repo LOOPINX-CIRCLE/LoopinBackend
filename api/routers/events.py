@@ -229,6 +229,10 @@ def create_event_with_relationships(
             except Venue.DoesNotExist:
                 raise ValidationError(f"Venue {venue_id} not found", code="VENUE_NOT_FOUND")
         
+        # Ensure venue_text is empty string if None (CharField requirement)
+        if venue_text is None:
+            venue_text = ""
+        
         event = Event.objects.create(
             host=host,
             title=title,
@@ -446,15 +450,36 @@ async def create_event_endpoint(
     - **Auth**: Required (JWT)
     - **Validation**: Title, date/time validation, capacity checks, pricing
     - **Performance**: Atomic transaction with select_related
-    - **Features**: Supports venue linking, event interests, pricing, capacity, restrictions
+    - **Features**: Supports venue linking, venue auto-creation, event interests, pricing, capacity, restrictions
+    
+    **Venue Options:**
+    - `venue_id`: Use existing venue (fetch from GET /venues)
+    - `venue_create`: Auto-create new venue inline
+    - `venue_text`: Custom venue text without venue record
     """
+    # Handle venue auto-creation if provided
+    venue_id = event_data.venue_id
+    if event_data.venue_create and not venue_id:
+        venue = await create_venue(
+            name=event_data.venue_create.name,
+            address=event_data.venue_create.address,
+            city=event_data.venue_create.city,
+            venue_type=event_data.venue_create.venue_type,
+            capacity=event_data.venue_create.capacity,
+            latitude=float(event_data.venue_create.latitude) if event_data.venue_create.latitude else None,
+            longitude=float(event_data.venue_create.longitude) if event_data.venue_create.longitude else None,
+            metadata=event_data.venue_create.metadata,
+        )
+        venue_id = venue.id
+        logger.info(f"Auto-created venue {venue.id} for event by user {user.id}")
+    
     event = await create_event_with_relationships(
         host=user,
         title=event_data.title,
         description=event_data.description,
         start_time=event_data.start_time,
         end_time=event_data.end_time,
-        venue_id=event_data.venue_id,
+        venue_id=venue_id,
         venue_text=event_data.venue_text,
         status=event_data.status,
         is_public=event_data.is_public,

@@ -96,9 +96,14 @@ class EventCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=20000, description="Event description")
     slug: Optional[str] = Field(None, description="URL-friendly slug (auto-generated if not provided)")
     
-    # Venue
-    venue_id: Optional[int] = Field(None, description="Venue ID")
-    venue_text: Optional[str] = Field(None, max_length=255, description="Custom venue text")
+    # Venue - Option 1: Use existing venue by ID
+    venue_id: Optional[int] = Field(None, description="Existing venue ID (fetch from /venues list)")
+    
+    # Venue - Option 2: Auto-create new venue with full details
+    venue_create: Optional[VenueCreate] = Field(None, description="Create new venue inline (ignored if venue_id provided)")
+    
+    # Venue - Option 3: Custom venue text (no venue record)
+    venue_text: Optional[str] = Field(None, max_length=255, description="Custom venue text without creating venue record")
     
     # Scheduling
     start_time: datetime = Field(..., description="Event start time")
@@ -151,6 +156,24 @@ class EventCreate(BaseModel):
         if len(v) > 3:
             raise ValueError('Maximum 3 cover images allowed')
         return v
+    
+    @model_validator(mode='after')
+    def validate_venue_options(self):
+        """Ensure only one venue option is provided"""
+        venue_id = self.venue_id
+        venue_create = self.venue_create
+        venue_text = self.venue_text
+        
+        provided = sum([
+            venue_id is not None,
+            venue_create is not None,
+            venue_text not in (None, '')
+        ])
+        
+        if provided > 1:
+            raise ValueError('Please provide only ONE of: venue_id, venue_create, or venue_text')
+        
+        return self
     
     class Config:
         json_schema_extra = {
