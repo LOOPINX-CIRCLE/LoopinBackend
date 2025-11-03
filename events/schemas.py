@@ -295,7 +295,12 @@ class EventResponse(BaseModel):
         interests = []
         if include_interests:
             try:
-                interest_maps = event.interest_maps.select_related('event_interest').all()
+                # Use prefetch_related results if available, otherwise query
+                if hasattr(event, '_prefetched_objects_cache') and 'interest_maps' in event._prefetched_objects_cache:
+                    interest_maps = event._prefetched_objects_cache['interest_maps']
+                else:
+                    interest_maps = event.interest_maps.select_related('event_interest').all()
+                
                 interests = [
                     {
                         "id": im.event_interest.id,
@@ -304,7 +309,10 @@ class EventResponse(BaseModel):
                     }
                     for im in interest_maps
                 ]
-            except Exception:
+            except Exception as e:
+                # Log error for debugging
+                import logging
+                logging.error(f"Error loading event interests: {e}")
                 pass
         
         return cls(

@@ -241,7 +241,7 @@ class EventAttendee(TimeStampedModel):
         blank=True,
         related_name="attendees"
     )
-    ticket_type = models.CharField(max_length=20, choices=TICKET_TYPE_CHOICES, default='standard')
+    ticket_type = models.CharField(max_length=20, choices=TICKET_TYPE_CHOICES, default='general')
     seats = models.PositiveIntegerField(default=1)
     is_paid = models.BooleanField(default=False)
     price_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
