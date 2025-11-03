@@ -43,6 +43,33 @@ EVENT_STATUS_CHOICES = [
     ('postponed', 'Postponed'),
 ]
 
+ALLOWED_GENDER_CHOICES = [
+    ('all', 'All'),
+    ('male', 'Male Only'),
+    ('female', 'Female Only'),
+    ('non_binary', 'Non-binary'),
+]
+
+TICKET_TYPE_CHOICES = [
+    ('standard', 'Standard'),
+    ('vip', 'VIP'),
+    ('early_bird', 'Early Bird'),
+    ('premium', 'Premium'),
+    ('general', 'General'),
+    ('group', 'Group'),
+    ('couple', 'Couple'),
+    ('family', 'Family'),
+    ('student', 'Student'),
+    ('senior_citizen', 'Senior Citizen'),
+    ('disabled', 'Disabled'),
+    ('other', 'Other'),
+]
+
+INVITE_TYPE_CHOICES = [
+    ('direct', 'Direct'),
+    ('share_link', 'Share Link'),
+]
+
 
 # ============================================================================
 # ATTENDANCE RELATED CHOICES
@@ -80,10 +107,11 @@ PAYMENT_STATUS_CHOICES = [
     ('created', 'Created'),
     ('pending', 'Pending'),
     ('paid', 'Paid'),
+    ('completed', 'Completed'),
     ('failed', 'Failed'),
     ('cancelled', 'Cancelled'),
     ('refunded', 'Refunded'),
-    ('partially_refunded', 'Partially Refunded'),
+    ('unpaid', 'Unpaid'),  # For attendance records
 ]
 
 PAYMENT_PROVIDER_CHOICES = [
