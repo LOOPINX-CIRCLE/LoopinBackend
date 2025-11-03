@@ -4,6 +4,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import random
 import string
+import uuid
 
 from core.base_models import TimeStampedModel
 from core.choices import (
@@ -21,6 +22,7 @@ from core.choices import (
 
 class UserProfile(TimeStampedModel):
     """Extended user profile model for normal users"""
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     
     # Basic profile information
@@ -53,6 +55,9 @@ class UserProfile(TimeStampedModel):
     # Profile status
     is_verified = models.BooleanField(default=False, help_text="Whether the user profile is verified")
     is_active = models.BooleanField(default=True, help_text="Whether the user profile is active")
+    
+    # Additional fields from ERD
+    metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata")
 
     def __str__(self):
         return f"{self.name} ({self.phone_number})"
@@ -88,11 +93,24 @@ class UserProfile(TimeStampedModel):
 class EventInterest(TimeStampedModel):
     """Model for event interests/categories"""
     name = models.CharField(max_length=100, unique=True, help_text="Name of the event interest")
+    slug = models.SlugField(max_length=100, unique=True, blank=True, help_text="URL-friendly slug")
     description = models.TextField(blank=True, help_text="Description of the event interest")
     is_active = models.BooleanField(default=True, help_text="Whether this interest is active")
     
     def __str__(self):
         return self.name
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            self.slug = slugify(self.name)
+            # Ensure unique slug
+            original_slug = self.slug
+            count = 1
+            while EventInterest.objects.filter(slug=self.slug).exclude(pk=self.pk if self.pk is not None else None).exists():
+                self.slug = f"{original_slug}-{count}"
+                count += 1
+        super().save(*args, **kwargs)
     
     class Meta:
         verbose_name = "Event Interest"
