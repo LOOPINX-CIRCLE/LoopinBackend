@@ -10,18 +10,25 @@ from core.choices import (
 
 class AuditLog(TimeStampedModel):
     """Model for tracking sensitive actions and changes in the system"""
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        null=True, 
+        on_delete=models.SET_NULL,
+        related_name="audit_logs",
+        help_text="User who performed the action"
+    )
+    object_type = models.CharField(max_length=100)
+    object_id = models.BigIntegerField(null=True, blank=True)
+    action = models.CharField(max_length=50, choices=AUDIT_ACTION_CHOICES)
+    payload = models.JSONField(default=dict, blank=True, help_text="Snapshot of data changed")
+    
+    # Keep old fields for backward compatibility
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         null=True, 
         on_delete=models.SET_NULL,
-        related_name="audit_logs"
+        related_name="legacy_audit_logs"
     )
-    action = models.CharField(
-        max_length=50,
-        choices=AUDIT_ACTION_CHOICES
-    )
-    object_type = models.CharField(max_length=100)
-    object_id = models.CharField(max_length=50, blank=True)
     object_uuid = models.CharField(max_length=36, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)

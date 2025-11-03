@@ -26,7 +26,8 @@ class PaymentOrder(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="payment_orders"
     )
-    order_id = models.CharField(max_length=100, unique=True)
+    order_reference = models.CharField(max_length=100, blank=True, help_text="Order reference identifier")
+    order_id = models.CharField(max_length=100, unique=True, blank=True, help_text="Unique order identifier")
     amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
@@ -40,12 +41,13 @@ class PaymentOrder(TimeStampedModel):
     status = models.CharField(
         max_length=20,
         choices=PAYMENT_STATUS_CHOICES,
-        default='pending'
+        default='created'
     )
-    provider = models.CharField(
+    payment_provider = models.CharField(
         max_length=50, 
         choices=PAYMENT_PROVIDER_CHOICES,
-        default='razorpay'
+        default='razorpay',
+        help_text="Payment provider name"
     )
     provider_payment_id = models.CharField(max_length=100, blank=True)
     provider_response = models.JSONField(default=dict, blank=True)
@@ -75,14 +77,16 @@ class PaymentOrder(TimeStampedModel):
         return f"Order {self.order_id} - {self.user} - {self.amount} {self.currency}"
 
     def save(self, *args, **kwargs):
+        if not self.order_reference:
+            self.order_reference = self.generate_order_reference()
         if not self.order_id:
-            self.order_id = self.generate_order_id()
+            self.order_id = self.generate_order_reference()  # Backward compatibility
         if not self.expires_at:
             self.expires_at = timezone.now() + timezone.timedelta(hours=24)
         super().save(*args, **kwargs)
 
-    def generate_order_id(self):
-        """Generate a unique order ID"""
+    def generate_order_reference(self):
+        """Generate a unique order reference"""
         return f"ORD_{timezone.now().strftime('%Y%m%d%H%M%S')}_{self.user.id}_{uuid.uuid4().hex[:8]}"
 
     def mark_completed(self, provider_payment_id=None, transaction_id=None):
@@ -134,6 +138,11 @@ class PaymentOrder(TimeStampedModel):
     def is_paid(self):
         """Check if payment is completed"""
         return self.status == 'completed'
+    
+    @property
+    def is_unpaid(self):
+        """Check if payment is unpaid"""
+        return self.status == 'unpaid'
 
     @property
     def is_refunded(self):

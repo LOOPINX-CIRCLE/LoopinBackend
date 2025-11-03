@@ -130,3 +130,31 @@ class AttendanceOTP(TimeStampedModel):
     def is_valid(self):
         """Check if OTP is valid (not used and not expired)"""
         return not self.is_used and not self.is_expired()
+
+
+class TicketSecret(TimeStampedModel):
+    """Cryptographically secure ticket secrets for attendees"""
+    attendance_record = models.OneToOneField(
+        AttendanceRecord,
+        on_delete=models.CASCADE,
+        related_name="ticket_secret_obj"
+    )
+    secret_hash = models.TextField(help_text="Hashed ticket secret")
+    secret_salt = models.TextField(help_text="Salt for hashing")
+    is_redeemed = models.BooleanField(default=False, help_text="Whether ticket has been redeemed")
+    redeemed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["is_redeemed"]),
+        ]
+
+    def __str__(self):
+        return f"Ticket secret for {self.attendance_record.user} - {self.attendance_record.event.title}"
+
+    def mark_redeemed(self):
+        """Mark ticket as redeemed"""
+        from django.utils import timezone
+        self.is_redeemed = True
+        self.redeemed_at = timezone.now()
+        self.save(update_fields=['is_redeemed', 'redeemed_at', 'updated_at'])
