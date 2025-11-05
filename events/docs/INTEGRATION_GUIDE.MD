@@ -6,7 +6,7 @@ This guide is designed for Android and iOS developers who need to integrate the 
 
 **Important Notes:**
 - All API calls require authentication using a JWT token in the Authorization header
-- Base URL: `http://your-api-domain.com/api`
+- Base URL: `https://loopinbackend-g17e.onrender.com/api`
 - All requests should include: `Authorization: Bearer YOUR_JWT_TOKEN`
 - All responses are in JSON format
 - Use appropriate HTTP methods (GET, POST, PUT, DELETE) as specified
