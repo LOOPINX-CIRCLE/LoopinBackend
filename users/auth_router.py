@@ -25,7 +25,7 @@ from .services import twilio_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth")
 security = HTTPBearer()
 
 
