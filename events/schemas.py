@@ -15,12 +15,19 @@ import re
 # ============================================================================
 
 class VenueCreate(BaseModel):
-    """Schema for creating a venue"""
+    """
+    Schema for creating a venue reference record.
+    
+    Note: Venues are reference data only—the platform does not manage physical venues.
+    This record helps avoid duplicating location details. The `capacity` field is
+    informational only; actual event capacity is controlled by `Event.max_capacity`.
+    Multiple events can reference the same venue simultaneously.
+    """
     name: str = Field(..., min_length=1, max_length=150, description="Venue name")
     address: str = Field(..., description="Full address")
     city: str = Field(..., min_length=1, max_length=100, description="City name")
     venue_type: str = Field(default='indoor', description="Type of venue")
-    capacity: int = Field(default=0, ge=0, description="Venue capacity (0 for unlimited)")
+    capacity: int = Field(default=0, ge=0, description="Venue capacity - informational only (0 for unlimited)")
     latitude: Optional[Decimal] = Field(None, ge=-90, le=90, description="Latitude")
     longitude: Optional[Decimal] = Field(None, ge=-180, le=180, description="Longitude")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
@@ -96,14 +103,18 @@ class EventCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=20000, description="Event description")
     slug: Optional[str] = Field(None, description="URL-friendly slug (auto-generated if not provided)")
     
-    # Venue - Option 1: Use existing venue by ID
-    venue_id: Optional[int] = Field(None, description="Existing venue ID (fetch from /venues list)")
+    # Venue - Option 1: Use existing venue reference by ID
+    venue_id: Optional[int] = Field(None, description="Existing venue reference ID (fetch from /venues list)")
     
-    # Venue - Option 2: Auto-create new venue with full details
-    venue_create: Optional[VenueCreate] = Field(None, description="Create new venue inline (ignored if venue_id provided)")
+    # Venue - Option 2: Auto-create new venue reference with full details
+    venue_create: Optional[VenueCreate] = Field(None, description="Create new venue reference inline to avoid duplicating location details (ignored if venue_id provided)")
     
     # Venue - Option 3: Custom venue text (no venue record)
     venue_text: Optional[str] = Field(None, max_length=255, description="Custom venue text without creating venue record")
+    
+    # Note: Venues are reference data only—platform does not manage physical venues or bookings.
+    # Multiple events can reference the same venue simultaneously. Event capacity is controlled
+    # by max_capacity, not the venue's capacity field.
     
     # Scheduling
     start_time: datetime = Field(..., description="Event start time")

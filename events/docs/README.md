@@ -154,13 +154,13 @@ flowchart LR
         K --> N[POST /api/events<br/>with venue_text]
     end
     
-    subgraph "Venue Auto-Creation"
-        M --> O[Auto-create Venue]
+    subgraph "Venue Reference Creation"
+        M --> O[Auto-create Venue Record<br/>Reference Data Only]
         O --> P[Link to Event via FK]
-        P --> Q[Venue Available for Future]
+        P --> Q[Venue Available for<br/>Other Events Simultaneously]
     end
     
-    L --> R[Event Created ✓]
+    L --> R[Event Created ✓<br/>No Booking Conflicts]
     P --> R
     N --> R
     
@@ -168,7 +168,10 @@ flowchart LR
     style G fill:#fff3e0
     style O fill:#e8f5e9
     style R fill:#c8e6c9
+    style Q fill:#fff9c4
 ```
+
+**Note**: Venues are reference data only—the platform does not manage physical venue bookings. Multiple events can use the same venue simultaneously without conflicts. Event capacity is controlled by `Event.max_capacity`, not the venue's capacity field.
 
 ### Soft Delete & Visibility Rules
 
@@ -244,10 +247,15 @@ sequenceDiagram
 ## Models
 
 ### Venue
-- **Purpose**: Physical locations where events are hosted
+- **Purpose**: Reference data for physical locations to avoid duplicating location details
 - **Key Fields**: uuid, name, address, city, venue_type, capacity, latitude, longitude, metadata
 - **Relationships**: One-to-many with Event
 - **Soft Delete**: is_active flag
+- **Important Notes**:
+  - The platform does **not** create or manage physical venues—venues are reference data only
+  - The `capacity` field in Venue is informational only; the actual capacity for an event is stored in `Event.max_capacity`
+  - Multiple events can use the same venue simultaneously—there are no booking restrictions or conflicts
+  - The venue table exists solely to avoid duplicating location details when multiple events share the same physical location
 
 ### Event
 - **Purpose**: Core event model with comprehensive hosting features
@@ -506,9 +514,9 @@ flowchart TD
 ```mermaid
 graph LR
     subgraph "Venue Options (Mutually Exclusive)"
-        A[venue_id] --> B[Use Existing]
-        C[venue_create] --> D[Auto-Create]
-        E[venue_text] --> F[Custom Text]
+        A[venue_id] --> B[Use Existing Reference]
+        C[venue_create] --> D[Create New Reference]
+        E[venue_text] --> F[Custom Text Only]
     end
     
     subgraph "Validator Logic"
@@ -519,17 +527,36 @@ graph LR
     end
     
     subgraph "Database"
-        B --> L[(VENUE TABLE)]
-        D --> M[INSERT INTO venues]
+        B --> L[(VENUE TABLE<br/>Reference Data Only)]
+        D --> M[INSERT INTO venues<br/>No Physical Booking]
         M --> L
-        F --> N[Event record only]
+        F --> N[Event record only<br/>No venue reference]
     end
+    
+    subgraph "Important Notes"
+        O[Multiple Events<br/>Can Use Same Venue]
+        P[No Booking Conflicts]
+        Q[Event.max_capacity<br/>Controls Capacity]
+    end
+    
+    L --> O
+    O --> P
+    P --> Q
     
     style I fill:#ffcdd2
     style K fill:#ffcdd2
     style J fill:#c8e6c9
     style L fill:#e1f5fe
+    style O fill:#fff9c4
+    style P fill:#fff9c4
+    style Q fill:#fff9c4
 ```
+
+**Key Points**:
+- Venues are **reference data only**—the platform does not create or manage physical venues
+- The venue table exists to avoid duplicating location details when multiple events share the same location
+- Multiple events can reference the same venue simultaneously without any booking restrictions
+- Event capacity is controlled by `Event.max_capacity`, not `Venue.capacity` (which is informational only)
 
 ### Soft Delete Behavior
 ```mermaid
