@@ -66,12 +66,14 @@ curl -X GET "https://loopinbackend-g17e.onrender.com/api/auth/event-interests"
 ```bash
 TWILIO_TEST_MODE=false  # Real SMS delivery
 DEBUG=False             # Production settings
+ENABLE_WHATSAPP_NOTIFICATIONS=true  # Real WhatsApp messages
 ```
 
 #### Test Mode (Local Development)
 ```bash
 TWILIO_TEST_MODE=true   # OTP visible in logs
 DEBUG=True              # Development settings
+ENABLE_WHATSAPP_NOTIFICATIONS=true  # WhatsApp messages logged only
 ```
 
 ### 🔧 Quick Debug Commands
@@ -1253,8 +1255,14 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Twilio Configuration
 TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_MESSAGING_SERVICE_SID=your-messaging-service-sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=false  # true for development
+
+# WhatsApp Configuration (for host leads notifications)
+TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
+TWILIO_WHATSAPP_CONTENT_SID=your-content-template-sid
+ENABLE_WHATSAPP_NOTIFICATIONS=true
 
 # Deployment
 ALLOWED_HOSTS=*
@@ -2679,11 +2687,104 @@ The JWT token contains:
 - [ ] Set `DEBUG=False`
 - [ ] Set `TWILIO_TEST_MODE=false`
 - [ ] Use production Twilio credentials
+- [ ] Configure WhatsApp Content Template SID
+- [ ] Set `ENABLE_WHATSAPP_NOTIFICATIONS=true`
 - [ ] Configure proper DATABASE_URL (Supabase)
 - [ ] Set strong SECRET_KEY and JWT_SECRET_KEY
 - [ ] Run migrations: `python manage.py migrate`
 - [ ] Create superuser: `python manage.py createsuperuser`
 - [ ] Test complete flow on production
+
+---
+
+## 💬 WhatsApp Notifications for Host Leads
+
+### Overview
+
+The system includes WhatsApp notifications for host lead submissions using Twilio's Content API. When a user submits a host lead via `/api/hosts/become-a-host`, they automatically receive a personalized WhatsApp confirmation message.
+
+### Features
+
+- **Template-Based Messages**: Uses Twilio Content API templates for reliable delivery
+- **Personalization**: Messages include the user's first name
+- **Fire-and-Forget**: API doesn't fail if WhatsApp message fails
+- **Configurable**: Can be disabled via `ENABLE_WHATSAPP_NOTIFICATIONS=false`
+- **Opt-in Handling**: System logs opt-in errors gracefully without breaking the API
+
+### Configuration
+
+**Environment Variables:**
+```bash
+# WhatsApp Configuration
+TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
+TWILIO_WHATSAPP_CONTENT_SID=HXe0bf41dc0d9b3e45b1a3ae4918e8d1b3
+ENABLE_WHATSAPP_NOTIFICATIONS=true
+```
+
+**Template Details:**
+- **Content SID**: Configured via `TWILIO_WHATSAPP_CONTENT_SID`
+- **Template Message**: "Hello {{1}}, Your LoopinX Circle account setup is complete ✅ To confirm you received this message, please reply with "YES"."
+- **Variable 1**: User's first name (auto-populated)
+
+### API Endpoint
+
+**Submit Host Lead:**
+```bash
+POST /api/hosts/become-a-host
+Content-Type: application/json
+
+{
+  "first_name": "John",
+  "last_name": "Doe",
+  "phone_number": "+1234567890",
+  "message": "I would like to host events"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Thank you! We'll contact you soon!",
+  "data": {
+    "lead_id": 1,
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone_number": "+1234567890",
+    "status": "pending"
+  }
+}
+```
+
+**Note**: WhatsApp message is sent automatically in the background. The API response is returned immediately regardless of WhatsApp delivery status.
+
+### Error Handling
+
+**Common WhatsApp Error Codes:**
+- **63016**: Recipient has not opted in to receive WhatsApp messages
+- **63007**: Invalid WhatsApp number format or number not registered on WhatsApp
+- **63014**: WhatsApp message template not approved or invalid
+
+**Important**: These errors are logged but do not affect the API response. The host lead is still saved successfully.
+
+### Testing
+
+**Local Development:**
+```bash
+# WhatsApp notifications are disabled in test mode
+# Messages are logged but not sent
+TWILIO_TEST_MODE=true
+ENABLE_WHATSAPP_NOTIFICATIONS=true
+```
+
+**Production:**
+```bash
+# Real WhatsApp messages are sent
+TWILIO_TEST_MODE=false
+ENABLE_WHATSAPP_NOTIFICATIONS=true
+```
+
+---
 
 
 
@@ -2694,7 +2795,7 @@ The JWT token contains:
 - **FastAPI**: REST API endpoints with automatic documentation
 - **Django**: Database models, admin interface, ORM
 - **PostgreSQL**: Database (Supabase cloud)
-- **Twilio**: SMS OTP delivery
+- **Twilio**: SMS OTP delivery and WhatsApp notifications
 - **JWT**: Authentication tokens
 - **Pydantic**: Request/response validation
 - **Docker**: Containerization

@@ -7,6 +7,7 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
 - **Django 5.2** for ORM, migrations, and admin interface
 - **FastAPI** for high-performance API endpoints
 - **📱 Phone Authentication** with 4-digit SMS OTP verification via Twilio
+- **💬 WhatsApp Notifications** with Content API templates for host leads
 - **JWT Authentication** with secure token-based auth
 - **PostgreSQL** database with persistent storage (Supabase cloud)
 - **Docker & Docker Compose** for containerization
@@ -18,6 +19,7 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
 - **👤 Profile Management** with comprehensive validation
 - **🎪 Event Interests** with dynamic data management
 - **📸 Profile Pictures** with URL validation
+- **🏠 Host Leads Management** with WhatsApp confirmations
 - **🌏 India Timezone** support (Asia/Kolkata)
 
 ## 🏗️ Architecture
@@ -37,6 +39,11 @@ A comprehensive mobile backend built with Django + FastAPI, featuring **phone nu
                        ┌──────────────────┐
                        │   Twilio SMS     │
                        │   OTP Service    │
+                       └──────────────────┘
+                              │
+                       ┌──────────────────┐
+                       │   Twilio WhatsApp│
+                       │   Notifications  │
                        └──────────────────┘
 ```
 
@@ -103,8 +110,14 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Twilio Configuration (Get from Twilio Console)
 TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_MESSAGING_SERVICE_SID=your-messaging-service-sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=true  # Set to false for production
+
+# WhatsApp Configuration (for host leads notifications)
+TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
+TWILIO_WHATSAPP_CONTENT_SID=your-content-template-sid
+ENABLE_WHATSAPP_NOTIFICATIONS=true
 
 # CORS Settings
 ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
@@ -510,6 +523,32 @@ docker-compose exec db psql -U postgres loopin_db
 4. **Get Profile**: `GET /api/auth/profile`
 5. **Event Interests**: `GET /api/auth/event-interests`
 
+### 🏠 Host Leads API with WhatsApp Notifications
+
+**Submit a host lead and receive WhatsApp confirmation:**
+```bash
+# Submit host lead (automatically sends WhatsApp confirmation)
+curl -X POST "https://loopinbackend-g17e.onrender.com/api/hosts/become-a-host" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone_number": "+1234567890",
+    "message": "I would like to host events"
+  }'
+```
+
+**Features:**
+- Automatic WhatsApp confirmation message using Twilio Content API templates
+- Personalized messages with user's first name
+- Fire-and-forget notification (API doesn't fail if WhatsApp fails)
+- Configurable via `ENABLE_WHATSAPP_NOTIFICATIONS` environment variable
+
+**WhatsApp Message Template:**
+- Content SID: Configured via `TWILIO_WHATSAPP_CONTENT_SID`
+- Template: "Hello {{1}}, Your LoopinX Circle account setup is complete ✅ To confirm you received this message, please reply with "YES"."
+- Variable 1: User's first name
+
 ## 🧪 Testing Strategy
 
 ### Test Organization
@@ -560,8 +599,14 @@ DATABASE_URL=postgresql://username:password@host:port/database
 # Live Twilio Configuration
 TWILIO_ACCOUNT_SID=your_live_account_sid
 TWILIO_AUTH_TOKEN=your_live_auth_token
+TWILIO_MESSAGING_SERVICE_SID=your_messaging_service_sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=false
+
+# WhatsApp Configuration (Production)
+TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
+TWILIO_WHATSAPP_CONTENT_SID=your_content_template_sid
+ENABLE_WHATSAPP_NOTIFICATIONS=true
 ```
 
 ## 🎯 Maintaining Code Quality
