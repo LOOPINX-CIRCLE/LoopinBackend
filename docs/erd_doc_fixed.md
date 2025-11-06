@@ -32,7 +32,6 @@ erDiagram
     %% Attendance Module Relationships
     EVENT ||--o{ ATTENDANCE_RECORD : "has attendance"
     AUTH_USER ||--o{ ATTENDANCE_RECORD : "has attendance"
-    ATTENDANCE_RECORD ||--o{ ATTENDANCE_OTP : "has OTPs"
     ATTENDANCE_RECORD ||--|| TICKET_SECRET : "has secret"
     
     %% Payment Module Relationships
@@ -238,16 +237,6 @@ erDiagram
         DATETIME updated_at "Update"
     }
 
-    ATTENDANCE_OTP {
-        BIGINT id PK "Primary key"
-        BIGINT attendance_record_id FK "Attendance record"
-        STRING otp_code "Check-in OTP"
-        BOOLEAN is_used "OTP redeemed"
-        DATETIME expires_at "OTP expiration"
-        DATETIME created_at "Creation"
-        DATETIME updated_at "Update"
-    }
-
     TICKET_SECRET {
         BIGINT id PK "Primary key"
         BIGINT attendance_record_id FK "Attendance record"
@@ -361,7 +350,7 @@ erDiagram
     %% Apply styling
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP userTables
     class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION eventTables
-    class ATTENDANCE_RECORD,ATTENDANCE_OTP,TICKET_SECRET attendanceTables
+    class ATTENDANCE_RECORD,TICKET_SECRET attendanceTables
     class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
     class NOTIFICATION notificationTables
     class AUDIT_LOG,AUDIT_LOG_SUMMARY auditTables
@@ -678,22 +667,7 @@ User selects seats → Reservation created → Payment → Attendee record
 
 ---
 
-### **3.2 ATTENDANCE_OTP** 🔐
-**Purpose:** OTP-based check-in verification
-
-**Features:**
-- `otp_code` - Check-in OTP
-- `is_used` - One-time use
-- `expires_at` - Time-limited
-
-**Security:**
-- Prevents ticket sharing
-- Time-limited validity
-- Single-use verification
-
----
-
-### **3.3 TICKET_SECRET** 🎫
+### **3.2 TICKET_SECRET** 🎫
 **Purpose:** Cryptographically secure ticket verification
 
 **Security Model:**
@@ -864,7 +838,7 @@ created → pending → paid/completed OR failed/cancelled
 | **1-to-Many** | `EVENT` → `EVENT_REQUEST/INVITE/ATTENDEE` | Event has many interactions |
 | **1-to-Many** | `EVENT_REQUEST` → `EVENT_ATTENDEE` | Request converts to attendee |
 | **1-to-Many** | `PAYMENT_ORDER` → Transactions/Webhooks | Order has many records |
-| **1-to-Many** | `ATTENDANCE_RECORD` → `ATTENDANCE_OTP` | Multiple check-in attempts |
+
 | **Many-to-Many** | `USER_PROFILE` ↔ `EVENT_INTEREST` | Users have many interests |
 | **Many-to-Many** | `EVENT` ↔ `EVENT_INTEREST` | Events in many categories |
 
@@ -906,14 +880,14 @@ created → pending → paid/completed OR failed/cancelled
 4. Payment processing → `PAYMENT_TRANSACTION` logged
 5. Payment success → `EVENT_ATTENDEE` created + `TICKET_SECRET` generated
 6. User receives notification
-7. At event → Check-in with `ATTENDANCE_OTP`
+7. At event → Check-in using ticket secret
 ```
 
 ### **8.5 Event Check-in Flow**
 ```
 1. Attendee arrives at event
-2. Generate `ATTENDANCE_OTP` for their `ATTENDANCE_RECORD`
-3. Scan/verify OTP → Update `checked_in_at`
+2. Verify ticket secret from their `ATTENDANCE_RECORD`
+3. Mark as checked-in → Update `checked_in_at`
 4. Status changes: going → checked_in
 5. Optional: Check-out with `checked_out_at`
 ```

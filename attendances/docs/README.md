@@ -11,21 +11,21 @@ The Attendances module manages event check-in/check-out processes, ticket valida
 - **Status Options**: going, not_going, checked_in, cancelled
 - **Methods**: check_in(), check_out(), generate_ticket_secret()
 
-### AttendanceOTP
-- **Purpose**: OTP-based verification for event check-in
-- **Key Fields**: attendance_record, otp_code, expires_at, is_verified
-- **Security**: Time-limited OTP for secure check-in
+### TicketSecret
+- **Purpose**: Cryptographically secure ticket verification
+- **Key Fields**: attendance_record, secret_hash, secret_salt, is_redeemed, redeemed_at
+- **Security**: Hashed ticket secrets for secure validation
 
 ## Business Logic
 - **Ticket Generation**: Unique ticket secrets for each attendance
-- **Check-in Process**: OTP verification and timestamp recording
+- **Check-in Process**: Timestamp recording when user checks in
 - **Check-out Process**: Event completion tracking
 - **Capacity Management**: Seat allocation and tracking
 
 ## Security Features
 - Unique ticket secrets per attendance
-- OTP-based check-in verification
-- Time-limited access codes
+- Cryptographically hashed ticket secrets
+- Ticket redemption tracking
 - Audit trail for all attendance actions
 
 ## Integration Points

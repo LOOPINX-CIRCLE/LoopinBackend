@@ -6,7 +6,6 @@ from core.base_models import TimeStampedModel
 from core.choices import (
     ATTENDANCE_STATUS_CHOICES,
     PAYMENT_STATUS_CHOICES,
-    OTP_LENGTH,
 )
 from events.models import Event
 import secrets
@@ -99,37 +98,6 @@ class AttendanceRecord(TimeStampedModel):
         if self.checked_in_at and self.checked_out_at:
             return self.checked_out_at - self.checked_in_at
         return None
-
-
-class AttendanceOTP(TimeStampedModel):
-    """Model for generating OTPs for event check-in"""
-    attendance_record = models.ForeignKey(
-        AttendanceRecord, 
-        on_delete=models.CASCADE, 
-        related_name="checkin_otps"
-    )
-    otp_code = models.CharField(max_length=OTP_LENGTH)
-    is_used = models.BooleanField(default=False)
-    expires_at = models.DateTimeField()
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["otp_code"]),
-            models.Index(fields=["is_used"]),
-            models.Index(fields=["expires_at"]),
-        ]
-
-    def __str__(self):
-        return f"Check-in OTP for {self.attendance_record.user}"
-
-    def is_expired(self):
-        """Check if OTP has expired"""
-        from django.utils import timezone
-        return timezone.now() > self.expires_at
-
-    def is_valid(self):
-        """Check if OTP is valid (not used and not expired)"""
-        return not self.is_used and not self.is_expired()
 
 
 class TicketSecret(TimeStampedModel):
