@@ -762,6 +762,7 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     list_display = [
         'event_link',
         'user_link',
+        'origin_display',
         'status_display',
         'ticket_type',
         'seats',
@@ -790,7 +791,11 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     ]
     fieldsets = (
         (_('Basic Information'), {
-            'fields': ('uuid', 'event', 'user', 'request')
+            'fields': ('uuid', 'event', 'user')
+        }),
+        (_('Origin'), {
+            'fields': ('request', 'invite'),
+            'description': 'Track whether attendee came from a request or invitation'
         }),
         (_('Attendance Details'), {
             'fields': ('status', 'ticket_type', 'seats', 'checked_in_at')
@@ -803,11 +808,11 @@ class EventAttendeeAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    autocomplete_fields = ['event', 'user', 'request']
+    autocomplete_fields = ['event', 'user', 'request', 'invite']
     
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.select_related('event', 'user', 'request').order_by('-created_at')
+        return qs.select_related('event', 'user', 'request', 'invite').order_by('-created_at')
     
     def event_link(self, obj):
         """Link to event"""
@@ -822,6 +827,25 @@ class EventAttendeeAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">{}</a>', url, obj.user.username)
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
+    
+    def origin_display(self, obj):
+        """Display origin (request or invite)"""
+        if obj.request:
+            url = reverse('admin:events_eventrequest_change', args=[obj.request_id])
+            return format_html(
+                '<span style="color: blue;">Request: <a href="{}">#{}</a></span>',
+                url,
+                obj.request.id
+            )
+        elif obj.invite:
+            url = reverse('admin:events_eventinvite_change', args=[obj.invite_id])
+            return format_html(
+                '<span style="color: green;">Invite: <a href="{}">#{}</a></span>',
+                url,
+                obj.invite.id
+            )
+        return format_html('<span style="color: gray;">Direct</span>')
+    origin_display.short_description = "Origin"
     
     def status_display(self, obj):
         """Display status with color"""

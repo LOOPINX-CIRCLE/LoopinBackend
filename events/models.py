@@ -22,13 +22,23 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class Venue(TimeStampedModel):
-    """Venue model for event locations"""
+    """
+    Venue model for event location references.
+    
+    Note: This is reference data only—the platform does not create or manage physical venues.
+    The venue table exists to avoid duplicating location details when multiple events share
+    the same location. Multiple events can reference the same venue simultaneously without
+    any booking restrictions or conflicts.
+    
+    The `capacity` field is informational only; actual event capacity is controlled by
+    `Event.max_capacity`, not this field.
+    """
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
     name = models.CharField(max_length=150)
     address = models.TextField()
     city = models.CharField(max_length=100)
     venue_type = models.CharField(max_length=20, choices=VENUE_TYPE_CHOICES, default='indoor')
-    capacity = models.PositiveIntegerField(default=0)
+    capacity = models.PositiveIntegerField(default=0, help_text="Informational capacity hint only—actual capacity controlled by Event.max_capacity")
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True, help_text="Extra info, accessibility, capacity hints")
@@ -239,7 +249,16 @@ class EventAttendee(TimeStampedModel):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="attendees"
+        related_name="attendees",
+        help_text="Originating request if applicable"
+    )
+    invite = models.ForeignKey(
+        'EventInvite',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendees",
+        help_text="Originating invitation if applicable"
     )
     ticket_type = models.CharField(max_length=20, choices=TICKET_TYPE_CHOICES, default='general')
     seats = models.PositiveIntegerField(default=1)
@@ -254,6 +273,8 @@ class EventAttendee(TimeStampedModel):
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["event", "user"]),
+            models.Index(fields=["request"]),
+            models.Index(fields=["invite"]),
         ]
 
     def __str__(self):
