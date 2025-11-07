@@ -2,6 +2,7 @@
 FastAPI main application initialization.
 """
 
+import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,8 @@ from core.exceptions import (
     BusinessLogicError,
 )
 
+logger = logging.getLogger(__name__)
+
 # Create FastAPI app
 app = FastAPI(
     title="Loopin Backend API",
@@ -29,6 +32,14 @@ app = FastAPI(
     docs_url="/docs",
     openapi_url="/openapi.json",
 )
+
+# Startup event to log loaded routers
+@app.on_event("startup")
+async def startup_event():
+    """Log all loaded routers on application startup"""
+    logger.info("=" * 60)
+    logger.info("🚀 Loopin Backend API Starting Up")
+    logger.info("=" * 60)
 
 # Add CORS middleware
 app.add_middleware(
@@ -90,9 +101,28 @@ async def generic_exception_handler(request: Request, exc: Exception):
 # Include routers
 # Note: Legacy auth router (api/routers/auth.py) is deprecated in favor of phone authentication
 # Phone auth router is registered in asgi.py after Django is set up
-app.include_router(users.router, prefix="/users", tags=["users"])
-app.include_router(hosts.router, prefix="/hosts", tags=["Host Leads"])
-app.include_router(events.router)
+try:
+    app.include_router(users.router, prefix="/users", tags=["users"])
+    print("✅ Users router loaded successfully (prefix: /users)")
+except Exception as e:
+    print(f"❌ Failed to load users router: {e}")
+
+try:
+    app.include_router(hosts.router, prefix="/hosts", tags=["Host Leads"])
+    print("✅ Host Leads router loaded successfully (prefix: /hosts)")
+except Exception as e:
+    print(f"❌ Failed to load host leads router: {e}")
+
+try:
+    app.include_router(events.router)
+    print("✅ Events router loaded successfully (prefix: /events)")
+except Exception as e:
+    print(f"❌ Failed to load events router: {e}")
+
+# Log router summary after all routers are loaded
+print("=" * 60)
+print("📋 All routers loaded successfully!")
+print("=" * 60)
 
 # Root endpoint
 @app.get("/")
