@@ -2,6 +2,6 @@
 FastAPI routers package.
 """
 
-from . import auth, users, hosts
+from . import auth, users, hosts, events
 
-__all__ = ['auth', 'users', 'hosts']
+__all__ = ['auth', 'users', 'hosts', 'events']

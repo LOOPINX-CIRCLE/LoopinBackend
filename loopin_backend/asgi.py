@@ -9,10 +9,13 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 """
 
 import os
+import logging
 from django.core.asgi import get_asgi_application
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.wsgi import WSGIMiddleware
+
+logger = logging.getLogger(__name__)
 
 # Set Django settings module - use dev by default
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'loopin_backend.settings')
@@ -28,9 +31,11 @@ from api.main import app as fastapi_app
 try:
     from users.auth_router import router as auth_router
     fastapi_app.include_router(auth_router, tags=["Phone Authentication"])
-    print("Phone authentication router loaded successfully")
+    print("✅ Phone Authentication router loaded successfully (tags: Phone Authentication)")
 except ImportError as e:
-    print(f"Warning: Could not import phone auth router: {e}")
+    print(f"⚠️  Could not import phone auth router: {e}")
+except Exception as e:
+    print(f"❌ Failed to load phone auth router: {e}")
 
 # Get Django WSGI application for admin interface
 from django.core.wsgi import get_wsgi_application

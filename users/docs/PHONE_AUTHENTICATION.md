@@ -26,6 +26,7 @@
 #### Single Flow for Both New and Existing Users
 ```bash
 # Step 1: Send OTP (works for both signup and login)
+# ⚠️ Security: ONLY phone_number is accepted - other fields are ignored
 curl -X POST "https://loopinbackend-g17e.onrender.com/api/auth/signup" \
   -H "Content-Type: application/json" \
   -d '{"phone_number": "+1234567890"}'
@@ -619,6 +620,12 @@ graph TD
   "phone_number": "+1234567890"
 }
 ```
+
+**⚠️ Security Note:** 
+- **ONLY** `phone_number` is accepted in the signup request
+- Any additional fields (name, email, etc.) are **ignored** for security reasons
+- Profile information is collected later after OTP verification in the `complete-profile` endpoint
+- This prevents unauthorized data injection and ensures proper authentication flow
 
 **Validation:**
 - Phone number must include country code (e.g., `+1` for USA)
@@ -1372,6 +1379,12 @@ This section provides a comprehensive guide for integrating the Loopin Backend a
   "phone_number": "+1234567890"
 }
 ```
+
+**⚠️ Security Warning:**
+- **ONLY** `phone_number` field is accepted by the backend
+- Any additional fields (name, email, etc.) in the request payload are **completely ignored**
+- This is a security feature to prevent data injection before authentication
+- Profile information is collected **after** OTP verification in a separate endpoint
 
 **Payload Fields:**
 - `phone_number` (string, required): User's phone number with country code
