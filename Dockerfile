@@ -39,14 +39,6 @@ RUN mkdir -p /app/staticfiles /app/media /app/logs
 # Set proper permissions
 RUN chmod -R 755 /app
 
-# Run database migrations and setup
-RUN python3 manage.py migrate
-RUN python3 manage.py collectstatic --noinput
-
-# Copy and run setup script
-COPY setup_data.py /app/setup_data.py
-RUN python3 setup_data.py
-
 # Expose port
 EXPOSE 8000
 
@@ -54,5 +46,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Development startup script - Use ASGI server for FastAPI integration
-CMD ["python3", "-m", "uvicorn", "loopin_backend.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Runtime startup - run through entrypoint to apply migrations then launch ASGI server
+CMD ["/app/entrypoint.sh", "python3", "-m", "uvicorn", "loopin_backend.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
