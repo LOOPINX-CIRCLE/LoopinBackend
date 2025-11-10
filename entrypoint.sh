@@ -20,8 +20,8 @@ if [ -n "$DB_HOST" ]; then
   done
 fi
 
-echo "✅ Database is reachable, running migrations"
-python3 manage.py migrate --noinput
+echo "✅ Database is reachable, running migrations (fake initial enabled)"
+python3 manage.py migrate --noinput --fake-initial
 
 if [ "${COLLECT_STATIC:-true}" = "true" ]; then
   echo "📦 Collecting static assets"
