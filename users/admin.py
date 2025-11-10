@@ -1,9 +1,22 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from django.http import HttpResponse
-from django.shortcuts import render
-from .models import UserProfile, EventInterest, PhoneOTP, HostLead
+from django.http import HttpResponse, HttpResponseRedirect
+from django.db.models import Count
+from django.utils.text import Truncator
+from django.urls import reverse
+from django.utils.html import format_html
+
+from .forms import HostLeadWhatsAppForm
+from .models import (
+    EventInterest,
+    HostLead,
+    HostLeadWhatsAppMessage,
+    HostLeadWhatsAppTemplate,
+    PhoneOTP,
+    UserProfile,
+)
+from .services import TwilioConfigurationError, TwilioServiceError, get_twilio_service
 
 # Register your models here.
 
@@ -213,7 +226,6 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     
     def resend_otp(self, request, queryset):
         """Regenerate OTP for selected leads"""
-        from .services import twilio_service
         updated = 0
         for otp in queryset:
             otp.generate_otp()
@@ -228,21 +240,127 @@ class PhoneOTPAdmin(admin.ModelAdmin):
         return super().get_queryset(request).order_by('-created_at')
 
 
+@admin.register(HostLeadWhatsAppTemplate)
+class HostLeadWhatsAppTemplateAdmin(admin.ModelAdmin):
+    """Admin for managing reusable host lead WhatsApp templates"""
+    list_display = ('name', 'message_preview', 'usage_count')
+    search_fields = ('name', 'message')
+    fields = ('name', 'message')
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(usage_count=Count('messages'))
+
+    def message_preview(self, obj):
+        return Truncator(obj.message).chars(80)
+    message_preview.short_description = "Message"
+
+    def usage_count(self, obj):
+        return getattr(obj, 'usage_count', 0)
+    usage_count.short_description = "Times Used"
+
+
+@admin.register(HostLeadWhatsAppMessage)
+class HostLeadWhatsAppMessageAdmin(admin.ModelAdmin):
+    """Read-only log of WhatsApp communications with host leads"""
+    list_display = ('lead', 'status', 'twilio_sid', 'sent_by', 'created_at')
+    list_filter = ('status', 'created_at', 'template')
+    search_fields = ('lead__first_name', 'lead__last_name', 'lead__phone_number', 'twilio_sid', 'error_code')
+    readonly_fields = (
+        'lead',
+        'template',
+        'content_sid',
+        'variables',
+        'body_variable',
+        'status',
+        'twilio_sid',
+        'error_code',
+        'error_message',
+        'sent_by',
+        'created_at',
+        'updated_at',
+    )
+    
+    fieldsets = (
+        ('Recipient', {
+            'fields': ('lead', 'template', 'sent_by', 'status'),
+        }),
+        ('Message Details', {
+            'fields': ('content_sid', 'variables', 'body_variable', 'twilio_sid'),
+        }),
+        ('Errors', {
+            'fields': ('error_code', 'error_message'),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+    
+    def has_view_permission(self, request, obj=None):
+        return True
+
+
 # Customize admin site headers
 admin.site.site_header = "Loopin Backend Administration"
 admin.site.site_title = "Loopin Admin"
 admin.site.index_title = "Welcome to Loopin Backend Administration"
 
+
+class HostLeadWhatsAppMessageInline(admin.TabularInline):
+    """Readonly log of WhatsApp messages sent to host leads"""
+    model = HostLeadWhatsAppMessage
+    fields = (
+        'created_at',
+        'template',
+        'body_variable',
+        'status',
+        'twilio_sid',
+        'error_code',
+        'error_message',
+        'sent_by',
+    )
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+    show_change_link = False
+    ordering = ('-created_at',)
+    verbose_name = "WhatsApp Message"
+    verbose_name_plural = "WhatsApp Message History"
+
+
 @admin.register(HostLead)
 class HostLeadAdmin(admin.ModelAdmin):
     """Admin for 'Become a Host' Lead Management"""
-    list_display = ('full_name', 'phone_number', 'is_contacted', 'is_converted', 'status_badge', 'created_at', 'days_since_submission')
+    change_form_template = "admin/users/hostlead/change_form.html"
+    list_display = (
+        'full_name',
+        'phone_number',
+        'is_contacted',
+        'is_converted',
+        'status_badge',
+        'last_whatsapp_status',
+        'send_whatsapp_action',
+        'created_at',
+        'days_since_submission',
+    )
     list_filter = ('is_contacted', 'is_converted', 'created_at', 'updated_at')
     search_fields = ('first_name', 'last_name', 'phone_number', 'notes')
     readonly_fields = ('created_at', 'updated_at')
     date_hierarchy = 'created_at'
     actions = ['mark_as_contacted', 'mark_as_converted', 'mark_as_uncontacted']
     ordering = ('-created_at',)
+    inlines = (HostLeadWhatsAppMessageInline,)
     
     fieldsets = (
         ('Lead Information', {
@@ -343,7 +461,8 @@ class HostLeadAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimize queryset with all fields"""
-        return super().get_queryset(request).all()
+        qs = super().get_queryset(request).all()
+        return qs.prefetch_related('whatsapp_messages')
     
     def export_new_leads_to_csv(self, request, queryset):
         """Export only new (uncontacted) leads to CSV"""
@@ -351,6 +470,108 @@ class HostLeadAdmin(admin.ModelAdmin):
         self.export_to_csv(request, new_leads)
     export_new_leads_to_csv.short_description = "Export new (uncontacted) leads to CSV"
     actions.append(export_new_leads_to_csv)
+
+    def last_whatsapp_status(self, obj):
+        """Return latest WhatsApp send status for quick scanning"""
+        message = getattr(obj, 'whatsapp_messages', None)
+        if message is None:
+            message = obj.whatsapp_messages
+        latest = message.order_by('-created_at').first()
+        if not latest:
+            return '—'
+        status_icon = {
+            'sent': '✅',
+            'delivered': '📬',
+            'undelivered': '⚠️',
+            'failed': '❌',
+            'queued': '⏳',
+            'test-mode': '🧪',
+        }.get(latest.status, 'ℹ️')
+        return f"{status_icon} {latest.status.title()}"
+    last_whatsapp_status.short_description = 'WhatsApp Status'
+
+    def send_whatsapp_action(self, obj):
+        """Button that routes to the change page WhatsApp composer"""
+        url = reverse('admin:users_hostlead_change', args=[obj.pk])
+        return format_html('<a class="button" href="{}#whatsapp">Compose WhatsApp</a>', url)
+    send_whatsapp_action.short_description = 'Send WhatsApp'
+
+    def _recommendation_queryset(self):
+        return HostLeadWhatsAppTemplate.objects.annotate(
+            usage_count=Count('messages')
+        ).order_by('-usage_count', 'name', 'id')
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        lead = None
+        if object_id:
+            lead = self.get_object(request, object_id)
+        templates_qs = self._recommendation_queryset()
+
+        if request.method == 'POST' and '_send_whatsapp' in request.POST:
+            form = HostLeadWhatsAppForm(request.POST, templates_qs=templates_qs)
+            if not lead:
+                messages.error(request, "Lead not found. Please try again.")
+            elif form.is_valid():
+                template = form.cleaned_data.get('template')
+                message_text = form.cleaned_data['whatsapp_message'].strip()
+
+                template = form.cleaned_data.get("template")
+
+                try:
+                    twilio_service_instance = get_twilio_service()
+                except TwilioConfigurationError as exc:
+                    form.add_error(None, f"Twilio configuration error: {exc}")
+                except TwilioServiceError as exc:
+                    form.add_error(None, f"Twilio service error: {exc}")
+                else:
+                    content_sid = twilio_service_instance.config.whatsapp_content_sid
+                    if not content_sid:
+                        form.add_error(None, "WhatsApp template SID is not configured. Set TWILIO_WHATSAPP_TEMPLATE_SID in the environment.")
+                    else:
+                        content_variables = {
+                            "1": lead.first_name or lead.last_name or "",
+                            "2": message_text,
+                        }
+                        success, response_msg, details = twilio_service_instance.send_whatsapp_message(
+                            phone_number=lead.phone_number,
+                            content_sid=content_sid,
+                            content_variables=content_variables,
+                        )
+
+                        status = details.get("status") or ("sent" if success else "failed")
+                        twilio_sid = details.get("sid") or ""
+                        error_code = details.get("error_code") or ""
+                        error_message = "" if success else response_msg
+
+                        HostLeadWhatsAppMessage.objects.create(
+                            lead=lead,
+                            template=template,
+                            content_sid=content_sid,
+                            variables=content_variables,
+                            body_variable=message_text,
+                            status=status,
+                            twilio_sid=twilio_sid,
+                            error_code=error_code,
+                            error_message=error_message,
+                            sent_by=request.user,
+                        )
+
+                        if success:
+                            if not lead.is_contacted:
+                                lead.is_contacted = True
+                                lead.save(update_fields=['is_contacted', 'updated_at'])
+                            messages.success(request, f"WhatsApp message queued successfully: {response_msg}")
+                        else:
+                            messages.error(request, f"Failed to send WhatsApp message: {response_msg}")
+
+                        return HttpResponseRedirect(request.path)
+            extra_context['whatsapp_form'] = form
+        else:
+            extra_context.setdefault('whatsapp_form', HostLeadWhatsAppForm(templates_qs=templates_qs))
+
+        extra_context['whatsapp_recommendations'] = templates_qs
+        return super().changeform_view(request, object_id, form_url, extra_context=extra_context)
 
 # Unregister the default User admin and register our custom one
 admin.site.unregister(User)

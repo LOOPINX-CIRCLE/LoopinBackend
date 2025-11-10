@@ -1,7 +1,7 @@
 """
 Production-grade Host Leads API Router.
-Handles 'Become a Host' lead submission and management with WhatsApp notifications.
-CTO-level implementation with proper error handling, separation of concerns, and maintainability.
+Handles 'Become a Host' lead submission and management with clean separation
+from downstream marketing communications.
 """
 
 from typing import Optional, Dict, Any
@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from asgiref.sync import sync_to_async
 import logging
-from decouple import config
 
 from .auth import get_current_user
 
@@ -46,24 +45,6 @@ class HostLeadResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Dict[str, Any]] = None
-
-
-# ============================================================================
-# Configuration
-# ============================================================================
-
-class HostLeadConfig:
-    """Configuration for host lead notifications"""
-    
-    @staticmethod
-    def get_whatsapp_content_sid() -> Optional[str]:
-        """Get WhatsApp content template SID from environment"""
-        return config('TWILIO_WHATSAPP_CONTENT_SID', default=None)
-    
-    @staticmethod
-    def get_whatsapp_enabled() -> bool:
-        """Check if WhatsApp notifications are enabled"""
-        return config('ENABLE_WHATSAPP_NOTIFICATIONS', default='true', cast=bool)
 
 
 # ============================================================================
@@ -109,76 +90,6 @@ def get_all_leads():
 
 
 # ============================================================================
-# WhatsApp Notification Service
-# ============================================================================
-
-class WhatsAppNotificationService:
-    """Service for sending WhatsApp notifications to host leads"""
-    
-    def __init__(self):
-        self.content_sid = HostLeadConfig.get_whatsapp_content_sid()
-        self.enabled = HostLeadConfig.get_whatsapp_enabled()
-    
-    async def send_host_lead_confirmation(
-        self,
-        first_name: str,
-        phone_number: str,
-        is_existing: bool = False
-    ) -> bool:
-        """
-        Send WhatsApp confirmation message to host lead.
-        
-        Args:
-            first_name: User's first name
-            phone_number: User's phone number
-            is_existing: Whether this is an existing lead
-        
-        Returns:
-            True if message was sent successfully, False otherwise
-        """
-        if not self.enabled:
-            logger.debug("WhatsApp notifications are disabled")
-            return False
-        
-        if not self.content_sid:
-            logger.warning("WhatsApp content template SID not configured, skipping notification")
-            return False
-        
-        try:
-            from users.services import get_twilio_service
-            
-            twilio_service = get_twilio_service()
-            
-            # Prepare content variables for the template
-            # Template: "Hello {{1}}, Your LoopinX Circle account setup is complete ✅ 
-            #            To confirm you received this message, please reply with "YES"."
-            content_variables = {
-                "1": first_name  # Variable 1 is the user's first name
-            }
-            
-            # Send WhatsApp message (fire and forget - don't fail API if WhatsApp fails)
-            success, whatsapp_message = await sync_to_async(
-                lambda: twilio_service.send_whatsapp_message(
-                    phone_number=phone_number,
-                    content_sid=self.content_sid,
-                    content_variables=content_variables
-                )
-            )()
-            
-            if success:
-                logger.info(f"WhatsApp confirmation sent to {phone_number} using template {self.content_sid}")
-            else:
-                logger.warning(f"Failed to send WhatsApp confirmation to {phone_number}: {whatsapp_message}")
-            
-            return success
-                    
-        except Exception as whatsapp_error:
-            # Log error but don't fail the API call
-            logger.error(f"Error sending WhatsApp confirmation to {phone_number}: {str(whatsapp_error)}", exc_info=True)
-            return False
-
-
-# ============================================================================
 # Dependencies
 # ============================================================================
 
@@ -201,10 +112,7 @@ async def submit_host_lead(request: HostLeadRequest):
     """
     Submit a lead for 'Become a Host' program.
     
-    This endpoint:
-    - Creates or retrieves a host lead
-    - Sends WhatsApp confirmation notification
-    - Returns lead information
+    This endpoint creates or retrieves a host lead record.
     
     - **first_name**: First name of the potential host
     - **last_name**: Last name of the potential host  
@@ -214,18 +122,8 @@ async def submit_host_lead(request: HostLeadRequest):
     try:
         # Check for existing lead
         existing_lead = await check_existing_lead(request.phone_number)
-        
-        # Initialize WhatsApp notification service
-        whatsapp_service = WhatsAppNotificationService()
-        
+
         if existing_lead:
-            # Send WhatsApp confirmation for existing lead
-            await whatsapp_service.send_host_lead_confirmation(
-                first_name=request.first_name,
-                phone_number=request.phone_number,
-                is_existing=True
-            )
-            
             return HostLeadResponse(
                 success=True,
                 message="Thank you! We already have your information. We'll contact you soon!",
@@ -243,13 +141,6 @@ async def submit_host_lead(request: HostLeadRequest):
             last_name=request.last_name,
             phone_number=request.phone_number,
             message=request.message
-        )
-        
-        # Send WhatsApp confirmation for new lead
-        await whatsapp_service.send_host_lead_confirmation(
-            first_name=request.first_name,
-            phone_number=request.phone_number,
-            is_existing=False
         )
         
         return HostLeadResponse(

@@ -209,3 +209,108 @@ class HostLead(models.Model):
         verbose_name = "Host Lead"
         verbose_name_plural = "Host Leads"
         ordering = ['-created_at']
+
+
+class HostLeadWhatsAppTemplate(models.Model):
+    """
+    Recommended WhatsApp message snippet for host leads.
+
+    Only two business-managed fields are required:
+    - ``name``: short identifier used in the admin picker
+    - ``message``: text injected into template variable {{2}}
+    """
+
+    name = models.CharField(
+        max_length=120,
+        unique=True,
+        help_text="Short identifier for the marketing message (e.g., 'Intro Message').",
+    )
+    message = models.TextField(
+        help_text="Pre-approved copy inserted into template variable {{2}}.",
+    )
+
+    class Meta:
+        verbose_name = "Host Lead WhatsApp Template"
+        verbose_name_plural = "Host Lead WhatsApp Templates"
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+
+
+class HostLeadWhatsAppMessage(TimeStampedModel):
+    """Log of WhatsApp messages sent to host leads through the admin panel"""
+    
+    STATUS_CHOICES = (
+        ("queued", "Queued / Sending"),
+        ("sent", "Sent"),
+        ("delivered", "Delivered"),
+        ("undelivered", "Undelivered"),
+        ("failed", "Failed"),
+        ("test-mode", "Test Mode"),
+    )
+    
+    lead = models.ForeignKey(
+        HostLead,
+        on_delete=models.CASCADE,
+        related_name="whatsapp_messages",
+        help_text="Host lead recipient"
+    )
+    template = models.ForeignKey(
+        HostLeadWhatsAppTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+        help_text="Template used (if any)"
+    )
+    content_sid = models.CharField(
+        max_length=80,
+        help_text="Twilio Content Template SID used for this send"
+    )
+    variables = models.JSONField(
+        default=dict,
+        help_text="Content variables sent to Twilio (e.g., {'1': 'Name', '2': 'Message'})"
+    )
+    body_variable = models.TextField(
+        help_text="Final text value used for variable {{2}}"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="queued",
+        help_text="Latest known delivery status"
+    )
+    twilio_sid = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Twilio message SID for tracking"
+    )
+    error_code = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Twilio error code (if any)"
+    )
+    error_message = models.TextField(
+        blank=True,
+        help_text="Human-readable error message (if any)"
+    )
+    sent_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hostlead_whatsapp_messages",
+        help_text="Admin user who triggered the message"
+    )
+    
+    class Meta:
+        verbose_name = "Host Lead WhatsApp Message"
+        verbose_name_plural = "Host Lead WhatsApp Messages"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        base = f"Message to {self.lead.first_name} {self.lead.last_name}"
+        if self.twilio_sid:
+            return f"{base} (SID: {self.twilio_sid})"
+        return base

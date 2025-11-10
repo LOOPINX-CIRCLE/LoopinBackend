@@ -3,7 +3,6 @@ Production-grade Twilio service for SMS and WhatsApp messaging.
 CTO-level implementation with proper error handling, configuration management, and logging.
 """
 
-import os
 import json
 import logging
 from typing import Optional, Dict, Tuple, Any
@@ -49,6 +48,8 @@ class TwilioConfig:
             return False, "TWILIO_ACCOUNT_SID is required"
         if not self.auth_token:
             return False, "TWILIO_AUTH_TOKEN is required"
+        if not self.whatsapp_content_sid:
+            return False, "TWILIO_WHATSAPP_CONTENT_SID must be configured"
         return True, None
 
 
@@ -248,7 +249,7 @@ class TwilioService:
         from_number: Optional[str] = None,
         content_sid: Optional[str] = None,
         content_variables: Optional[Dict[str, Any]] = None
-    ) -> Tuple[bool, str]:
+    ) -> Tuple[bool, str, Dict[str, Any]]:
         """
         Send WhatsApp message via Twilio using Content API (templates) or plain text.
         
@@ -260,7 +261,7 @@ class TwilioService:
             content_variables: Dictionary of variables for content template (e.g., {"1": "Name"})
         
         Returns:
-            Tuple of (success: bool, message: str)
+            Tuple of (success: bool, message: str, details: dict)
         
         Raises:
             TwilioMessageError: If message sending fails with specific error details
@@ -271,11 +272,15 @@ class TwilioService:
                     logger.info(f"TEST MODE: WhatsApp template message would be sent to {phone_number} using content_sid {content_sid}")
                 else:
                     logger.info(f"TEST MODE: WhatsApp message would be sent to {phone_number}: {message_body}")
-                return True, f"TEST MODE: WhatsApp message sent to {phone_number}"
+                return True, f"TEST MODE: WhatsApp message sent to {phone_number}", {
+                    "status": "test-mode",
+                    "content_sid": content_sid,
+                    "content_variables": content_variables or {},
+                }
             
             if not self.client:
                 logger.error("Twilio client not initialized")
-                return False, "WhatsApp service unavailable"
+                return False, "WhatsApp service unavailable", {"error": "client_not_initialized"}
             
             formatted_phone = self._format_phone_number(phone_number)
             whatsapp_to = self._format_whatsapp_number(formatted_phone)
@@ -309,7 +314,7 @@ class TwilioService:
                     if not message_body:
                         error_msg = "Either message_body or content_sid must be provided"
                         logger.error(error_msg)
-                        return False, error_msg
+                        return False, error_msg, {"error": "missing_content"}
                     
                     logger.info(f"Sending WhatsApp plain text message from {whatsapp_from} to {whatsapp_to}")
                     logger.debug(f"Message body: {message_body[:100]}...")
@@ -327,6 +332,14 @@ class TwilioService:
                 error_code = getattr(message, 'error_code', None)
                 
                 # Handle delivery status
+                details: Dict[str, Any] = {
+                    "sid": getattr(message, "sid", None),
+                    "status": message_status,
+                    "error_code": error_code,
+                    "content_sid": final_content_sid,
+                    "content_variables": content_variables or {},
+                }
+
                 if message_status in ['failed', 'undelivered']:
                     error_msg = self._handle_whatsapp_error(error_code, message_status)
                     logger.warning(f"WhatsApp message undelivered. Status: {message_status}, Error Code: {error_code}, Error: {error_msg}")
@@ -337,7 +350,7 @@ class TwilioService:
                 else:
                     logger.info(f"Message status: {message_status} (will be updated by Twilio)")
                 
-                return True, "WhatsApp message sent successfully"
+                return True, "WhatsApp message sent successfully", details
                 
             except TwilioRestException as e:
                 error_code = getattr(e, 'code', None)
@@ -351,14 +364,27 @@ class TwilioService:
                 elif "not opted in" in str(e).lower() or "opt-in" in str(e).lower():
                     error_msg = f"Recipient has not opted in to receive WhatsApp messages from {whatsapp_from}"
                 
-                return False, error_msg
+                return False, error_msg, {
+                    "error_code": error_code,
+                    "error": str(e),
+                    "content_sid": final_content_sid,
+                    "content_variables": content_variables or {},
+                }
             except Exception as e:
                 logger.error(f"Unexpected error sending WhatsApp message: {e}", exc_info=True)
-                return False, f"Failed to send WhatsApp message: {str(e)}"
+                return False, f"Failed to send WhatsApp message: {str(e)}", {
+                    "error": str(e),
+                    "content_sid": final_content_sid,
+                    "content_variables": content_variables or {},
+                }
             
         except Exception as e:
             logger.error(f"Failed to send WhatsApp message to {phone_number}: {e}", exc_info=True)
-            return False, f"Failed to send WhatsApp message: {str(e)}"
+            return False, f"Failed to send WhatsApp message: {str(e)}", {
+                "error": str(e),
+                "content_sid": content_sid,
+                "content_variables": content_variables or {},
+            }
 
 
 # Global service instance (singleton pattern)

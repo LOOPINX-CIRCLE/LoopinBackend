@@ -2730,7 +2730,7 @@ The system includes WhatsApp notifications for host lead submissions using Twili
 ```bash
 # WhatsApp Configuration
 TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
-TWILIO_WHATSAPP_CONTENT_SID=HXe0bf41dc0d9b3e45b1a3ae4918e8d1b3
+TWILIO_WHATSAPP_CONTENT_SID=HXda2c524cbbefc8ba4930da8cc4a35350
 ENABLE_WHATSAPP_NOTIFICATIONS=true
 ```
 

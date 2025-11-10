@@ -116,7 +116,7 @@ TWILIO_TEST_MODE=true  # Set to false for production
 
 # WhatsApp Configuration (for host leads notifications)
 TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
-TWILIO_WHATSAPP_CONTENT_SID=your-content-template-sid
+TWILIO_WHATSAPP_TEMPLATE_SID=your-whatsapp-template-sid
 ENABLE_WHATSAPP_NOTIFICATIONS=true
 
 # CORS Settings
@@ -539,15 +539,17 @@ curl -X POST "https://loopinbackend-g17e.onrender.com/api/hosts/become-a-host" \
 ```
 
 **Features:**
-- Automatic WhatsApp confirmation message using Twilio Content API templates
-- Personalized messages with user's first name
+- Automatic WhatsApp confirmation message powered by a single Twilio template (managed via admin recommendations)
+- Personalized messages with user's first name (template slot `{{1}}`)
+- Admin-crafted copy injected into template slot `{{2}}`
 - Fire-and-forget notification (API doesn't fail if WhatsApp fails)
 - Configurable via `ENABLE_WHATSAPP_NOTIFICATIONS` environment variable
 
-**WhatsApp Message Template:**
-- Content SID: Configured via `TWILIO_WHATSAPP_CONTENT_SID`
-- Template: "Hello {{1}}, Your LoopinX Circle account setup is complete ✅ To confirm you received this message, please reply with "YES"."
-- Variable 1: User's first name
+**WhatsApp Template Configuration:**
+- Template SID: configure via `TWILIO_WHATSAPP_TEMPLATE_SID`
+- Template Name: `hostlead`
+- Slot `{{1}}`: Lead first name (autofilled by backend)
+- Slot `{{2}}`: Recommended message selected in Django admin
 
 ## 🧪 Testing Strategy
 
@@ -605,7 +607,7 @@ TWILIO_TEST_MODE=false
 
 # WhatsApp Configuration (Production)
 TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
-TWILIO_WHATSAPP_CONTENT_SID=your_content_template_sid
+TWILIO_WHATSAPP_TEMPLATE_SID=your_whatsapp_template_sid
 ENABLE_WHATSAPP_NOTIFICATIONS=true
 ```
 
