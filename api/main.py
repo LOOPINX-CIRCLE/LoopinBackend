@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from django.conf import settings
 
-from api.routers import users, hosts, events
+from api.routers import users, hosts, events, payouts
 from core.exceptions import (
     LoopinBaseException,
     ValidationError,
@@ -118,6 +118,12 @@ try:
     print("✅ Events router loaded successfully (prefix: /events)")
 except Exception as e:
     print(f"❌ Failed to load events router: {e}")
+
+try:
+    app.include_router(payouts.router)
+    print("✅ Payouts router loaded successfully (prefix: /payouts)")
+except Exception as e:
+    print(f"❌ Failed to load payouts router: {e}")
 
 # Log router summary after all routers are loaded
 print("=" * 60)
