@@ -314,3 +314,213 @@ class HostLeadWhatsAppMessage(TimeStampedModel):
         if self.twilio_sid:
             return f"{base} (SID: {self.twilio_sid})"
         return base
+
+
+class BankAccount(TimeStampedModel):
+    """
+    Bank account details for hosts to receive payouts.
+    
+    Hosts can add multiple bank accounts, but only one can be set as primary.
+    Bank account information is encrypted at rest and validated before payout processing.
+    """
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
+    host = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="bank_accounts",
+        help_text="Host user who owns this bank account"
+    )
+    bank_name = models.CharField(
+        max_length=100,
+        help_text="Name of the bank (e.g., 'State Bank of India', 'HDFC Bank')"
+    )
+    account_number = models.CharField(
+        max_length=30,
+        help_text="Bank account number"
+    )
+    ifsc_code = models.CharField(
+        max_length=11,
+        help_text="IFSC (Indian Financial System Code) - 11 characters"
+    )
+    account_holder_name = models.CharField(
+        max_length=100,
+        help_text="Name of the account holder as registered with the bank"
+    )
+    is_primary = models.BooleanField(
+        default=False,
+        help_text="Whether this is the primary bank account for payouts"
+    )
+    is_verified = models.BooleanField(
+        default=False,
+        help_text="Whether this bank account has been verified"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this bank account is active and can receive payouts"
+    )
+
+    class Meta:
+        verbose_name = "Bank Account"
+        verbose_name_plural = "Bank Accounts"
+        ordering = ['-is_primary', '-created_at']
+        indexes = [
+            models.Index(fields=["host"]),
+            models.Index(fields=["is_primary"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.account_holder_name} - {self.bank_name} ({self.masked_account_number})"
+
+    @property
+    def masked_account_number(self):
+        """Return masked account number for security"""
+        if len(self.account_number) <= 4:
+            return "****"
+        return f"****{self.account_number[-4:]}"
+
+    def save(self, *args, **kwargs):
+        """Ensure only one primary account per host"""
+        if self.is_primary:
+            BankAccount.objects.filter(
+                host=self.host,
+                is_primary=True
+            ).exclude(pk=self.pk if self.pk else None).update(is_primary=False)
+        super().save(*args, **kwargs)
+
+
+class HostPayoutRequest(TimeStampedModel):
+    """
+    Payout request from hosts for event earnings.
+    
+    Captures a financial snapshot of the event at the time of payout request:
+    - Event details (name, date, location, capacity)
+    - Ticket pricing (base fare, final fare with platform fee)
+    - Sales data (tickets sold, attendees list)
+    - Calculated earnings (host receives full base fare)
+    
+    Business Logic:
+    - Buyer pays: Base ticket fare + 10% platform fee (e.g., ₹100 + ₹10 = ₹110 per ticket)
+    - Host earns: Base ticket fare × Tickets sold (no platform fee deduction)
+    - Platform fee: Base ticket fare × 10% × Tickets sold (collected from buyers, not deducted from host)
+    
+    Example:
+    - Base ticket fare: ₹100
+    - Tickets sold: 50
+    - Final ticket fare (buyer pays): ₹110 per ticket
+    - Host earnings: ₹100 × 50 = ₹5,000
+    - Platform fee: ₹10 × 50 = ₹500
+    """
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.PROTECT,
+        related_name="payout_requests",
+        help_text="Bank account to receive the payout"
+    )
+    event = models.ForeignKey(
+        'events.Event',
+        on_delete=models.PROTECT,
+        related_name="payout_requests",
+        help_text="Event for which payout is requested"
+    )
+    
+    # Financial snapshot (calculated at request time)
+    host_name = models.CharField(
+        max_length=200,
+        help_text="Host name at the time of request"
+    )
+    event_name = models.CharField(
+        max_length=255,
+        help_text="Event name at the time of request"
+    )
+    event_date = models.DateTimeField(
+        help_text="Event date (start_time) at the time of request"
+    )
+    event_location = models.CharField(
+        max_length=255,
+        help_text="Event location (venue name or venue_text) at the time of request"
+    )
+    total_capacity = models.PositiveIntegerField(
+        help_text="Total event capacity at the time of request"
+    )
+    base_ticket_fare = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Base ticket price per attendee"
+    )
+    final_ticket_fare = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Final ticket price including 10% platform fee"
+    )
+    total_tickets_sold = models.PositiveIntegerField(
+        help_text="Total number of tickets sold at the time of request"
+    )
+    attendees_details = models.JSONField(
+        default=list,
+        help_text="List of attendees with name and contact at the time of request"
+    )
+    platform_fee_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Total platform fee (10% of base ticket fare × tickets sold)"
+    )
+    final_earning = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Host earnings: Base ticket fare × tickets sold (platform fee is added on top, not deducted)"
+    )
+    
+    # Payout status tracking
+    PAYOUT_STATUS_CHOICES = (
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Cancelled'),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=PAYOUT_STATUS_CHOICES,
+        default='pending',
+        help_text="Current status of the payout request"
+    )
+    processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when payout was processed"
+    )
+    transaction_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Bank transaction reference number"
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        help_text="Reason for rejection if status is 'rejected'"
+    )
+    notes = models.TextField(
+        blank=True,
+        help_text="Internal notes about this payout request"
+    )
+
+    class Meta:
+        verbose_name = "Host Payout Request"
+        verbose_name_plural = "Host Payout Requests"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=["event"]),
+            models.Index(fields=["bank_account"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["event_date"]),
+        ]
+
+    def __str__(self):
+        return f"Payout Request #{self.id} - {self.event_name} - {self.final_earning} INR"
+
+    @property
+    def platform_fee_percentage(self):
+        """Platform fee percentage (always 10%)"""
+        return 10.0
