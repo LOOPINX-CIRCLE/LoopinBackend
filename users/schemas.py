@@ -151,3 +151,121 @@ class UserProfileResponse(BaseModel):
     is_active: bool
     created_at: str
     updated_at: str
+
+
+# ============================================================================
+# Bank Account Schemas
+# ============================================================================
+
+class BankAccountCreate(BaseModel):
+    """Request model for creating a bank account"""
+    bank_name: str = Field(..., min_length=2, max_length=100, description="Name of the bank")
+    account_number: str = Field(..., min_length=8, max_length=30, description="Bank account number")
+    ifsc_code: str = Field(..., min_length=11, max_length=11, description="IFSC code (11 characters)")
+    account_holder_name: str = Field(..., min_length=2, max_length=100, description="Account holder name")
+    is_primary: bool = Field(default=False, description="Set as primary bank account")
+    
+    @validator('ifsc_code')
+    def validate_ifsc_code(cls, v):
+        import re
+        v = v.strip().upper()
+        if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', v):
+            raise ValueError('Invalid IFSC code format. Must be 11 characters: 4 letters, 0, then 6 alphanumeric')
+        return v
+    
+    @validator('account_number')
+    def validate_account_number(cls, v):
+        if not v.isdigit():
+            raise ValueError('Account number must contain only digits')
+        return v.strip()
+    
+    @validator('bank_name', 'account_holder_name')
+    def validate_name_fields(cls, v):
+        v = v.strip()
+        if not v or len(v) < 2:
+            raise ValueError('Field cannot be empty or too short')
+        return v
+
+
+class BankAccountUpdate(BaseModel):
+    """Request model for updating a bank account"""
+    bank_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    account_number: Optional[str] = Field(None, min_length=8, max_length=30)
+    ifsc_code: Optional[str] = Field(None, min_length=11, max_length=11)
+    account_holder_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    is_primary: Optional[bool] = None
+    is_active: Optional[bool] = None
+    
+    @validator('ifsc_code')
+    def validate_ifsc_code(cls, v):
+        if v is None:
+            return v
+        import re
+        v = v.strip().upper()
+        if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', v):
+            raise ValueError('Invalid IFSC code format')
+        return v
+
+
+class BankAccountResponse(BaseModel):
+    """Response model for bank account"""
+    id: int
+    uuid: str
+    bank_name: str
+    masked_account_number: str
+    ifsc_code: str
+    account_holder_name: str
+    is_primary: bool
+    is_verified: bool
+    is_active: bool
+    created_at: str
+    updated_at: str
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Payout Request Schemas
+# ============================================================================
+
+class AttendeeDetail(BaseModel):
+    """Attendee detail in payout request"""
+    name: str
+    contact: str  # phone number or email
+
+
+class PayoutRequestCreate(BaseModel):
+    """Request model for creating a payout request"""
+    event_id: int = Field(..., description="Event ID for which payout is requested")
+    bank_account_id: int = Field(..., description="Bank account ID to receive payout")
+
+
+class PayoutRequestResponse(BaseModel):
+    """Response model for payout request"""
+    id: int
+    uuid: str
+    bank_account: BankAccountResponse
+    event_id: int
+    host_name: str
+    event_name: str
+    event_date: str
+    event_location: str
+    total_capacity: int
+    base_ticket_fare: float
+    final_ticket_fare: float
+    total_tickets_sold: int
+    attendees_details: List[AttendeeDetail]
+    platform_fee_amount: float
+    platform_fee_percentage: float
+    final_earning: float
+    status: str
+    transaction_reference: Optional[str]
+    rejection_reason: Optional[str]
+    notes: Optional[str]
+    created_at: str
+    updated_at: str
+    processed_at: Optional[str]
+    
+    class Config:
+        from_attributes = True
