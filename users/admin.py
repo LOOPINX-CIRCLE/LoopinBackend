@@ -9,8 +9,10 @@ from django.utils.html import format_html
 
 from .forms import HostLeadWhatsAppForm
 from .models import (
+    BankAccount,
     EventInterest,
     HostLead,
+    HostPayoutRequest,
     HostLeadWhatsAppMessage,
     HostLeadWhatsAppTemplate,
     PhoneOTP,
@@ -572,6 +574,243 @@ class HostLeadAdmin(admin.ModelAdmin):
 
         extra_context['whatsapp_recommendations'] = templates_qs
         return super().changeform_view(request, object_id, form_url, extra_context=extra_context)
+
+# ============================================================================
+# Bank Account Admin
+# ============================================================================
+
+@admin.register(BankAccount)
+class BankAccountAdmin(admin.ModelAdmin):
+    """Admin for managing host bank accounts"""
+    list_display = (
+        'id',
+        'account_holder_name',
+        'bank_name',
+        'masked_account_number_display',
+        'ifsc_code',
+        'host',
+        'is_primary',
+        'is_verified',
+        'is_active',
+        'created_at',
+    )
+    list_filter = ('is_primary', 'is_verified', 'is_active', 'created_at', 'bank_name')
+    search_fields = (
+        'account_holder_name',
+        'bank_name',
+        'account_number',
+        'ifsc_code',
+        'host__username',
+        'host__email',
+        'host__first_name',
+        'host__last_name',
+    )
+    readonly_fields = ('uuid', 'masked_account_number', 'created_at', 'updated_at')
+    raw_id_fields = ('host',)
+    
+    fieldsets = (
+        ('Account Information', {
+            'fields': (
+                'uuid',
+                'host',
+                'account_holder_name',
+                'bank_name',
+                'account_number',
+                'ifsc_code',
+            )
+        }),
+        ('Status & Verification', {
+            'fields': (
+                'is_primary',
+                'is_verified',
+                'is_active',
+            )
+        }),
+        ('Security', {
+            'fields': ('masked_account_number',),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    def masked_account_number_display(self, obj):
+        """Display masked account number in list view"""
+        return obj.masked_account_number
+    masked_account_number_display.short_description = 'Account Number'
+
+
+# ============================================================================
+# Host Payout Request Admin
+# ============================================================================
+
+@admin.register(HostPayoutRequest)
+class HostPayoutRequestAdmin(admin.ModelAdmin):
+    """Admin for managing host payout requests"""
+    list_display = (
+        'id',
+        'event_name_display',
+        'host_name',
+        'event_date',
+        'total_tickets_sold',
+        'final_earning_display',
+        'platform_fee_amount_display',
+        'status',
+        'created_at',
+        'processed_at',
+    )
+    list_filter = ('status', 'created_at', 'processed_at', 'event_date')
+    search_fields = (
+        'event_name',
+        'host_name',
+        'event_location',
+        'bank_account__account_holder_name',
+        'bank_account__bank_name',
+        'transaction_reference',
+        'event__id',
+    )
+    readonly_fields = (
+        'uuid',
+        'event',
+        'bank_account',
+        'host_name',
+        'event_name',
+        'event_date',
+        'event_location',
+        'total_capacity',
+        'base_ticket_fare',
+        'final_ticket_fare',
+        'total_tickets_sold',
+        'attendees_details_display',
+        'platform_fee_amount',
+        'platform_fee_percentage',
+        'final_earning',
+        'created_at',
+        'updated_at',
+        'processed_at',
+    )
+    raw_id_fields = ('event', 'bank_account')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Request Information', {
+            'fields': (
+                'uuid',
+                'event',
+                'bank_account',
+                'status',
+            )
+        }),
+        ('Event Snapshot', {
+            'fields': (
+                'host_name',
+                'event_name',
+                'event_date',
+                'event_location',
+                'total_capacity',
+            )
+        }),
+        ('Financial Details', {
+            'fields': (
+                'base_ticket_fare',
+                'final_ticket_fare',
+                'total_tickets_sold',
+                'platform_fee_amount',
+                'platform_fee_percentage',
+                'final_earning',
+            )
+        }),
+        ('Attendees', {
+            'fields': ('attendees_details_display',),
+            'classes': ('collapse',),
+        }),
+        ('Processing Information', {
+            'fields': (
+                'transaction_reference',
+                'processed_at',
+                'rejection_reason',
+                'notes',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    actions = ['approve_payout', 'reject_payout', 'mark_processing', 'mark_completed']
+    
+    def event_name_display(self, obj):
+        """Display event name with link"""
+        if obj.event:
+            url = reverse('admin:events_event_change', args=[obj.event.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.event_name)
+        return obj.event_name
+    event_name_display.short_description = 'Event'
+    
+    def final_earning_display(self, obj):
+        """Display final earning with currency"""
+        return f"₹{obj.final_earning:,.2f}"
+    final_earning_display.short_description = 'Final Earning'
+    final_earning_display.admin_order_field = 'final_earning'
+    
+    def platform_fee_amount_display(self, obj):
+        """Display platform fee with currency"""
+        return f"₹{obj.platform_fee_amount:,.2f}"
+    platform_fee_amount_display.short_description = 'Platform Fee'
+    platform_fee_amount_display.admin_order_field = 'platform_fee_amount'
+    
+    def attendees_details_display(self, obj):
+        """Display attendees in a readable format"""
+        if not obj.attendees_details:
+            return "No attendees"
+        
+        html = "<ul>"
+        for attendee in obj.attendees_details:
+            name = attendee.get('name', 'Unknown')
+            contact = attendee.get('contact', 'N/A')
+            html += f"<li><strong>{name}</strong> - {contact}</li>"
+        html += "</ul>"
+        return format_html(html)
+    attendees_details_display.short_description = 'Attendees'
+    
+    def approve_payout(self, request, queryset):
+        """Approve selected payout requests"""
+        count = queryset.filter(status='pending').update(status='approved')
+        self.message_user(request, f'✅ {count} payout request(s) approved.')
+    approve_payout.short_description = "Approve selected payout requests"
+    
+    def reject_payout(self, request, queryset):
+        """Reject selected payout requests"""
+        count = queryset.filter(status__in=['pending', 'approved']).update(
+            status='rejected'
+        )
+        self.message_user(request, f'❌ {count} payout request(s) rejected.')
+    reject_payout.short_description = "Reject selected payout requests"
+    
+    def mark_processing(self, request, queryset):
+        """Mark selected payout requests as processing"""
+        from django.utils import timezone
+        count = queryset.filter(status='approved').update(
+            status='processing',
+            processed_at=timezone.now()
+        )
+        self.message_user(request, f'⏳ {count} payout request(s) marked as processing.')
+    mark_processing.short_description = "Mark as processing"
+    
+    def mark_completed(self, request, queryset):
+        """Mark selected payout requests as completed"""
+        from django.utils import timezone
+        count = queryset.filter(status='processing').update(
+            status='completed',
+            processed_at=timezone.now()
+        )
+        self.message_user(request, f'✅ {count} payout request(s) marked as completed.')
+    mark_completed.short_description = "Mark as completed"
+
 
 # Unregister the default User admin and register our custom one
 admin.site.unregister(User)
