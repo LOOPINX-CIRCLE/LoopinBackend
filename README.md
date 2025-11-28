@@ -110,13 +110,14 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Twilio Configuration (Get from Twilio Console)
 TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_MESSAGING_SERVICE_SID=your-messaging-service-sid
+TWILIO_MESSAGING_SERVICE_SID_SMS=your-sms-messaging-service-sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=true  # Set to false for production
 
 # WhatsApp Configuration (for host leads notifications)
 TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
-TWILIO_WHATSAPP_TEMPLATE_SID=your-whatsapp-template-sid
+TWILIO_WHATSAPP_CONTENT_SID=your-whatsapp-content-template-sid
+TWILIO_MESSAGING_SERVICE_SID_WHATSAPP=your-whatsapp-messaging-service-sid
 ENABLE_WHATSAPP_NOTIFICATIONS=true
 
 # CORS Settings
@@ -601,13 +602,14 @@ DATABASE_URL=postgresql://username:password@host:port/database
 # Live Twilio Configuration
 TWILIO_ACCOUNT_SID=your_live_account_sid
 TWILIO_AUTH_TOKEN=your_live_auth_token
-TWILIO_MESSAGING_SERVICE_SID=your_messaging_service_sid
+TWILIO_MESSAGING_SERVICE_SID_SMS=your_sms_messaging_service_sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=false
 
 # WhatsApp Configuration (Production)
 TWILIO_WHATSAPP_PHONE_NUMBER=+15558015045
-TWILIO_WHATSAPP_TEMPLATE_SID=your_whatsapp_template_sid
+TWILIO_WHATSAPP_CONTENT_SID=your_whatsapp_content_template_sid
+TWILIO_MESSAGING_SERVICE_SID_WHATSAPP=your_whatsapp_messaging_service_sid
 ENABLE_WHATSAPP_NOTIFICATIONS=true
 ```
 
