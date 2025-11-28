@@ -270,9 +270,15 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Mount FastAPI app at /api
+# Include all routers from fastapi_app into main app
+# This ensures all endpoints appear in the OpenAPI spec
+for route in fastapi_app.routes:
+    app.routes.append(route)
+
+# Also mount the app for proper path handling
 app.mount("/api", fastapi_app)
 logger.info("✅ FastAPI application mounted at /api")
+logger.info(f"✅ Included {len(fastapi_app.routes)} routes from fastapi_app into main app")
 
 # Mount Django WSGI app at /django for admin interface
 app.mount("/django", WSGIMiddleware(django_wsgi_app))
