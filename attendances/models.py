@@ -16,9 +16,10 @@ class AttendanceRecord(TimeStampedModel):
     """Model for tracking event attendance with payment and check-in"""
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="attendance_records")
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="attendance_records"
+        related_name="attendance_records",
+        help_text="User profile attending the event"
     )
     status = models.CharField(
         max_length=20,
