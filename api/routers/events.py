@@ -103,7 +103,14 @@ async def get_current_user(
             detail="Invalid token",
         )
     
-    user = await sync_to_async(User.objects.get)(id=user_id)
+    try:
+        user = await sync_to_async(User.objects.get)(id=user_id)
+    except User.DoesNotExist:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+    
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -159,15 +166,37 @@ def get_events_queryset(
     search: Optional[str] = None,
     offset: int = 0,
     limit: int = 20,
+    user: Optional[User] = None,
 ) -> tuple[List[Event], int]:
     """
     Get optimized events queryset with filtering and pagination.
     
+    Args:
+        user: Authenticated user for privacy filtering (only show public events or user's own events)
+    
     Returns:
-        Tuple of (events list, total count)
+        Tuple of (events list, total count after privacy filtering)
     """
     # Base queryset with select_related and prefetch_related
-    queryset = Event.objects.select_related("host", "venue").filter(is_active=True)
+    queryset = Event.objects.select_related("host", "host__user", "venue").filter(is_active=True)
+    
+    # Apply privacy filter: only show public events or events hosted by the current user
+    if user is not None:
+        # Filter: show public events OR events hosted by this user (via UserProfile.user FK)
+        from users.models import UserProfile
+        user_profile = UserProfile.objects.filter(user=user).first()
+        
+        if user_profile:
+            # Show public events OR events hosted by this user's profile
+            queryset = queryset.filter(
+                Q(is_public=True) | Q(host=user_profile)
+            )
+        else:
+            # No profile exists, only show public events
+            queryset = queryset.filter(is_public=True)
+    else:
+        # No user provided, only show public events
+        queryset = queryset.filter(is_public=True)
     
     # Apply filters
     if host_id:
@@ -177,6 +206,7 @@ def get_events_queryset(
     if status:
         queryset = queryset.filter(status=status)
     if is_public is not None:
+        # If explicitly filtering by is_public, combine with privacy filter
         queryset = queryset.filter(is_public=is_public)
     if is_paid is not None:
         queryset = queryset.filter(is_paid=is_paid)
@@ -193,7 +223,7 @@ def get_events_queryset(
             Q(title__icontains=search) | Q(description__icontains=search)
         )
     
-    # Get total count before pagination
+    # Get total count AFTER all filters (including privacy filter)
     total = queryset.count()
     
     # Apply pagination
@@ -485,7 +515,7 @@ async def list_events(
     search: Optional[str] = Query(None, description="Search in title and description"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results per page"),
-    user: User = Depends(get_current_user),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """
     List events with comprehensive filtering and pagination.
@@ -495,6 +525,7 @@ async def list_events(
     - **Filtering**: By host, venue, status, paid/free, genders, interests, dates
     - **Search**: Full-text search in title and description
     - **Security**: Public events visible to all, private events to authenticated users only
+    - **Authentication**: Optional - unauthenticated users can view public events
     """
     events, total = await get_events_queryset(
         host_id=host_id,
@@ -509,19 +540,17 @@ async def list_events(
         search=search,
         offset=offset,
         limit=limit,
+        user=user,  # Pass user for privacy filtering
     )
     
-    # Filter private events (only show public events or events hosted by user)
-    filtered_events = []
-    for event in events:
-        if event.is_public or event.host == user:
-            filtered_events.append(event)
+    # Privacy filtering is now done at the database level in get_events_queryset
+    # so events are already filtered and total count is accurate
     
     return {
-        "total": total,
+        "total": total,  # This now matches the filtered results
         "offset": offset,
         "limit": limit,
-        "data": [EventResponse.from_orm(e, include_interests=True).model_dump() for e in filtered_events],
+        "data": [EventResponse.from_orm(e, include_interests=True).model_dump() for e in events],
     }
 
 

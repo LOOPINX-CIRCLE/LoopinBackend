@@ -22,9 +22,10 @@ class PaymentOrder(TimeStampedModel):
         related_name="payment_orders"
     )
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="payment_orders"
+        related_name="payment_orders",
+        help_text="User profile placing the payment order"
     )
     order_reference = models.CharField(max_length=100, blank=True, help_text="Order reference identifier")
     order_id = models.CharField(max_length=100, unique=True, blank=True, help_text="Unique order identifier")

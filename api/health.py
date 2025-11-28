@@ -4,6 +4,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.db import connection
 from django.core.cache import cache
+from datetime import datetime, timezone
 import redis
 import os
 
@@ -16,7 +17,7 @@ def health_check(request):
     """
     health_status = {
         "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "services": {}
     }
     

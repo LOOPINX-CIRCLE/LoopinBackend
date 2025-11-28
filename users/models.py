@@ -325,10 +325,10 @@ class BankAccount(TimeStampedModel):
     """
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
     host = models.ForeignKey(
-        User,
+        'UserProfile',
         on_delete=models.CASCADE,
         related_name="bank_accounts",
-        help_text="Host user who owns this bank account"
+        help_text="Host user profile who owns this bank account"
     )
     bank_name = models.CharField(
         max_length=100,

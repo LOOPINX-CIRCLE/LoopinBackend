@@ -12,6 +12,7 @@ erDiagram
     %% Users Module Relationships
     AUTH_USER ||--|| USER_PROFILE : "has profile"
     AUTH_USER ||--o{ USER_PHONE_OTP : "has OTP records"
+    AUTH_USER ||--o{ BANK_ACCOUNT : "has bank accounts"
     USER_PROFILE }o--o{ EVENT_INTEREST : "has interests (M-to-M)"
     
     %% Events Module Relationships
@@ -39,6 +40,11 @@ erDiagram
     EVENT ||--o{ PAYMENT_ORDER : "linked to"
     PAYMENT_ORDER ||--o{ PAYMENT_TRANSACTION : "has transactions"
     PAYMENT_ORDER ||--o{ PAYMENT_WEBHOOK : "receives webhooks"
+    
+    %% Payout Module Relationships
+    AUTH_USER ||--o{ BANK_ACCOUNT : "owns bank accounts"
+    BANK_ACCOUNT ||--o{ HOST_PAYOUT_REQUEST : "receives payouts"
+    EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
     
     %% Notification & Audit Relationships
     AUTH_USER ||--o{ NOTIFICATION : "receives notifications"
@@ -94,6 +100,46 @@ erDiagram
         DATETIME expires_at "OTP expiration"
         DATETIME created_at "Creation time"
         DATETIME updated_at "Last update"
+    }
+    
+    BANK_ACCOUNT {
+        BIGINT id PK "Primary key"
+        UUID uuid "Public unique identifier"
+        BIGINT host_id FK "Host user (AUTH_USER)"
+        STRING bank_name "Bank name (max 100)"
+        STRING account_number "Account number (max 30)"
+        STRING ifsc_code "IFSC code (11 chars)"
+        STRING account_holder_name "Account holder name (max 100)"
+        BOOLEAN is_primary "Primary account flag"
+        BOOLEAN is_verified "Verification status"
+        BOOLEAN is_active "Active status"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
+    }
+    
+    HOST_PAYOUT_REQUEST {
+        BIGINT id PK "Primary key"
+        UUID uuid "Public unique identifier"
+        BIGINT bank_account_id FK "Bank account (BANK_ACCOUNT)"
+        BIGINT event_id FK "Event (EVENT)"
+        STRING host_name "Host name snapshot"
+        STRING event_name "Event name snapshot"
+        DATETIME event_date "Event date snapshot"
+        STRING event_location "Event location snapshot"
+        INT total_capacity "Event capacity snapshot"
+        DECIMAL base_ticket_fare "Base ticket price"
+        DECIMAL final_ticket_fare "Final price (base + 10% fee)"
+        INT total_tickets_sold "Tickets sold snapshot"
+        JSONB attendees_details "Attendee names and contacts"
+        DECIMAL platform_fee_amount "Total platform fee"
+        DECIMAL final_earning "Host earnings (base × tickets)"
+        STRING status "pending|approved|processing|completed|rejected|cancelled"
+        DATETIME processed_at "Processing timestamp"
+        STRING transaction_reference "Bank transaction ID"
+        TEXT rejection_reason "Rejection details"
+        TEXT notes "Internal notes"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
     }
 
     EVENT_INTEREST {
@@ -348,8 +394,8 @@ erDiagram
     }
 
     %% Apply styling
-    class AUTH_USER,USER_PROFILE,USER_PHONE_OTP userTables
-    class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION eventTables
+    class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
+    class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION,HOST_PAYOUT_REQUEST eventTables
     class ATTENDANCE_RECORD,TICKET_SECRET attendanceTables
     class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
     class NOTIFICATION notificationTables
@@ -366,6 +412,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Comprehensive event management** with hosting, requests, invites, and attendance
 - **Multi-provider payment system** with transaction tracking
 - **Advanced attendance management** with check-in/check-out and secure ticketing
+- **Host payout management** with bank account management and financial calculations
 - **Complete audit trail** for security and compliance
 - **Flexible notification system** for user engagement
 
@@ -377,31 +424,79 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 
 ## **1. USERS MODULE** 🎫
 
-### **1.1 AUTH_USER** (Django Built-in)
-**Purpose:** Core authentication and authorization
+### **1.1 AUTH_USER** (Django Built-in) 🔐
+**Purpose:** Core authentication and authorization (Admin-Level Access)
+
+**⚠️ Important Distinction:**
+- **AUTH_USER** = Django's built-in authentication model
+- **ADMIN-ONLY ACCESS**: Only visible in Django Admin for staff/superuser accounts
+- Used for platform administrators, staff members, and internal users
+- **NOT** the same as USER_PROFILE (which represents normal customers/users)
+
+**Django Admin Access:**
+- **Admin-level users** (`is_staff=True` or `is_superuser=True`) see:
+  - ✅ **Users** (AUTH_USER) - Admin interface for managing authentication accounts
+  - ✅ **Groups** - Permission groups for admin users
+  - ✅ All other models (full access)
 
 **Key Features:**
 - Phone-based authentication (username = phone number)
 - JWT token generation for API access
-- Role-based access (staff, superuser)
-- Account lifecycle management
+- Role-based access control:
+  - `is_staff` - Django admin access
+  - `is_superuser` - Full admin privileges
+  - `is_active` - Account activation status
+- Permission management via Groups and Permissions
 
 **Relationships:**
-- 1-to-1 → `USER_PROFILE`
-- 1-to-many → All user-created content
+- 1-to-1 → `USER_PROFILE` (optional - only created for customers)
+- 1-to-many → All user-created content (events, requests, etc.)
 
 **Business Logic:**
-- Username is the phone number (e.g., +916205829376)
+- Username is typically the phone number (e.g., +916205829376)
 - Active users can authenticate via OTP or password
 - UUID provides public identifier for APIs
+- Staff/superuser accounts are for internal platform administration
+- Regular customer accounts link to USER_PROFILE for extended data
+
+**Admin Interface:**
+- Custom `UserAdmin` extends Django's `BaseUserAdmin`
+- Shows profile status inline (if USER_PROFILE exists)
+- Displays profile completion status
+- Filters by staff status, superuser status, and profile verification
 
 ---
 
 ### **1.2 USER_PROFILE** 👤
-**Purpose:** Extended profile information
+**Purpose:** Extended profile information for Normal Users/Customers
+
+**⚠️ Important Distinction:**
+- **USER_PROFILE** = Customer/End-user profile data
+- **CUSTOMER ACCESS**: Visible in Django Admin for managing normal users
+- Represents actual customers using the platform (not admin staff)
+- Linked to AUTH_USER via 1-to-1 relationship (optional)
+
+**Django Admin Access:**
+- **Normal users/customers** see in admin (if they have access):
+  - ✅ **User Profiles** - Customer profile management
+  - ✅ **Bank Accounts** - Host bank account details
+  - ✅ **Event Interests** - Event category preferences
+  - ✅ **Host Leads** - Host lead generation records
+  - ✅ **Host Lead WhatsApp Messages** - WhatsApp communication logs
+  - ✅ **Host Lead WhatsApp Templates** - Message templates
+  - ✅ **Host Payout Requests** - Payout request management
+  - ✅ **Phone OTPs** - OTP verification records
+
+**Key Features:**
+- Customer-facing profile information
+- Profile completion workflow
+- Event interest preferences (1-5 selections)
+- Profile pictures (1-6 URLs)
+- Gender and personal information
+- Location and bio data
 
 **Required Fields (After Signup):**
-- `name` (minimum 2 characters)
+- `name` (minimum 2 characters, letters only)
 - `gender` (male/female/other/prefer_not_to_say)
 - `profile_pictures` (1-6 URLs)
 - `event_interests` (1-5 selections)
@@ -415,13 +510,29 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 **Business Logic:**
 - Profile must be completed before full app access
 - Event interests enable personalized recommendations
-- Phone verification required for security
+- Phone verification required for security (`is_verified` flag)
 - `uuid` used in public APIs
+- One profile per AUTH_USER (1-to-1 relationship)
+- Profile can exist without admin-level AUTH_USER permissions
 
 **Validation Rules:**
 - Minimum 1, maximum 6 profile pictures
 - Minimum 1, maximum 5 event interests
 - Name: 2-100 characters, letters only
+- Phone number validation (format: +XXXXXXXXXXX)
+
+**Admin Interface:**
+- `UserProfileAdmin` - Separate admin interface for customer profiles
+- Shows profile completion status, verification status
+- Filters by verification, active status, gender, location
+- Search by name, phone number, location, bio
+- Horizontal filter for event interests selection
+
+**Relationship to AUTH_USER:**
+- Not all AUTH_USER records have USER_PROFILE (admin accounts may not)
+- Not all USER_PROFILE records need admin access (customers don't need `is_staff=True`)
+- USER_PROFILE represents the actual customer/user using the platform
+- AUTH_USER represents the authentication account (can be admin or customer)
 
 ---
 
@@ -463,6 +574,8 @@ pending → verified (success) OR failed|expired (failure)
 - Active/inactive status
 
 **Examples:** Music, Sports, Travel, Food & Drinks, Culture, Workshop, etc.
+
+**Note:** Bank account and payout request models are documented in detail in **Section 4.5 (Payout Module)** below.
 
 ---
 
@@ -746,6 +859,157 @@ created → pending → paid/completed OR failed/cancelled
 
 ---
 
+## **4.5 PAYOUT MODULE** 💸
+
+### **4.5.1 BANK_ACCOUNT** 💳
+**Purpose:** Store bank account details for hosts to receive payouts
+
+**Key Features:**
+- Multiple bank accounts per host (1-to-many relationship)
+- Single primary account designation (enforced via save() method)
+- Security-first design with masked account numbers
+- Verification workflow for compliance
+- Active/inactive status for account lifecycle management
+
+**Fields:**
+- `uuid` - Public unique identifier for API access
+- `host` - Foreign key to AUTH_USER (the host who owns the account)
+- `bank_name` - Name of the bank (e.g., "State Bank of India", "HDFC Bank")
+- `account_number` - Full account number (stored securely, displayed masked)
+- `ifsc_code` - 11-character IFSC code (Indian Financial System Code)
+  - Format: AAAA0XXXXXX (4 letters, 0, 6 alphanumeric)
+- `account_holder_name` - Name as registered with the bank
+- `is_primary` - Boolean flag (only one primary account per host)
+- `is_verified` - Verification status (for compliance workflows)
+- `is_active` - Soft delete flag (deactivate instead of hard delete)
+
+**Security Features:**
+- Account numbers automatically masked in API responses (format: `****XXXX`)
+- Masked display in admin panel and list views
+- UUID for public API access (no ID exposure)
+
+**Business Logic:**
+- Primary account enforcement: When a bank account is marked as `is_primary=True`,
+  all other bank accounts for the same host are automatically set to `is_primary=False`
+- This ensures only one primary account exists per host at any time
+- Indexed on `host`, `is_primary`, and `is_active` for efficient queries
+
+**Validation Rules:**
+- IFSC code must be exactly 11 characters, format: AAAA0XXXXXX
+- Account number must contain only digits
+- Bank name and account holder name: minimum 2 characters, trimmed
+
+**Use Cases:**
+- Host adds bank account for receiving payouts
+- Host designates primary account for automatic payouts
+- Admin verifies bank account details
+- Host deactivates old bank accounts
+
+---
+
+### **4.5.2 HOST_PAYOUT_REQUEST** 💰
+**Purpose:** Immutable financial snapshot for host payout requests from event earnings
+
+**Key Concept:** This model captures a complete, immutable snapshot of event and financial data at the time a payout is requested. This ensures accurate audit trails even if event details change later.
+
+**Financial Snapshot Fields (Immutable):**
+- `host_name` - Host's name at the time of request
+- `event_name` - Event title at the time of request
+- `event_date` - Event start time (start_time) at request time
+- `event_location` - Venue name + city, or custom venue_text
+- `total_capacity` - Event maximum capacity at request time
+- `base_ticket_fare` - Base ticket price set by host
+- `final_ticket_fare` - Final price buyers pay (base + 10% platform fee)
+- `total_tickets_sold` - Count of paid attendance records
+- `attendees_details` - JSON array with attendee information:
+  ```json
+  [
+    {"name": "John Doe", "contact": "+1234567890"},
+    {"name": "Jane Smith", "contact": "jane@example.com"}
+  ]
+  ```
+- `platform_fee_amount` - Total platform fee (10% of base × tickets sold)
+- `final_earning` - Host earnings (base ticket fare × tickets sold)
+
+**Business Logic - Platform Fee Model:**
+
+The platform uses an **additive fee model** (not deductive):
+
+```
+Example:
+- Base ticket fare: ₹100 (set by host)
+- Final ticket fare: ₹110 (paid by buyer = base + 10%)
+- Tickets sold: 50
+
+Revenue Flow:
+- Total collected from buyers: ₹110 × 50 = ₹5,500
+- Host earnings: ₹100 × 50 = ₹5,000 (no deduction)
+- Platform fee: ₹10 × 50 = ₹500 (collected from buyers)
+
+Host receives: ₹5,000 (full base fare)
+Platform receives: ₹500 (10% fee)
+Buyers paid: ₹5,500 (₹100 base + ₹10 fee per ticket)
+```
+
+**Key Points:**
+- Host earns the **full base ticket fare** (no platform fee deduction)
+- Platform fee is **added on top** and paid by buyers
+- Host earnings = Base ticket fare × Tickets sold
+- Platform fee = Base ticket fare × 10% × Tickets sold
+
+**Payout Status Workflow:**
+```
+pending → approved → processing → completed
+    ↓
+rejected/cancelled
+```
+
+**Status Fields:**
+- `status` - Current payout request status
+  - `pending` - Awaiting admin review
+  - `approved` - Approved, ready for processing
+  - `processing` - Payout being processed
+  - `completed` - Payout successfully completed
+  - `rejected` - Rejected by admin
+  - `cancelled` - Cancelled by host or system
+- `processed_at` - Timestamp when payout was actually processed
+- `transaction_reference` - Bank transaction reference number (after completion)
+- `rejection_reason` - Admin-provided reason if status is rejected
+- `notes` - Internal administrative notes
+
+**Data Integrity:**
+- Foreign keys use `PROTECT` instead of `CASCADE` to prevent accidental deletion
+  - Bank accounts cannot be deleted if they have payout requests
+  - Events cannot be deleted if they have payout requests
+- All financial snapshot fields are immutable after creation
+- Indexed on `event`, `bank_account`, `status`, and `event_date` for efficient queries
+- UUID for public API access
+
+**Business Rules:**
+- Only the event host can create a payout request for their event
+- Only one active payout request per event allowed (status: pending/approved/processing)
+- Requires paid ticket sales (cannot request payout for events with no ticket sales)
+- Bank account must be active and belong to the requesting host
+- Financial calculations done server-side at request time for accuracy
+
+**Calculation Source:**
+- `total_tickets_sold` - Counted from `ATTENDANCE_RECORD` where:
+  - `payment_status` IN ('paid', 'completed')
+  - `status` IN ('going', 'checked_in')
+  - Sum of `seats` field
+- Revenue calculated from `PAYMENT_ORDER` where:
+  - `status` = 'completed'
+- Platform fee calculated as: Base ticket fare × 10% × Tickets sold
+- Host earnings calculated as: Base ticket fare × Tickets sold
+
+**Audit Trail:**
+- Complete event state captured at request time
+- Attendee details stored for compliance
+- All financial metrics frozen at creation
+- Status changes tracked with timestamps
+
+---
+
 ## **5. NOTIFICATION MODULE** 🔔
 
 ### **5.1 NOTIFICATION** 📬
@@ -892,6 +1156,29 @@ created → pending → paid/completed OR failed/cancelled
 5. Optional: Check-out with `checked_out_at`
 ```
 
+### **8.6 Host Payout Request Flow**
+```
+1. Host creates event and sells tickets
+2. Event completes with paid attendance records
+3. Host adds bank account details (via API or admin)
+4. Host creates payout request → `HOST_PAYOUT_REQUEST` created
+   - System calculates: tickets sold, revenue, platform fee, host earnings
+   - Captures immutable snapshot of event and financial data
+5. Admin reviews payout request (status: pending)
+6. Admin approves → status: approved
+7. Finance team processes → status: processing
+8. Payout completed → status: completed
+   - Transaction reference added
+   - processed_at timestamp set
+```
+
+**Business Rules:**
+- Only event host can create payout request for their event
+- Only one active payout request per event (pending/approved/processing status)
+- Financial calculations done at request time (immutable snapshot)
+- Bank account must be active and belong to requesting host
+- Requires paid ticket sales (cannot request payout for event with no sales)
+
 ---
 
 ## **9. SECURITY & PERFORMANCE**
@@ -964,9 +1251,75 @@ created → pending → paid/completed OR failed/cancelled
 - `PUT /{id}` - Update venue
 - `DELETE /{id}` - Delete venue
 
+### **Payouts** (`/api/payouts/`)
+- **Bank Accounts:**
+  - `GET /bank-accounts` - List user's bank accounts
+  - `POST /bank-accounts` - Create bank account (with IFSC validation)
+  - `GET /bank-accounts/{id}` - Get bank account details
+  - `PUT /bank-accounts/{id}` - Update bank account
+  - `DELETE /bank-accounts/{id}` - Deactivate bank account
+
+- **Payout Requests:**
+  - `POST /requests` - Create payout request (auto-calculates financials)
+  - `GET /requests` - List payout requests (with pagination and status filter)
+  - `GET /requests/{id}` - Get detailed payout request with full breakdown
+
+**Features:**
+- Automatic financial calculation (tickets sold, platform fee, earnings)
+- Host ownership validation
+- Duplicate request prevention
+- Immutable financial snapshots for audit trail
+
 ---
 
-## **12. DEPLOYMENT & MIGRATION STATUS**
+## **12. DJANGO ADMIN STRUCTURE** 🔐
+
+### **12.1 Admin Access Levels**
+
+**Admin-Level Users** (`is_staff=True` or `is_superuser=True`):
+- Full access to all models
+- Can manage:
+  - **Users** (AUTH_USER) - Authentication accounts and admin users
+  - **Groups** - Permission groups for access control
+  - All customer-facing models (USER_PROFILE, Bank Accounts, Events, etc.)
+
+**Normal Users/Customers:**
+- Limited admin access (if granted)
+- Can manage customer-facing models:
+  - **User Profiles** - Their own profile and customer profiles
+  - **Bank Accounts** - Host bank account management
+  - **Event Interests** - Event category management
+  - **Host Leads** - Host lead generation records
+  - **Host Lead WhatsApp Messages** - WhatsApp communication logs
+  - **Host Lead WhatsApp Templates** - Message template management
+  - **Host Payout Requests** - Payout request tracking
+  - **Phone OTPs** - OTP verification records
+
+### **12.2 Key Distinctions**
+
+| Aspect | AUTH_USER (Users) | USER_PROFILE (User Profiles) |
+|--------|------------------|------------------------------|
+| **Purpose** | Authentication & Admin Access | Customer/End-User Data |
+| **Admin Section** | Authentication and Authorization | User Management |
+| **Access Level** | Admin-only (staff/superuser) | Customer-facing |
+| **Visibility** | Internal platform management | Customer profiles |
+| **Relationship** | Can exist without USER_PROFILE | Requires AUTH_USER (1-to-1) |
+| **Use Case** | Admin accounts, platform staff | End users, customers, hosts |
+
+**Important Notes:**
+- **AUTH_USER** = Authentication account (Django built-in)
+  - Used for login credentials
+  - Manages admin/staff permissions
+  - Not all AUTH_USER records have USER_PROFILE
+  
+- **USER_PROFILE** = Customer profile data
+  - Represents actual platform users/customers
+  - Contains customer-facing information
+  - Extends AUTH_USER with business-specific data
+
+---
+
+## **13. DEPLOYMENT & MIGRATION STATUS**
 
 ✅ **All Migrations Applied**
 ✅ **All Models Created**

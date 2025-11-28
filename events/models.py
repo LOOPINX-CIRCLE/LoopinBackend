@@ -59,9 +59,10 @@ class Event(TimeStampedModel):
     """Event model for hosting events"""
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
     host = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE, 
-        related_name="hosted_events"
+        related_name="hosted_events",
+        help_text="Host user profile who owns this event"
     )
     title = models.CharField(
         max_length=MAX_EVENT_TITLE_LENGTH,
@@ -160,9 +161,10 @@ class EventRequest(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="requests")
     requester = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="event_requests"
+        related_name="event_requests",
+        help_text="User profile requesting to join event"
     )
     status = models.CharField(
         max_length=20,
@@ -202,17 +204,18 @@ class EventInvite(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="invites")
     host = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+        'users.UserProfile',
         on_delete=models.CASCADE,
         related_name="sent_event_invites",
         null=True,
         blank=True,
-        help_text="Event host (optional, can be derived from event.host)"
+        help_text="Host user profile (optional, can be derived from event.host)"
     )
     invited_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="event_invites"
+        related_name="event_invites",
+        help_text="Invited user profile"
     )
     status = models.CharField(
         max_length=20,
@@ -240,9 +243,10 @@ class EventAttendee(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="attendees")
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="event_attendances"
+        related_name="event_attendances",
+        help_text="Attending user profile"
     )
     request = models.ForeignKey(
         'EventRequest',
@@ -305,9 +309,10 @@ class CapacityReservation(TimeStampedModel):
     reservation_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="capacity_reservations")
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+        'users.UserProfile',
         on_delete=models.CASCADE,
-        related_name="capacity_reservations"
+        related_name="capacity_reservations",
+        help_text="User profile reserving capacity"
     )
     seats_reserved = models.PositiveIntegerField(default=1)
     consumed = models.BooleanField(default=False)

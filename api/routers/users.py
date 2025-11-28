@@ -74,8 +74,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         # Decode JWT token
         payload = jwt.decode(
             credentials.credentials,
-            settings.SECRET_KEY,
-            algorithms=["HS256"]
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
         )
         user_id = payload.get("user_id")
         

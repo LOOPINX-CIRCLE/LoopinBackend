@@ -161,7 +161,7 @@ def get_current_user_from_token(token: str) -> User:
     from django.conf import settings
     
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_id = payload.get("user_id")
         if not user_id:
             raise AuthenticationError(
@@ -213,21 +213,49 @@ def generate_ticket_secret() -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(32))
 
 
-@sync_to_async
-def send_notification(user: User, notification_type: str, title: str, message: str, data: Dict[str, Any] = None):
-    """Send notification to user (placeholder for notification service)"""
+def send_notification(
+    recipient: 'UserProfile', 
+    notification_type: str, 
+    title: str, 
+    message: str, 
+    data: Dict[str, Any] = None,
+    sender: Optional['UserProfile'] = None,
+    reference_type: Optional[str] = None,
+    reference_id: Optional[int] = None
+):
+    """
+    Send notification to user profile.
+    
+    This is a synchronous function that can be called from sync contexts
+    (like inside @sync_to_async decorated functions).
+    
+    Args:
+        recipient: UserProfile receiving the notification
+        notification_type: Type of notification
+        title: Notification title
+        message: Notification message
+        data: Optional metadata dictionary (stored in metadata field)
+        sender: Optional UserProfile sending the notification
+        reference_type: Optional related model type
+        reference_id: Optional related object ID
+    """
     try:
         from notifications.models import Notification
         Notification.objects.create(
-            user=user,
-            notification_type=notification_type,
+            recipient=recipient,
+            sender=sender,
+            type=notification_type,
             title=title,
             message=message,
-            data=data or {},
+            metadata=data or {},
+            reference_type=reference_type or "",
+            reference_id=reference_id,
         )
-        logger.info(f"Notification sent to user {user.id}: {notification_type}")
+        logger.info(f"Notification sent to user profile {recipient.id}: {notification_type}")
     except ImportError:
         logger.warning("Notifications module not available, skipping notification")
+    except Exception as e:
+        logger.error(f"Failed to send notification: {str(e)}", exc_info=True)
 
 
 # ============================================================================
@@ -478,11 +506,14 @@ async def accept_event_request(
         
         # Send notification
         send_notification(
-            request.requester,
-            'event_request',
-            f"Request Accepted: {event.title}",
-            f"Your request to attend '{event.title}' has been accepted! Please confirm your attendance.",
-            {"event_id": event.id, "request_id": request.id, "action": "accepted"}
+            recipient=request.requester,
+            notification_type='event_request',
+            title=f"Request Accepted: {event.title}",
+            message=f"Your request to attend '{event.title}' has been accepted! Please confirm your attendance.",
+            data={"action": "accepted"},
+            sender=event.host,
+            reference_type="EventRequest",
+            reference_id=request.id
         )
         
         logger.info(f"Event request {request_id} accepted by host {user.id}")
@@ -554,11 +585,14 @@ async def decline_event_request(
         
         # Send notification
         send_notification(
-            request.requester,
-            'event_request',
-            f"Request Declined: {event.title}",
-            f"Your request to attend '{event.title}' has been declined.",
-            {"event_id": event.id, "request_id": request.id, "action": "declined"}
+            recipient=request.requester,
+            notification_type='event_request',
+            title=f"Request Declined: {event.title}",
+            message=f"Your request to attend '{event.title}' has been declined.",
+            data={"action": "declined"},
+            sender=event.host,
+            reference_type="EventRequest",
+            reference_id=request.id
         )
         
         logger.info(f"Event request {request_id} declined by host {user.id}")
@@ -653,11 +687,14 @@ async def bulk_accept_decline_requests(
                     
                     # Send notification
                     send_notification(
-                        request.requester,
-                        'event_request',
-                        f"Request Accepted: {event.title}",
-                        f"Your request to attend '{event.title}' has been accepted!",
-                        {"event_id": event.id, "request_id": request.id, "action": "accepted"}
+                        recipient=request.requester,
+                        notification_type='event_request',
+                        title=f"Request Accepted: {event.title}",
+                        message=f"Your request to attend '{event.title}' has been accepted!",
+                        data={"action": "accepted"},
+                        sender=event.host,
+                        reference_type="EventRequest",
+                        reference_id=request.id
                     )
                     
                     accepted_count += 1
@@ -675,11 +712,14 @@ async def bulk_accept_decline_requests(
                     
                     # Send notification
                     send_notification(
-                        request.requester,
-                        'event_request',
-                        f"Request Declined: {event.title}",
-                        f"Your request to attend '{event.title}' has been declined.",
-                        {"event_id": event.id, "request_id": request.id, "action": "declined"}
+                        recipient=request.requester,
+                        notification_type='event_request',
+                        title=f"Request Declined: {event.title}",
+                        message=f"Your request to attend '{event.title}' has been declined.",
+                        data={"action": "declined"},
+                        sender=event.host,
+                        reference_type="EventRequest",
+                        reference_id=request.id
                     )
                     
                     declined_count += 1
@@ -891,13 +931,23 @@ async def invite_users_to_event(
                     expires_at=invite_data.expires_at,
                 )
                 
-                # Send notification
+                # Send notification - need to get UserProfile for invited_user
+                # Note: invited_user is currently a User object, need to get UserProfile
+                try:
+                    invited_user_profile = invited_user.profile
+                except AttributeError:
+                    from users.models import UserProfile
+                    invited_user_profile, _ = UserProfile.objects.get_or_create(user=invited_user)
+                
                 send_notification(
-                    invited_user,
-                    'event_invite',
-                    f"You're Invited: {event.title}",
-                    f"You've been invited to attend '{event.title}'!",
-                    {"event_id": event.id, "invite_id": invite.id}
+                    recipient=invited_user_profile,
+                    notification_type='event_invite',
+                    title=f"You're Invited: {event.title}",
+                    message=f"You've been invited to attend '{event.title}'!",
+                    data={},
+                    sender=event.host if hasattr(event.host, 'id') else None,
+                    reference_type="EventInvite",
+                    reference_id=invite.id
                 )
                 
                 created_invites.append(invite)
@@ -1119,13 +1169,24 @@ async def respond_to_invitation(
             event.going_count = EventAttendee.objects.filter(event=event, status='going').count()
             event.save(update_fields=['going_count'])
             
-            # Notify host
+            # Notify host - get UserProfile for user
+            try:
+                user_profile = user.profile
+                user_display_name = user_profile.name or user_profile.phone_number or user.username
+            except AttributeError:
+                from users.models import UserProfile
+                user_profile, _ = UserProfile.objects.get_or_create(user=user)
+                user_display_name = user_profile.name or user_profile.phone_number or user.username
+            
             send_notification(
-                event.host,
-                'event_invite',
-                f"Invitation Accepted: {event.title}",
-                f"{user.username} has accepted your invitation to '{event.title}'",
-                {"event_id": event.id, "invite_id": invite.id, "user_id": user.id}
+                recipient=event.host,
+                notification_type='event_invite',
+                title=f"Invitation Accepted: {event.title}",
+                message=f"{user_display_name} has accepted your invitation to '{event.title}'",
+                data={},
+                sender=user_profile,
+                reference_type="EventInvite",
+                reference_id=invite.id
             )
             
             logger.info(f"Invitation {invite_id} accepted by user {user.id}")
@@ -1134,13 +1195,24 @@ async def respond_to_invitation(
             invite.status = 'declined'
             invite.save(update_fields=['status', 'updated_at'])
             
-            # Notify host
+            # Notify host - get UserProfile for user
+            try:
+                user_profile = user.profile
+                user_display_name = user_profile.name or user_profile.phone_number or user.username
+            except AttributeError:
+                from users.models import UserProfile
+                user_profile, _ = UserProfile.objects.get_or_create(user=user)
+                user_display_name = user_profile.name or user_profile.phone_number or user.username
+            
             send_notification(
-                event.host,
-                'event_invite',
-                f"Invitation Declined: {event.title}",
-                f"{user.username} has declined your invitation to '{event.title}'",
-                {"event_id": event.id, "invite_id": invite.id, "user_id": user.id}
+                recipient=event.host,
+                notification_type='event_invite',
+                title=f"Invitation Declined: {event.title}",
+                message=f"{user_display_name} has declined your invitation to '{event.title}'",
+                data={},
+                sender=user_profile,
+                reference_type="EventInvite",
+                reference_id=invite.id
             )
             
             logger.info(f"Invitation {invite_id} declined by user {user.id}")
