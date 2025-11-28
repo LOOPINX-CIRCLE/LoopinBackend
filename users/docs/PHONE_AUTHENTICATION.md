@@ -1262,7 +1262,8 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Twilio Configuration
 TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_MESSAGING_SERVICE_SID=your-messaging-service-sid
+TWILIO_MESSAGING_SERVICE_SID_SMS=your-sms-messaging-service-sid
+TWILIO_MESSAGING_SERVICE_SID_WHATSAPP=your-whatsapp-messaging-service-sid
 TWILIO_PHONE_NUMBER=+15005550006
 TWILIO_TEST_MODE=false  # true for development
 
