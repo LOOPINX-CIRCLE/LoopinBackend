@@ -278,15 +278,17 @@ def calculate_event_financials(event: Event) -> Dict[str, Any]:
     else:
         event_location = "Location not specified"
     
-    # Get host name
-    host_profile = getattr(event.host, 'profile', None)
+    # Get host name from UserProfile
     host_name = ""
-    if host_profile and host_profile.name:
-        host_name = host_profile.name
-    elif event.host.first_name or event.host.last_name:
-        host_name = f"{event.host.first_name or ''} {event.host.last_name or ''}".strip()
+    if event.host.name:
+        host_name = event.host.name
+    elif event.host.phone_number:
+        host_name = event.host.phone_number
+    elif hasattr(event.host, 'user') and event.host.user:
+        # Fallback to User.username if available
+        host_name = event.host.user.username
     else:
-        host_name = event.host.username
+        host_name = "Unknown Host"
     
     return {
         "host_name": host_name,
