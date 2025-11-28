@@ -1,408 +1,313 @@
+# Save as twilio_service.py
 """
-Production-grade Twilio service for SMS and WhatsApp messaging.
-CTO-level implementation with proper error handling, configuration management, and logging.
+Production-grade Twilio service for SMS and WhatsApp messaging (production usage).
+- Strict validation (E.164)
+- Template-first WhatsApp sending (Content API)
+- Clear error handling and classification
+- Separate messaging service SIDs for SMS and WhatsApp
+- No accidental mixing of from_ and messaging_service_sid
+- Returns actionable details for observability/alerts
 """
 
 import json
 import logging
-from typing import Optional, Dict, Tuple, Any
+import re
+import time
 from dataclasses import dataclass
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioRestException
+from typing import Optional, Dict, Tuple, Any
+
 from decouple import config
+from twilio.base.exceptions import TwilioRestException
+from twilio.rest import Client
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("twilio_service")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(ch)
 
+# ---------- Helpers & constants ----------
+E164_REGEX = re.compile(r'^\+[1-9]\d{1,14}$')
 
+_PERMANENT_ERROR_CODES = {63016, 63007, 63014, 63024, 21211}
+_TRANSIENT_ERROR_CODES = {21610, 21612, 21614, 21608, 20429, 63017}  # extend as required
+
+def _is_valid_e164(number: str) -> bool:
+    return bool(number and E164_REGEX.match(number))
+
+def _normalize_raw_phone(phone: str) -> str:
+    if not phone:
+        return ""
+    s = str(phone).strip()
+    if s.lower().startswith("whatsapp:"):
+        s = s[len("whatsapp:"):]
+    s = re.sub(r'[()\-\s\.]', '', s)
+    if not s.startswith('+'):
+        s = '+' + s.lstrip('+')
+    return s
+
+def _whatsapp_prefix(number_e164: str) -> str:
+    return f"whatsapp:{number_e164}"
+
+def _classify_error_code(code: Optional[int]) -> str:
+    if code is None:
+        return "unknown"
+    if code in _PERMANENT_ERROR_CODES:
+        return "permanent"
+    if code in _TRANSIENT_ERROR_CODES:
+        return "transient"
+    return "unknown"
+
+# ---------- Config and Exceptions ----------
 @dataclass
 class TwilioConfig:
-    """Twilio configuration loaded from environment variables"""
     account_sid: str
     auth_token: str
     verify_sid: Optional[str] = None
     verify_secret: Optional[str] = None
-    messaging_service_sid: Optional[str] = None
+    messaging_service_sid_sms: Optional[str] = None  # SMS messaging service SID
+    messaging_service_sid_whatsapp: Optional[str] = None  # WhatsApp messaging service SID
     phone_number: Optional[str] = None
-    whatsapp_phone_number: str = "+15558015045"
+    whatsapp_phone_number: Optional[str] = None
     whatsapp_content_sid: Optional[str] = None
     test_mode: bool = False
-    
+    allow_plaintext_when_session_open: bool = False
+
     @classmethod
     def from_env(cls) -> 'TwilioConfig':
-        """Load configuration from environment variables"""
         return cls(
             account_sid=config('TWILIO_ACCOUNT_SID', default=''),
             auth_token=config('TWILIO_AUTH_TOKEN', default=''),
             verify_sid=config('TWILIO_VERIFY_SID', default=None),
             verify_secret=config('TWILIO_VERIFY_SECRET', default=None),
-            messaging_service_sid=config('TWILIO_MESSAGING_SERVICE_SID', default=None),
+            messaging_service_sid_sms=config('TWILIO_MESSAGING_SERVICE_SID_SMS', default=None),
+            messaging_service_sid_whatsapp=config('TWILIO_MESSAGING_SERVICE_SID_WHATSAPP', default=None),
             phone_number=config('TWILIO_PHONE_NUMBER', default=None),
-            whatsapp_phone_number=config('TWILIO_WHATSAPP_PHONE_NUMBER', default='+15558015045'),
+            whatsapp_phone_number=config('TWILIO_WHATSAPP_PHONE_NUMBER', default=None),
             whatsapp_content_sid=config('TWILIO_WHATSAPP_CONTENT_SID', default=None),
             test_mode=config('TWILIO_TEST_MODE', default='false', cast=bool),
+            allow_plaintext_when_session_open=config('TWILIO_ALLOW_PLAIN_WHEN_SESSION', default='false', cast=bool),
         )
-    
+
     def validate(self) -> Tuple[bool, Optional[str]]:
-        """Validate required configuration"""
         if not self.account_sid:
             return False, "TWILIO_ACCOUNT_SID is required"
         if not self.auth_token:
             return False, "TWILIO_AUTH_TOKEN is required"
-        if not self.whatsapp_content_sid:
-            return False, "TWILIO_WHATSAPP_CONTENT_SID must be configured"
+        if self.whatsapp_content_sid and not self.whatsapp_phone_number:
+            return False, "TWILIO_WHATSAPP_PHONE_NUMBER must be set when TWILIO_WHATSAPP_CONTENT_SID is provided"
+        if self.whatsapp_phone_number and not _is_valid_e164(self.whatsapp_phone_number):
+            return False, "TWILIO_WHATSAPP_PHONE_NUMBER must be valid E.164 (e.g. +15558015045)"
+        if self.phone_number and not _is_valid_e164(self.phone_number):
+            logger.warning("TWILIO_PHONE_NUMBER provided but not valid E.164")
         return True, None
 
 
 class TwilioServiceError(Exception):
-    """Base exception for Twilio service errors"""
     pass
-
 
 class TwilioConfigurationError(TwilioServiceError):
-    """Raised when Twilio configuration is invalid"""
     pass
 
-
 class TwilioMessageError(TwilioServiceError):
-    """Raised when message sending fails"""
-    def __init__(self, message: str, error_code: Optional[int] = None, original_error: Optional[Exception] = None):
+    def __init__(self, message: str, error_code: Optional[int] = None, original: Optional[Exception] = None):
         super().__init__(message)
         self.error_code = error_code
-        self.original_error = original_error
+        self.original = original
 
-
+# ---------- Service implementation ----------
 class TwilioService:
-    """
-    Production-grade Twilio service for SMS and WhatsApp messaging.
-    
-    Features:
-    - Centralized configuration management
-    - Comprehensive error handling
-    - Support for SMS OTP and WhatsApp Content API templates
-    - Proper logging and monitoring
-    - Test mode support
-    """
-    
-    # WhatsApp error codes mapping
-    WHATSAPP_ERROR_CODES = {
-        63016: "Recipient has not opted in to receive WhatsApp messages",
-        63007: "Invalid WhatsApp number format or number not registered on WhatsApp",
-        63014: "WhatsApp message template not approved or invalid",
-        63024: "WhatsApp message delivery failed - recipient may not be opted in",
-    }
-    
-    def __init__(self, twilio_config: Optional[TwilioConfig] = None):
-        """
-        Initialize Twilio service with configuration.
-        
-        Args:
-            twilio_config: TwilioConfig instance. If None, loads from environment.
-        """
-        self.config = twilio_config or TwilioConfig.from_env()
-        
-        # Validate configuration
-        is_valid, error_msg = self.config.validate()
-        if not is_valid:
-            raise TwilioConfigurationError(error_msg)
-        
-        # Initialize Twilio client
-        self.client: Optional[Client] = None
+    def __init__(self, config_obj: Optional[TwilioConfig] = None):
+        self.config = config_obj or TwilioConfig.from_env()
+        ok, msg = self.config.validate()
+        if not ok:
+            logger.error("Twilio configuration invalid: %s", msg)
+            raise TwilioConfigurationError(msg)
+
         try:
             self.client = Client(self.config.account_sid, self.config.auth_token)
-            logger.info("Twilio client initialized successfully")
+            logger.info("Twilio client initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize Twilio client: {e}")
-            self.client = None
-    
-    def _format_phone_number(self, phone_number: str) -> str:
-        """Format phone number to ensure it starts with +"""
-        if not phone_number.startswith('+'):
-            return '+' + phone_number.lstrip('+')
-        return phone_number
-    
-    def _format_whatsapp_number(self, phone_number: str) -> str:
-        """Format phone number for WhatsApp (whatsapp:+1234567890)"""
-        formatted = self._format_phone_number(phone_number)
-        if not formatted.startswith('whatsapp:'):
-            return f"whatsapp:{formatted}"
-        return formatted
-    
-    def _get_whatsapp_from_number(self, from_number: Optional[str] = None) -> str:
-        """Get WhatsApp sender number"""
-        if from_number:
-            return self._format_whatsapp_number(from_number)
-        return self._format_whatsapp_number(self.config.whatsapp_phone_number)
-    
-    def _handle_whatsapp_error(self, error_code: Optional[int], status: str) -> str:
-        """Get user-friendly error message for WhatsApp error codes"""
-        if error_code in self.WHATSAPP_ERROR_CODES:
-            base_msg = self.WHATSAPP_ERROR_CODES[error_code]
-            if error_code == 63016:
-                return f"{base_msg}. They must send a message to {self.config.whatsapp_phone_number} first to opt-in."
-            return base_msg
-        return f"Message delivery failed with status: {status}"
-    
-    def send_otp_sms(self, phone_number: str, otp_code: str) -> Tuple[bool, str]:
-        """
-        Send OTP via SMS.
-        
-        Args:
-            phone_number: Recipient phone number (e.g., +1234567890)
-            otp_code: OTP code to send
-        
-        Returns:
-            Tuple of (success: bool, message: str)
-        """
+            logger.exception("Failed to initialize Twilio client")
+            raise TwilioConfigurationError("Failed to initialize Twilio client") from e
+
+    # ---------- SMS OTP ----------
+    def send_otp_sms(self, phone_number: str, otp_code: str) -> Tuple[bool, str, Dict[str, Any]]:
         try:
             if self.config.test_mode:
-                logger.info(f"TEST MODE: OTP {otp_code} would be sent to {phone_number}")
-                return True, f"TEST MODE: OTP {otp_code} sent to {phone_number}"
-            
-            if not self.client:
-                logger.error("Twilio client not initialized")
-                return False, "SMS service unavailable"
-            
-            formatted_phone = self._format_phone_number(phone_number)
-            message_body = f"Your Loopin verification code is: {otp_code}. This code expires in 10 minutes."
-            
-            try:
-                # Use Messaging Service if available (recommended for production)
-                if self.config.messaging_service_sid:
-                    message = self.client.messages.create(
-                        body=message_body,
-                        messaging_service_sid=self.config.messaging_service_sid,
-                        to=formatted_phone
-                    )
-                else:
-                    # Fallback to direct phone number
-                    from_number = self.config.phone_number or '+15005550006'
-                    message = self.client.messages.create(
-                        body=message_body,
-                        from_=from_number,
-                        to=formatted_phone
-                    )
-                
-                logger.info(f"OTP sent successfully to {formatted_phone}. SID: {message.sid}")
-                return True, "OTP sent successfully"
-                
-            except TwilioRestException as e:
-                logger.error(f"Twilio API error sending SMS: {e}")
-                error_msg = "Failed to send OTP"
-                if "trial" in str(e).lower() or "verified" in str(e).lower():
-                    error_msg = "Trial account restriction: Please verify your phone number in Twilio console or upgrade to paid account"
-                return False, error_msg
-            except Exception as e:
-                logger.error(f"Unexpected error sending SMS: {e}")
-                return False, f"Failed to send OTP: {str(e)}"
-            
+                logger.info("TEST MODE: OTP %s -> %s", otp_code, phone_number)
+                return True, "TEST MODE simulated", {"to": phone_number, "otp": otp_code}
+
+            normalized = _normalize_raw_phone(phone_number)
+            if not _is_valid_e164(normalized):
+                return False, "Invalid recipient phone number (E.164 required)", {"to": phone_number}
+
+            body = f"Your Loopin verification code is: {otp_code}. This code expires in 10 minutes."
+
+            params = {"body": body, "to": normalized}
+            if self.config.messaging_service_sid_sms:
+                params["messaging_service_sid"] = self.config.messaging_service_sid_sms
+            else:
+                from_num = self.config.phone_number or None
+                if not from_num:
+                    return False, "No SMS from number configured", {"to": normalized}
+                params["from_"] = from_num
+
+            message = self.client.messages.create(**params)
+            logger.info("OTP SMS created SID=%s to=%s status=%s", getattr(message, "sid", None), normalized, getattr(message, "status", None))
+            return True, "OTP queued/sent", {"sid": getattr(message, "sid", None), "status": getattr(message, "status", None)}
+        except TwilioRestException as e:
+            logger.exception("Twilio API error sending OTP SMS")
+            return False, "Twilio API error sending SMS", {"error": str(e), "code": getattr(e, "code", None)}
         except Exception as e:
-            logger.error(f"Failed to send OTP to {phone_number}: {e}", exc_info=True)
-            return False, f"Failed to send OTP: {str(e)}"
-    
-    def verify_otp(self, phone_number: str, otp_code: str) -> Tuple[bool, str]:
-        """
-        Verify OTP using Twilio Verify service.
-        
-        Args:
-            phone_number: Phone number to verify
-            otp_code: OTP code to verify
-        
-        Returns:
-            Tuple of (success: bool, message: str)
-        """
+            logger.exception("Unexpected error sending OTP SMS")
+            return False, "Unexpected error sending SMS", {"error": str(e)}
+
+    # ---------- Verify OTP ----------
+    def verify_otp(self, phone_number: str, otp_code: str) -> Tuple[bool, str, Dict[str, Any]]:
         try:
-            if not self.client:
-                logger.error("Twilio client not initialized")
-                return False, "Verification service unavailable"
-            
             if not self.config.verify_sid:
-                logger.error("TWILIO_VERIFY_SID not configured")
-                return False, "Verification service not configured"
-            
-            formatted_phone = self._format_phone_number(phone_number)
-            
-            verification_check = self.client.verify.v2.services(
-                self.config.verify_sid
-            ).verification_checks.create(
-                to=formatted_phone,
+                return False, "Verify service not configured", {}
+            normalized = _normalize_raw_phone(phone_number)
+            if not _is_valid_e164(normalized):
+                return False, "Invalid phone number format", {"to": phone_number}
+
+            result = self.client.verify.v2.services(self.config.verify_sid).verification_checks.create(
+                to=normalized,
                 code=otp_code
             )
-            
-            if verification_check.status == 'approved':
-                logger.info(f"OTP verified successfully for {formatted_phone}")
-                return True, "OTP verified successfully"
-            else:
-                logger.warning(f"OTP verification failed for {formatted_phone}: {verification_check.status}")
-                return False, "Invalid OTP"
-                
+            status = getattr(result, "status", None)
+            if status == "approved":
+                logger.info("OTP verified for %s", normalized)
+                return True, "OTP verified", {"status": status}
+            logger.warning("OTP verification failed for %s status=%s", normalized, status)
+            return False, "Invalid OTP", {"status": status}
         except TwilioRestException as e:
-            logger.error(f"Twilio API error verifying OTP: {e}")
-            return False, f"Verification failed: {str(e)}"
+            logger.exception("Twilio Verify API error")
+            return False, "Twilio Verify error", {"error": str(e), "code": getattr(e, "code", None)}
         except Exception as e:
-            logger.error(f"Failed to verify OTP for {phone_number}: {e}", exc_info=True)
-            return False, f"Verification failed: {str(e)}"
-    
+            logger.exception("Unexpected error verifying OTP")
+            return False, "Unexpected verify error", {"error": str(e)}
+
+    # ---------- WhatsApp sending (template-first) ----------
     def send_whatsapp_message(
         self,
         phone_number: str,
+        *,
+        content_sid: Optional[str] = None,
+        content_variables: Optional[Dict[str, Any]] = None,
         message_body: Optional[str] = None,
         from_number: Optional[str] = None,
-        content_sid: Optional[str] = None,
-        content_variables: Optional[Dict[str, Any]] = None
+        retry_on_transient: int = 1
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        """
-        Send WhatsApp message via Twilio using Content API (templates) or plain text.
-        
-        Args:
-            phone_number: Recipient phone number (e.g., +1234567890)
-            message_body: Plain text message content (optional if using content_sid)
-            from_number: WhatsApp sender number (optional, uses config default)
-            content_sid: Twilio Content Template SID (preferred for WhatsApp)
-            content_variables: Dictionary of variables for content template (e.g., {"1": "Name"})
-        
-        Returns:
-            Tuple of (success: bool, message: str, details: dict)
-        
-        Raises:
-            TwilioMessageError: If message sending fails with specific error details
-        """
         try:
             if self.config.test_mode:
-                if content_sid:
-                    logger.info(f"TEST MODE: WhatsApp template message would be sent to {phone_number} using content_sid {content_sid}")
-                else:
-                    logger.info(f"TEST MODE: WhatsApp message would be sent to {phone_number}: {message_body}")
-                return True, f"TEST MODE: WhatsApp message sent to {phone_number}", {
-                    "status": "test-mode",
-                    "content_sid": content_sid,
-                    "content_variables": content_variables or {},
-                }
-            
-            if not self.client:
-                logger.error("Twilio client not initialized")
-                return False, "WhatsApp service unavailable", {"error": "client_not_initialized"}
-            
-            formatted_phone = self._format_phone_number(phone_number)
-            whatsapp_to = self._format_whatsapp_number(formatted_phone)
-            whatsapp_from = self._get_whatsapp_from_number(from_number)
-            
-            # Determine content_sid to use
+                logger.info("TEST MODE: simulate WhatsApp send to %s", phone_number)
+                return True, "TEST MODE simulated", {"to": phone_number, "content_sid": content_sid, "content_variables": content_variables or {}}
+
+            normalized = _normalize_raw_phone(phone_number)
+            if not _is_valid_e164(normalized):
+                return False, "Invalid recipient phone number (E.164 required)", {"to": phone_number}
+
+            whatsapp_to = _whatsapp_prefix(normalized)
             final_content_sid = content_sid or self.config.whatsapp_content_sid
-            
-            try:
-                message_params: Dict[str, Any] = {
-                    'from_': whatsapp_from,
-                    'to': whatsapp_to,
-                }
-                
-                # Use Content API (template) if content_sid is provided
-                if final_content_sid:
-                    logger.info(f"Sending WhatsApp template message from {whatsapp_from} to {whatsapp_to} using content_sid {final_content_sid}")
-                    
-                    message_params['content_sid'] = final_content_sid
-                    
-                    # Add content variables if provided
-                    if content_variables:
-                        message_params['content_variables'] = json.dumps(content_variables)
-                        logger.debug(f"Content variables: {content_variables}")
-                    
-                    # Add messaging service SID if available
-                    if self.config.messaging_service_sid:
-                        message_params['messaging_service_sid'] = self.config.messaging_service_sid
-                else:
-                    # Fallback to plain text message
-                    if not message_body:
-                        error_msg = "Either message_body or content_sid must be provided"
-                        logger.error(error_msg)
-                        return False, error_msg, {"error": "missing_content"}
-                    
-                    logger.info(f"Sending WhatsApp plain text message from {whatsapp_from} to {whatsapp_to}")
-                    logger.debug(f"Message body: {message_body[:100]}...")
-                    message_params['body'] = message_body
-                
-                # Create and send message
-                message = self.client.messages.create(**message_params)
-                
-                # Log message details
-                logger.info(f"WhatsApp message created. SID: {message.sid}, Status: {message.status}")
-                logger.debug(f"Message direction: {message.direction}, Error code: {getattr(message, 'error_code', 'N/A')}")
-                
-                # Check message status
-                message_status = getattr(message, 'status', 'unknown')
-                error_code = getattr(message, 'error_code', None)
-                
-                # Handle delivery status
-                details: Dict[str, Any] = {
+
+            if not final_content_sid:
+                if not self.config.allow_plaintext_when_session_open:
+                    return False, "Plain-text WhatsApp outbound to cold users is disallowed in production. Use content_sid (template) instead.", {"to": whatsapp_to}
+                if not message_body or not message_body.strip():
+                    return False, "Empty message body", {"to": whatsapp_to}
+
+            params: Dict[str, Any] = {"to": whatsapp_to}
+            if self.config.messaging_service_sid_whatsapp and not from_number:
+                params["messaging_service_sid"] = self.config.messaging_service_sid_whatsapp
+            else:
+                from_val = from_number or self.config.whatsapp_phone_number
+                if not from_val:
+                    return False, "WhatsApp sender not configured", {"to": whatsapp_to}
+                from_norm = _normalize_raw_phone(from_val)
+                if not _is_valid_e164(from_norm):
+                    return False, "Invalid whatsapp_from configuration (E.164 required)", {"from": from_val}
+                params["from_"] = _whatsapp_prefix(from_norm)
+
+            if final_content_sid:
+                params["content_sid"] = final_content_sid
+                if content_variables:
+                    normalized_vars = {str(k): v for k, v in (content_variables or {}).items()}
+                    params["content_variables"] = json.dumps(normalized_vars)
+            else:
+                params["body"] = message_body
+
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    message = self.client.messages.create(**params)
+                except TwilioRestException as e:
+                    code = getattr(e, "code", None)
+                    kind = _classify_error_code(code)
+                    logger.warning("Twilio REST error sending WhatsApp to %s code=%s class=%s attempt=%d err=%s", whatsapp_to, code, kind, attempt, str(e))
+                    if kind == "transient" and attempt <= retry_on_transient:
+                        time.sleep(1)
+                        continue
+                    return False, "Twilio API error sending WhatsApp message", {"error": str(e), "code": code, "params": params}
+
+                msg_status = getattr(message, "status", None)
+                error_code = getattr(message, "error_code", None)
+                details = {
                     "sid": getattr(message, "sid", None),
-                    "status": message_status,
+                    "status": msg_status,
                     "error_code": error_code,
+                    "to": whatsapp_to,
                     "content_sid": final_content_sid,
-                    "content_variables": content_variables or {},
+                    "params": params,
                 }
 
-                if message_status in ['failed', 'undelivered']:
-                    error_msg = self._handle_whatsapp_error(error_code, message_status)
-                    logger.warning(f"WhatsApp message undelivered. Status: {message_status}, Error Code: {error_code}, Error: {error_msg}")
-                    logger.info(f"Message will be delivered once recipient opts in by sending a message to {whatsapp_from}")
-                    # Still return True as API call succeeded, delivery is pending opt-in
-                elif message_status in ['queued', 'sending', 'sent', 'delivered', 'read', 'accepted']:
-                    logger.info(f"Message queued/sent successfully. Status: {message_status}")
-                else:
-                    logger.info(f"Message status: {message_status} (will be updated by Twilio)")
-                
-                return True, "WhatsApp message sent successfully", details
-                
-            except TwilioRestException as e:
-                error_code = getattr(e, 'code', None)
-                error_msg = self._handle_whatsapp_error(error_code, 'failed')
-                
-                logger.error(f"Twilio API error sending WhatsApp message: {e}")
-                
-                # Handle specific error cases
-                if "trial" in str(e).lower() or "verified" in str(e).lower():
-                    error_msg = "Trial account restriction: Please verify your phone number in Twilio console or upgrade to paid account"
-                elif "not opted in" in str(e).lower() or "opt-in" in str(e).lower():
-                    error_msg = f"Recipient has not opted in to receive WhatsApp messages from {whatsapp_from}"
-                
-                return False, error_msg, {
-                    "error_code": error_code,
-                    "error": str(e),
-                    "content_sid": final_content_sid,
-                    "content_variables": content_variables or {},
-                }
-            except Exception as e:
-                logger.error(f"Unexpected error sending WhatsApp message: {e}", exc_info=True)
-                return False, f"Failed to send WhatsApp message: {str(e)}", {
-                    "error": str(e),
-                    "content_sid": final_content_sid,
-                    "content_variables": content_variables or {},
-                }
-            
-        except Exception as e:
-            logger.error(f"Failed to send WhatsApp message to {phone_number}: {e}", exc_info=True)
-            return False, f"Failed to send WhatsApp message: {str(e)}", {
-                "error": str(e),
-                "content_sid": content_sid,
-                "content_variables": content_variables or {},
-            }
+                if msg_status in ("failed", "undelivered"):
+                    kind = _classify_error_code(error_code)
+                    human = self._handle_whatsapp_error(error_code, msg_status)
+                    logger.warning("WhatsApp undelivered to %s sid=%s status=%s code=%s kind=%s", whatsapp_to, details["sid"], msg_status, error_code, kind)
+                    if kind == "transient" and attempt <= retry_on_transient:
+                        time.sleep(1)
+                        continue
+                    return False, human, details
 
+                if msg_status in ("queued", "sending", "sent", "delivered", "read", "accepted", None):
+                    logger.info("WhatsApp message accepted to %s sid=%s status=%s", whatsapp_to, details["sid"], msg_status)
+                    return True, "WhatsApp message accepted by Twilio", details
 
-# Global service instance (singleton pattern)
+                logger.info("WhatsApp returned status %s for %s sid=%s", msg_status, whatsapp_to, details["sid"])
+                return True, f"WhatsApp message created with status {msg_status}", details
+
+        except Exception as exc:
+            logger.exception("Unexpected error in send_whatsapp_message")
+            return False, "Unexpected error sending WhatsApp message", {"error": str(exc)}
+
+    def _handle_whatsapp_error(self, error_code: Optional[int], status: str) -> str:
+        mapping = {
+            63016: "Recipient has not opted in to receive WhatsApp messages (user must message your number to opt in)",
+            63007: "Invalid WhatsApp number or not registered on WhatsApp",
+            63014: "WhatsApp message template not approved or invalid",
+            63024: "WhatsApp message blocked (likely not opted-in or template misuse)",
+            21211: "Invalid phone number (wrong format or non-existent)",
+            21656: "Invalid or empty message payload",
+        }
+        if error_code in mapping:
+            base = mapping[error_code]
+            if error_code == 63016:
+                return f"{base}. User must send a message to your WhatsApp sender to create a session/opt-in."
+            return base
+        return f"Message delivery failed with status {status} (error_code={error_code})"
+
+# Singleton accessor
 _twilio_service_instance: Optional[TwilioService] = None
 
-
 def get_twilio_service() -> TwilioService:
-    """
-    Get or create Twilio service instance (singleton pattern).
-    
-    Returns:
-        TwilioService instance
-    """
     global _twilio_service_instance
     if _twilio_service_instance is None:
         _twilio_service_instance = TwilioService()
     return _twilio_service_instance
 
-
-# Backward compatibility: maintain global instance
+# Module-level singleton instance for convenience
 twilio_service = get_twilio_service()
