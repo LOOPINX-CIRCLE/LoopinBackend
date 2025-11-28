@@ -10,16 +10,18 @@ class Notification(TimeStampedModel):
     """Model for in-app notifications to users"""
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, help_text="Public UUID")
     recipient = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         on_delete=models.CASCADE,
-        related_name="received_notifications"
+        related_name="received_notifications",
+        help_text="User profile receiving the notification"
     )
     sender = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
+        'users.UserProfile', 
         null=True, 
         blank=True,
         on_delete=models.SET_NULL,
-        related_name="sent_notifications"
+        related_name="sent_notifications",
+        help_text="User profile sending the notification (optional)"
     )
     type = models.CharField(
         max_length=50,
