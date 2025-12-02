@@ -307,7 +307,13 @@ class HostLeadWhatsAppMessageAdmin(admin.ModelAdmin):
         return False
     
     def has_delete_permission(self, request, obj=None):
-        return False
+        """
+        Allow deletion if user can delete the related HostLead.
+        This enables cascade deletion when deleting a HostLead.
+        """
+        # Check if user has permission to delete HostLead objects
+        # This allows cascade deletion to proceed when deleting a HostLead
+        return request.user.has_perm('users.delete_hostlead')
     
     def has_view_permission(self, request, obj=None):
         return True
