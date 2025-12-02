@@ -73,7 +73,7 @@ class BulkRequestActionRequest(BaseModel):
     """Schema for bulk accept/decline requests"""
     request_ids: List[int] = Field(..., min_items=1, max_items=100, description="List of request IDs")
     host_message: Optional[str] = Field(None, max_length=500, description="Optional message for all requests")
-    action: str = Field(..., regex="^(accept|decline)$", description="Action to perform: accept or decline")
+    action: str = Field(..., pattern="^(accept|decline)$", description="Action to perform: accept or decline")
 
 
 class BulkRequestActionResponse(BaseModel):
@@ -112,7 +112,7 @@ class BulkInviteResponse(BaseModel):
 
 class InvitationResponseRequest(BaseModel):
     """Schema for responding to an invitation"""
-    response: str = Field(..., regex="^(going|not_going)$", description="Response: going or not_going")
+    response: str = Field(..., pattern="^(going|not_going)$", description="Response: going or not_going")
     message: Optional[str] = Field(None, max_length=200, description="Optional response message")
 
 
@@ -204,7 +204,7 @@ def get_event_with_checks(event_id: int, user: User) -> Event:
 @sync_to_async
 def check_host_permission(user: User, event: Event) -> bool:
     """Check if user is the event host"""
-    return event.host == user
+    return event.host.user == user
 
 
 def generate_ticket_secret() -> str:
@@ -264,7 +264,7 @@ def send_notification(
 
 @router.get("/my-requests", response_model=List[RequestStatusResponse])
 async def get_my_requests(
-    status_filter: Optional[str] = Query(None, regex="^(pending|accepted|declined|cancelled)$"),
+    status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|cancelled)$"),
     user: User = Depends(get_current_user),
 ):
     """
@@ -911,33 +911,32 @@ async def invite_users_to_event(
         
         for invited_user in valid_users:
             try:
+                # Get UserProfile for invited_user (EventInvite requires UserProfile)
+                from users.models import UserProfile
+                try:
+                    invited_user_profile = invited_user.profile
+                except UserProfile.DoesNotExist:
+                    invited_user_profile, _ = UserProfile.objects.get_or_create(user=invited_user)
+                
                 # Check if invite already exists
                 existing = EventInvite.objects.filter(
                     event=event,
-                    invited_user=invited_user
+                    invited_user=invited_user_profile
                 ).first()
                 
                 if existing:
                     skipped_count += 1
                     continue
                 
-                # Create invitation
+                # Create invitation (both host and invited_user must be UserProfile)
                 invite = EventInvite.objects.create(
                     event=event,
-                    host=user,
-                    invited_user=invited_user,
+                    host=event.host,
+                    invited_user=invited_user_profile,
                     message=invite_data.message or "",
                     status='pending',
                     expires_at=invite_data.expires_at,
                 )
-                
-                # Send notification - need to get UserProfile for invited_user
-                # Note: invited_user is currently a User object, need to get UserProfile
-                try:
-                    invited_user_profile = invited_user.profile
-                except AttributeError:
-                    from users.models import UserProfile
-                    invited_user_profile, _ = UserProfile.objects.get_or_create(user=invited_user)
                 
                 send_notification(
                     recipient=invited_user_profile,
@@ -986,7 +985,7 @@ async def invite_users_to_event(
 @router.get("/{event_id}/invitations", response_model=List[InviteResponse])
 async def list_event_invitations(
     event_id: int,
-    status_filter: Optional[str] = Query(None, regex="^(pending|accepted|declined|expired)$"),
+    status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|expired)$"),
     user: User = Depends(get_current_user),
 ):
     """
@@ -1032,7 +1031,7 @@ async def list_event_invitations(
 
 @router.get("/my-invitations", response_model=List[Dict[str, Any]])
 async def get_my_invitations(
-    status_filter: Optional[str] = Query(None, regex="^(pending|accepted|declined|expired)$"),
+    status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|expired)$"),
     user: User = Depends(get_current_user),
 ):
     """
@@ -1044,13 +1043,20 @@ async def get_my_invitations(
     """
     @sync_to_async
     def get_invitations():
+        from users.models import UserProfile
+        # Get UserProfile for the user
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
+            user_profile, _ = UserProfile.objects.get_or_create(user=user)
+        
         queryset = EventInvite.objects.select_related(
             "event",
             "event__host",
             "event__venue",
             "host"
         ).filter(
-            invited_user=user
+            invited_user=user_profile
         ).order_by("-created_at")
         
         if status_filter:
@@ -1097,10 +1103,17 @@ async def respond_to_invitation(
     @sync_to_async
     @transaction.atomic
     def process_response():
+        from users.models import UserProfile
+        # Get UserProfile for the user
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
+            user_profile, _ = UserProfile.objects.get_or_create(user=user)
+        
         try:
             invite = EventInvite.objects.select_related("event", "invited_user", "event__host").get(
                 id=invite_id,
-                invited_user=user,
+                invited_user=user_profile,
                 status='pending'
             )
         except EventInvite.DoesNotExist:
