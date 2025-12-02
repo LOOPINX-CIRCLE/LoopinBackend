@@ -1,0 +1,25 @@
+{% extends "admin/index.html" %}
+{% load static %}
+
+{% block content %}
+<!-- Analytics Dashboard Banner - Custom Template Override -->
+<div style="margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #417690 0%, #205067 100%); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <h2 style="margin: 0 0 10px 0; color: white; font-size: 24px;">
+        <a href="/django/admin/dashboard/" style="color: white; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 28px;">📊</span>
+            <span>Analytics Dashboard</span>
+        </a>
+    </h2>
+    <p style="margin: 0; color: #e0e0e0; font-size: 14px;">
+        View platform-wide KPIs, user lifecycle metrics, host analytics, and event performance.
+    </p>
+    <div style="margin-top: 10px;">
+        <a href="/django/admin/dashboard/" style="display: inline-block; padding: 8px 16px; background: white; color: #417690; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 13px;">
+            Open Dashboard →
+        </a>
+    </div>
+</div>
+
+{{ block.super }}
+{% endblock %}
+
