@@ -138,7 +138,7 @@ def check_event_permission(user: User, event: Event, action: str = "view") -> bo
         return True
     
     # Host can do everything on their events
-    if event.host == user:
+    if event.host.user == user:
         return True
     
     # Public events can be viewed by anyone
@@ -252,7 +252,7 @@ def get_event_by_id(event_id: int, include_interests: bool = False) -> Event:
 
 @sync_to_async
 def create_event_with_relationships(
-    host: User,
+    host: 'UserProfile',
     title: str,
     description: Optional[str],
     start_time: datetime,
@@ -595,11 +595,18 @@ async def create_event_endpoint(
     
     # Calculate end_time from start_time and duration_hours
     from datetime import timedelta
+    from users.models import UserProfile
     try:
+        # Get UserProfile for the user (Event.host requires UserProfile)
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
+            user_profile, _ = UserProfile.objects.get_or_create(user=user)
+        
         end_time = event_data.start_time + timedelta(hours=event_data.duration_hours)
         
         event = await create_event_with_relationships(
-            host=user,
+            host=user_profile,
             title=event_data.title,
             description=event_data.description,
             start_time=event_data.start_time,
@@ -778,8 +785,9 @@ async def get_my_requests(
     return await get_requests()
 
 
-@router.get("/my-invitations", response_model=List[Dict[str, Any]])
-async def get_my_invitations(
+# @router.get("/my-invitations", response_model=List[Dict[str, Any]])
+# NOTE: Duplicate route - use events_attendance.py router instead
+async def _get_my_invitations_DUPLICATE(
     status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|expired)$"),
     user: User = Depends(get_current_user),
 ):
@@ -792,13 +800,20 @@ async def get_my_invitations(
     """
     @sync_to_async
     def get_invitations():
+        from users.models import UserProfile
+        # Get UserProfile for the user
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
+            user_profile, _ = UserProfile.objects.get_or_create(user=user)
+        
         queryset = EventInvite.objects.select_related(
             "event",
             "event__host",
             "event__venue",
             "host"
         ).filter(
-            invited_user=user
+            invited_user=user_profile
         ).order_by("-created_at")
         
         if status_filter:
@@ -821,8 +836,9 @@ async def get_my_invitations(
     return await get_invitations()
 
 
-@router.get("/my-tickets", response_model=List[Dict[str, Any]])
-async def get_my_tickets(
+# @router.get("/my-tickets", response_model=List[Dict[str, Any]])
+# NOTE: Duplicate route - use events_attendance.py router instead
+async def _get_my_tickets_DUPLICATE(
     event_id: Optional[int] = Query(None, description="Optional filter by event ID"),
     user: User = Depends(get_current_user),
 ):
@@ -1271,7 +1287,7 @@ async def accept_event_request(
                     from notifications.models import Notification
                     Notification.objects.create(
                         recipient=request.requester,
-                        sender=user,
+                        sender=event.host,
                         type='event_request',
                         title=f"Request Accepted: {event.title}",
                         message=f"Your request to attend '{event.title}' has been accepted! Please confirm your attendance.",
@@ -1369,7 +1385,7 @@ async def decline_event_request(
             from notifications.models import Notification
             Notification.objects.create(
                 recipient=request.requester,
-                sender=user,
+                sender=event.host,
                 type='event_request',
                 title=f"Request Declined: {event.title}",
                 message=f"Your request to attend '{event.title}' has been declined.",
@@ -1476,7 +1492,7 @@ async def bulk_accept_decline_requests(
                                 from notifications.models import Notification
                                 Notification.objects.create(
                                     recipient=request.requester,
-                                    sender=user,
+                                    sender=event.host,
                                     type='event_request',
                                     title=f"Request Accepted: {event.title}",
                                     message=f"Your request to attend '{event.title}' has been accepted!",
@@ -1505,7 +1521,7 @@ async def bulk_accept_decline_requests(
                                 from notifications.models import Notification
                                 Notification.objects.create(
                                     recipient=request.requester,
-                                    sender=user,
+                                    sender=event.host,
                                     type='event_request',
                                     title=f"Request Declined: {event.title}",
                                     message=f"Your request to attend '{event.title}' has been declined.",
@@ -1687,9 +1703,10 @@ async def confirm_attendance_free_event(
 
 # ============================================================================
 # Invitation Management Endpoints
+# NOTE: Duplicate routes removed - use events_attendance.py router instead
 # ============================================================================
 
-@router.post("/{event_id}/invitations", response_model=Dict[str, Any])
+# @router.post("/{event_id}/invitations", response_model=Dict[str, Any])
 async def invite_users_to_event(
     event_id: int,
     user_ids: List[int] = Body(..., min_items=1, max_items=50),
@@ -1729,10 +1746,17 @@ async def invite_users_to_event(
         
         for invited_user in valid_users:
             try:
+                # Get UserProfile for invited_user first (EventInvite requires UserProfile)
+                from users.models import UserProfile
+                try:
+                    invited_user_profile = invited_user.profile
+                except UserProfile.DoesNotExist:
+                    invited_user_profile, _ = UserProfile.objects.get_or_create(user=invited_user)
+                
                 # Check if invite already exists
                 existing = EventInvite.objects.filter(
                     event=event,
-                    invited_user=invited_user
+                    invited_user=invited_user_profile
                 ).first()
                 
                 if existing:
@@ -1742,8 +1766,8 @@ async def invite_users_to_event(
                 # Create invitation
                 invite = EventInvite.objects.create(
                     event=event,
-                    host=user,
-                    invited_user=invited_user,
+                    host=event.host,
+                    invited_user=invited_user_profile,
                     message=message or "",
                     status='pending',
                     expires_at=expires_at,
@@ -1753,8 +1777,8 @@ async def invite_users_to_event(
                 try:
                     from notifications.models import Notification
                     Notification.objects.create(
-                        recipient=invited_user,
-                        sender=user,
+                        recipient=invited_user_profile,
+                        sender=event.host,
                         type='event_invite',
                         title=f"You're Invited: {event.title}",
                         message=f"You've been invited to attend '{event.title}'!",
@@ -1791,8 +1815,9 @@ async def invite_users_to_event(
     return await create_invitations()
 
 
-@router.get("/{event_id}/invitations", response_model=List[Dict[str, Any]])
-async def list_event_invitations(
+# @router.get("/{event_id}/invitations", response_model=List[Dict[str, Any]])
+# NOTE: Duplicate route - use events_attendance.py router instead
+async def _list_event_invitations_DUPLICATE(
     event_id: int,
     status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|expired)$"),
     user: User = Depends(get_current_user),
@@ -1834,8 +1859,9 @@ async def list_event_invitations(
     return await get_invitations()
 
 
-@router.put("/invitations/{invite_id}/respond", response_model=Dict[str, Any])
-async def respond_to_invitation(
+# @router.put("/invitations/{invite_id}/respond", response_model=Dict[str, Any])
+# NOTE: Duplicate route - use events_attendance.py router instead
+async def _respond_to_invitation_DUPLICATE(
     invite_id: int,
     response: str = Body(..., pattern="^(going|not_going)$"),
     message: Optional[str] = Body(None, max_length=200),
@@ -1857,10 +1883,17 @@ async def respond_to_invitation(
     @sync_to_async
     @transaction.atomic
     def process_response():
+        from users.models import UserProfile
+        # Get UserProfile for the user
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
+            user_profile, _ = UserProfile.objects.get_or_create(user=user)
+        
         try:
             invite = EventInvite.objects.select_related("event", "invited_user", "event__host").get(
                 id=invite_id,
-                invited_user=user,
+                invited_user=user_profile,
                 status='pending'
             )
         except EventInvite.DoesNotExist:
@@ -1930,9 +1963,15 @@ async def respond_to_invitation(
             # Notify host (fire and forget in sync context)
             try:
                 from notifications.models import Notification
+                from users.models import UserProfile
+                # Get UserProfile for the user responding to the invitation
+                try:
+                    user_profile = user.profile
+                except UserProfile.DoesNotExist:
+                    user_profile, _ = UserProfile.objects.get_or_create(user=user)
                 Notification.objects.create(
                     recipient=event.host,
-                    sender=user,
+                    sender=user_profile,
                     type='event_invite',
                     title=f"Invitation Accepted: {event.title}",
                     message=f"{user.username} has accepted your invitation to '{event.title}'",
@@ -1952,9 +1991,15 @@ async def respond_to_invitation(
             # Notify host (fire and forget in sync context)
             try:
                 from notifications.models import Notification
+                from users.models import UserProfile
+                # Get UserProfile for the user responding to the invitation
+                try:
+                    user_profile = user.profile
+                except UserProfile.DoesNotExist:
+                    user_profile, _ = UserProfile.objects.get_or_create(user=user)
                 Notification.objects.create(
                     recipient=event.host,
-                    sender=user,
+                    sender=user_profile,
                     type='event_invite',
                     title=f"Invitation Declined: {event.title}",
                     message=f"{user.username} has declined your invitation to '{event.title}'",
@@ -1983,8 +2028,9 @@ async def respond_to_invitation(
 # Ticket Management Endpoints
 # ============================================================================
 
-@router.get("/{event_id}/my-ticket", response_model=Dict[str, Any])
-async def get_my_ticket_for_event(
+# @router.get("/{event_id}/my-ticket", response_model=Dict[str, Any])
+# NOTE: Duplicate route - use events_attendance.py router instead
+async def _get_my_ticket_for_event_DUPLICATE(
     event_id: int = Path(..., description="Event ID"),
     user: User = Depends(get_current_user),
 ):
