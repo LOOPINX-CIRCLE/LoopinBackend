@@ -106,7 +106,7 @@ async def signup_with_phone(request: PhoneNumberRequest):
         
         # Send OTP via SMS
         try:
-            success, sms_message = await sync_to_async(
+            success, sms_message, sms_details = await sync_to_async(
                 lambda: twilio_service.send_otp_sms(phone_number, otp_record.otp_code)
             )()
         except Exception as sms_error:
@@ -531,7 +531,7 @@ async def login_with_phone(request: PhoneNumberRequest):
         await sync_to_async(lambda: otp_record.save())()
         
         # Send OTP via SMS
-        success, message = await sync_to_async(lambda: twilio_service.send_otp_sms(phone_number, otp_record.otp_code))()
+        success, message, sms_details = await sync_to_async(lambda: twilio_service.send_otp_sms(phone_number, otp_record.otp_code))()
         
         if success:
             return AuthResponse(
