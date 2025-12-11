@@ -10,7 +10,6 @@
 
 This document provides **infrastructure decisions** for Loopin Backend, optimized for a **mobile-first SaaS** with the following business constraints:
 
-- **Team Size:** Small (2-5 engineers)
 - **Scale:** 1K-100K active users (Year 1)
 - **Release Velocity:** Weekly deployments
 - **Budget:** $150-250/month (lean startup)
@@ -58,36 +57,53 @@ flowchart TB
         OneSignal[OneSignal<br/>Push Notifications]
     end
     
-    iOS --> Route53
-    Android --> Route53
-    Route53 --> WAF
-    WAF --> ALB
-    ALB --> Web
-    ALB --> Worker
+    iOS -->|HTTPS| Route53
+    Android -->|HTTPS| Route53
+    Route53 -->|DNS Resolution| WAF
+    WAF -->|Filtered Traffic| ALB
+    ALB -->|Load Balance| Web
+    ALB -->|Health Checks| Worker
     
-    Web --> Redis
-    Web --> SQS
-    Worker --> Redis
-    Worker --> SQS
+    Web -->|Cache/Sessions| Redis
+    Web -->|Enqueue Jobs| SQS
+    Worker -->|Cache/Sessions| Redis
+    Worker -->|Poll Jobs| SQS
     
-    Web --> Secrets
-    Worker --> Secrets
+    Web -->|Get Secrets| Secrets
+    Worker -->|Get Secrets| Secrets
     
-    Web --> Supabase
-    Worker --> Supabase
-    Worker --> OneSignal
+    Web -->|Database Queries| Supabase
+    Worker -->|Database Queries| Supabase
+    Worker -->|Send Push| OneSignal
     
-    Web --> CW
-    Worker --> CW
-    Web --> Sentry
-    Worker --> Sentry
+    Web -->|Logs/Metrics| CW
+    Worker -->|Logs/Metrics| CW
+    Web -->|Errors| Sentry
+    Worker -->|Errors| Sentry
     
-    EB --> Worker
+    EB -->|Schedule Tasks| Worker
     
-    style Web fill:#4CAF50
-    style Worker fill:#4CAF50
-    style Supabase fill:#2196F3
-    style OneSignal fill:#FF9800
+    style iOS fill:#007AFF,stroke:#0051D5,stroke-width:2px,color:#fff
+    style Android fill:#3DDC84,stroke:#2AB572,stroke-width:2px,color:#000
+    style Route53 fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#fff
+    style WAF fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style ALB fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style Web fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Worker fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Redis fill:#DC382D,stroke:#B71C1C,stroke-width:2px,color:#fff
+    style SQS fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style Secrets fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style CW fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style Sentry fill:#362D59,stroke:#2B223F,stroke-width:2px,color:#fff
+    style EB fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style Supabase fill:#3ECF8E,stroke:#2AB572,stroke-width:2px,color:#000
+    style OneSignal fill:#FF6B35,stroke:#E55A2B,stroke-width:2px,color:#fff
+    style Network fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    style Compute fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px
+    style Data fill:#FFF3E0,stroke:#FF9800,stroke-width:2px
+    style Services fill:#F3E5F5,stroke:#9C27B0,stroke-width:2px
+    style Mobile fill:#F5F5F5,stroke:#757575,stroke-width:2px
+    style External fill:#FFF9C4,stroke:#F9A825,stroke-width:2px
 ```
 
 ---
@@ -209,29 +225,42 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph VPC["VPC (10.0.0.0/16)"]
-        subgraph Public["Public Subnet (10.0.1.0/24)"]
-            ALB["Application Load Balancer<br/>Port: 443<br/>Internet Gateway"]
+    Internet[Internet]
+    
+    subgraph VPC["VPC 10.0.0.0/16"]
+        subgraph Public["Public Subnet 10.0.1.0/24"]
+            ALB["Application Load Balancer<br/>Port: 443<br/>Internet Gateway<br/>Security Group: Allow 443"]
         end
         
-        subgraph Private["Private Subnet (10.0.2.0/24)"]
-            Web["ECS Web Service<br/>Port: 8000<br/>No Public IP"]
-            Worker["ECS Worker Service<br/>Port: 8000<br/>No Public IP"]
-            Redis["ElastiCache Redis<br/>Port: 6379<br/>No Internet"]
+        subgraph Private["Private Subnet 10.0.2.0/24"]
+            Web["ECS Web Service<br/>Port: 8000<br/>No Public IP<br/>SG: 8000 from ALB"]
+            Worker["ECS Worker Service<br/>Port: 8000<br/>No Public IP<br/>SG: 8000 from ALB"]
+            Redis["ElastiCache Redis<br/>Port: 6379<br/>No Internet<br/>SG: 6379 from ECS"]
         end
         
-        subgraph Isolated["Isolated Subnet (Future)"]
-            DB["Database<br/>(If moved from Supabase)"]
+        subgraph Isolated["Isolated Subnet Future"]
+            DB["Database<br/>If moved from Supabase"]
         end
     end
     
-    Internet --> ALB
-    ALB --> Web
-    ALB --> Worker
-    Web --> Redis
-    Worker --> Redis
-    Web -.->|Future| DB
-    Worker -.->|Future| DB
+    Internet -->|HTTPS 443| ALB
+    ALB -->|Port 8000| Web
+    ALB -->|Health Checks| Worker
+    Web -->|Port 6379| Redis
+    Worker -->|Port 6379| Redis
+    Web -.->|Future Connection| DB
+    Worker -.->|Future Connection| DB
+    
+    style Internet fill:#E3F2FD,stroke:#1976D2,stroke-width:3px,color:#000
+    style ALB fill:#FF9900,stroke:#232F3E,stroke-width:3px,color:#fff
+    style Web fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Worker fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Redis fill:#DC382D,stroke:#B71C1C,stroke-width:3px,color:#fff
+    style DB fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff,stroke-dasharray: 5 5
+    style Public fill:#FFEBEE,stroke:#C62828,stroke-width:2px
+    style Private fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    style Isolated fill:#F5F5F5,stroke:#757575,stroke-width:2px,stroke-dasharray: 5 5
+    style VPC fill:#E1F5FE,stroke:#0277BD,stroke-width:3px
 ```
 
 4. **Encryption Everywhere**
@@ -304,25 +333,25 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Internet["Internet"]
-        Users["Mobile Apps<br/>(iOS/Android)"]
+        Users["Mobile Apps<br/>iOS/Android"]
     end
     
-    subgraph VPC["VPC (10.0.0.0/16)"]
-        subgraph PublicAZ1["Public Subnet AZ-1 (10.0.1.0/24)"]
-            ALB["Application Load Balancer<br/>Port: 443<br/>Internet Gateway<br/>SG: Allow 443 from 0.0.0.0/0"]
-            NAT["NAT Gateway<br/>(10.0.1.10)<br/>For ECS outbound"]
+    subgraph VPC["VPC 10.0.0.0/16"]
+        subgraph PublicAZ1["Public Subnet AZ-1<br/>10.0.1.0/24"]
+            ALB["Application Load Balancer<br/>Port: 443<br/>Internet Gateway<br/>SG: Allow 443"]
+            NAT["NAT Gateway<br/>10.0.1.10<br/>ECS Outbound"]
         end
         
-        subgraph PrivateAZ1["Private Subnet AZ-1 (10.0.2.0/24)"]
+        subgraph PrivateAZ1["Private Subnet AZ-1<br/>10.0.2.0/24"]
             Web1["ECS Web Service<br/>Port: 8000<br/>No Public IP<br/>SG: 8000 from ALB"]
             Worker1["ECS Worker Service<br/>Port: 8000<br/>No Public IP<br/>SG: 8000 from ALB"]
             Redis1["ElastiCache Redis<br/>Port: 6379<br/>No Public IP<br/>SG: 6379 from ECS"]
         end
         
-        subgraph PrivateAZ2["Private Subnet AZ-2 (10.0.3.0/24)"]
-            Web2["ECS Web Service<br/>(Multi-AZ Redundancy)"]
-            Worker2["ECS Worker Service<br/>(Multi-AZ Redundancy)"]
-            Redis2["ElastiCache Redis<br/>(Multi-AZ Replica)"]
+        subgraph PrivateAZ2["Private Subnet AZ-2<br/>10.0.3.0/24"]
+            Web2["ECS Web Service<br/>Multi-AZ Redundancy"]
+            Worker2["ECS Worker Service<br/>Multi-AZ Redundancy"]
+            Redis2["ElastiCache Redis<br/>Multi-AZ Replica"]
         end
     end
     
@@ -332,7 +361,7 @@ flowchart TB
         OneSignal["OneSignal API<br/>Push Notifications"]
     end
     
-    Users -->|HTTPS| ALB
+    Users -->|HTTPS 443| ALB
     ALB -->|Port 8000| Web1
     ALB -->|Port 8000| Web2
     ALB -->|Health Checks| Worker1
@@ -353,7 +382,26 @@ flowchart TB
     Worker1 -->|HTTPS via NAT| OneSignal
     Worker2 -->|HTTPS via NAT| OneSignal
     
-    NAT --> Internet
+    NAT -->|Outbound| Internet
+    
+    style Users fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
+    style ALB fill:#FF9900,stroke:#232F3E,stroke-width:3px,color:#fff
+    style NAT fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style Web1 fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Web2 fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Worker1 fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Worker2 fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Redis1 fill:#DC382D,stroke:#B71C1C,stroke-width:3px,color:#fff
+    style Redis2 fill:#DC382D,stroke:#B71C1C,stroke-width:3px,color:#fff
+    style Supabase fill:#3ECF8E,stroke:#2AB572,stroke-width:2px,color:#000
+    style AWS fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    style OneSignal fill:#FF6B35,stroke:#E55A2B,stroke-width:2px,color:#fff
+    style PublicAZ1 fill:#FFEBEE,stroke:#C62828,stroke-width:2px
+    style PrivateAZ1 fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    style PrivateAZ2 fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    style VPC fill:#E1F5FE,stroke:#0277BD,stroke-width:3px
+    style External fill:#FFF9C4,stroke:#F9A825,stroke-width:2px
+    style Internet fill:#F5F5F5,stroke:#757575,stroke-width:2px
 ```
 
 **Security Groups:**
@@ -486,28 +534,43 @@ sequenceDiagram
     participant CW as CloudWatch
     participant Sentry as Sentry
     
-    App->>WAF: HTTP Request<br/>(X-Request-ID: abc-123)
+    App->>+WAF: HTTP Request<br/>X-Request-ID: abc-123
     WAF->>CW: ALB Access Logs<br/>[abc-123] Request received
     
-    WAF->>Web: Forward Request<br/>(X-Request-ID: abc-123)
+    WAF->>+Web: Forward Request<br/>X-Request-ID: abc-123
     Web->>CW: Application Logs<br/>[abc-123] Processing payment
-    Web->>SQS: Enqueue Message<br/>{correlation_id: "abc-123", ...}
-    
-    Web-->>App: HTTP Response<br/>(X-Request-ID: abc-123)
+    Web->>SQS: Enqueue Message<br/>correlation_id: abc-123
+    Web-->>-App: HTTP Response<br/>X-Request-ID: abc-123
     
     Worker->>SQS: Poll Queue
-    SQS-->>Worker: Message<br/>{correlation_id: "abc-123", ...}
+    SQS-->>Worker: Message<br/>correlation_id: abc-123
     
+    activate Worker
     Worker->>CW: Worker Logs<br/>[abc-123] Sending push notification
     
     alt Error Occurs
         Worker->>Sentry: Error Report<br/>[abc-123] Push failed
         Sentry->>CW: Error Logs<br/>[abc-123] Stack trace
+    else Success
+        Worker->>CW: Success Logs<br/>[abc-123] Push sent
     end
     
-    Worker->>SQS: Delete Message<br/>(after processing)
+    Worker->>SQS: Delete Message<br/>after processing
+    deactivate Worker
     
-    Note over App,Sentry: Correlation ID (abc-123) propagates<br/>through entire request lifecycle
+    Note over App,Sentry: Correlation ID abc-123 propagates<br/>through entire request lifecycle
+    
+    rect rgb(240, 248, 255)
+        Note over App,WAF: Request Phase
+    end
+    
+    rect rgb(240, 255, 240)
+        Note over Web,SQS: Processing Phase
+    end
+    
+    rect rgb(255, 248, 240)
+        Note over Worker,Sentry: Background Job Phase
+    end
 ```
 
 **Correlation ID Standard:**
@@ -559,10 +622,28 @@ flowchart TD
     TerminateGreen --> RestoreBlue[Restore 100% to Blue]
     RestoreBlue --> Fail
     
-    style Start fill:#90EE90
-    style Success fill:#90EE90
-    style Fail fill:#FFB6C1
-    style Rollback fill:#FFB6C1
+    style Start fill:#4CAF50,stroke:#2E7D32,stroke-width:3px,color:#fff
+    style Build fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#fff
+    style PushECR fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#fff
+    style Tests fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
+    style Security fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
+    style Approval fill:#9C27B0,stroke:#6A1B9A,stroke-width:2px,color:#fff
+    style AutoDeploy fill:#00BCD4,stroke:#00838F,stroke-width:2px,color:#fff
+    style ManualApproval fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style CreateGreen fill:#00BCD4,stroke:#00838F,stroke-width:2px,color:#fff
+    style HealthCheck fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
+    style Shift10 fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    style Shift50 fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    style Shift100 fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    style Monitor10 fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style Monitor50 fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style Monitor100 fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style TerminateBlue fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    style Success fill:#4CAF50,stroke:#2E7D32,stroke-width:4px,color:#fff
+    style Fail fill:#F44336,stroke:#C62828,stroke-width:4px,color:#fff
+    style Rollback fill:#F44336,stroke:#C62828,stroke-width:3px,color:#fff
+    style TerminateGreen fill:#F44336,stroke:#C62828,stroke-width:2px,color:#fff
+    style RestoreBlue fill:#F44336,stroke:#C62828,stroke-width:2px,color:#fff
 ```
 
 **Approval Gates:**
