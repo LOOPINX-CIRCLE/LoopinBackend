@@ -71,7 +71,7 @@ def get_user_lifecycle_metrics(
     active_users = users_qs.filter(is_active=True).count()
     waitlisted_users = users_qs.filter(is_active=False).count()
     
-    # Approval conversion rate
+    # Approval conversion rate (as percentage 0-100)
     approval_rate = (active_users / total_users * 100) if total_users > 0 else 0
     
     # Time-series: new users per period
@@ -118,7 +118,7 @@ def get_user_lifecycle_metrics(
         'total_users': total_users,
         'active_users': active_users,
         'waitlisted_users': waitlisted_users,
-        'approval_rate': round(approval_rate / 100, 4),  # Convert to decimal (0.92 not 92%)
+        'approval_rate': round(approval_rate, 2),  # Keep as percentage (0-100) for template display
         'trend': paginated_trend,  # Match spec field name
         'pagination': {
             'limit': limit,
@@ -429,8 +429,8 @@ def get_completed_events_analytics(
     events_detail = []
     
     for event in paginated_events:
-        # Get attendees
-        attendees = event.attendance_records.filter(status='going').select_related('user')
+        # Get attendees (include both 'going' and 'checked_in' statuses to detect check-ins)
+        attendees = event.attendance_records.filter(status__in=['going', 'checked_in']).select_related('user')
         attendees_list = [
             {
                 'name': att.user.name or att.user.user.username,
