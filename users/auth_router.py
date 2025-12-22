@@ -6,10 +6,13 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 from asgiref.sync import sync_to_async
 import jwt
 from datetime import datetime, timedelta
 import logging
+import random
 
 from .models import UserProfile, PhoneOTP, EventInterest
 from .schemas import (
@@ -27,6 +30,41 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth")
 security = HTTPBearer()
+
+
+def maybe_promote_user_from_waitlist_sync(user_id: int) -> bool:
+    """
+    Check if a waitlisted user should be promoted to active based on waitlist_promote_at.
+    This runs in a DB transaction to ensure atomic promotion and field clearing.
+    Returns True if a promotion happened.
+    """
+    now = timezone.now()
+
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(id=user_id)
+        profile = UserProfile.objects.select_for_update().get(user=locked_user)
+
+        # If already active, nothing to do
+        if locked_user.is_active:
+            return False
+
+        # If no promotion time is set or it's still in the future, remain on waitlist
+        promote_at = profile.waitlist_promote_at
+        if not promote_at or now < promote_at:
+            return False
+
+        # Promote to active and clear waitlist fields
+        locked_user.is_active = True
+        profile.is_active = True
+        profile.waitlist_started_at = None
+        profile.waitlist_promote_at = None
+
+        locked_user.save(update_fields=["is_active"])
+        profile.save(update_fields=["is_active", "waitlist_started_at", "waitlist_promote_at", "updated_at"])
+
+        logger.info(f"User {locked_user.id} promoted from waitlist to active.")
+        # TODO: Trigger user notification on promotion (out of scope for current implementation)
+        return True
 
 
 def create_jwt_token(user_id: int, phone_number: str) -> str:
@@ -427,6 +465,9 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
                 success=False,
                 message="User profile not found. Please contact support."
             )
+
+        # Determine if this call is completing the profile for the first time
+        was_incomplete_before = not (profile.name and profile.profile_pictures)
         
         # Validate event interests exist and are active
         try:
@@ -471,6 +512,33 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
             return AuthResponse(
                 success=False,
                 message="An error occurred while saving your profile. Please try again."
+            )
+        
+        # If this was the first time the profile became complete, place user into waitlist
+        # by marking the Django User as inactive and scheduling a promotion time.
+        if was_incomplete_before:
+            now = timezone.now()
+            # Random delay between 3.5 and 4 hours (210–240 minutes)
+            delay_minutes = random.randint(210, 240)
+            promote_at = now + timedelta(minutes=delay_minutes)
+
+            # Mark auth user as inactive for waitlist duration
+            user.is_active = False
+            await sync_to_async(lambda: user.save(update_fields=["is_active"]))()
+
+            # Mirror waitlist state on profile for analytics/inspection
+            profile.is_active = False
+            profile.waitlist_started_at = now
+            profile.waitlist_promote_at = promote_at
+            await sync_to_async(
+                lambda: profile.save(
+                    update_fields=["is_active", "waitlist_started_at", "waitlist_promote_at", "updated_at"]
+                )
+            )()
+
+            logger.info(
+                f"User {user.id} placed on waitlist after first profile completion. "
+                f"Promotion scheduled at {promote_at.isoformat()}."
             )
         
         # Return success with profile details
@@ -624,6 +692,17 @@ async def get_user_profile(token: str = Depends(security)):
         # Get user and profile
         user = await sync_to_async(lambda: User.objects.get(id=user_id))()
         profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+
+        # Automatic waitlist promotion check based on waitlist_promote_at.
+        # This allows users to be promoted during normal request flow without background workers.
+        try:
+            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+            if promoted:
+                # Refresh instances to reflect new active state
+                user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+                profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        except Exception as promote_error:
+            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
         
         # Fetch event interests
         event_interests_qs = await sync_to_async(lambda: list(profile.event_interests.filter(is_active=True).order_by('name')))()
@@ -649,7 +728,8 @@ async def get_user_profile(token: str = Depends(security)):
             event_interests=event_interests_data,
             profile_pictures=profile.profile_pictures,
             is_verified=profile.is_verified,
-            is_active=profile.is_active,
+            # Expose Django User.is_active so clients can distinguish waitlisted vs active accounts
+            is_active=user.is_active,
             created_at=profile.created_at.isoformat(),
             updated_at=profile.updated_at.isoformat()
         )
