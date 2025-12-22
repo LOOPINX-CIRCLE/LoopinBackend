@@ -2,7 +2,7 @@
 Analytics Dashboard Admin Views
 
 Custom Django Admin views for the Analytics Dashboard.
-Provides CEO/Admin-level insights into platform KPIs.
+
 """
 
 from django.contrib import admin
@@ -224,10 +224,6 @@ def custom_admin_index_view(request, extra_context=None):
             logger.info(f"✅ Successfully injected dashboard banner into response (response size: {len(rendered_html)} bytes)")
             return response
             
-        except Exception as e:
-            logger.error(f"❌ Failed to load custom admin index template: {e}", exc_info=True)
-            # Fall back to original response if template loading fails
-            return original_response
         except Exception as e:
             logger.error(f"❌ Failed to load custom admin index template: {e}", exc_info=True)
             # Fall back to original response if template loading fails
