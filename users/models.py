@@ -56,6 +56,18 @@ class UserProfile(TimeStampedModel):
     is_verified = models.BooleanField(default=False, help_text="Whether the user profile is verified")
     is_active = models.BooleanField(default=True, help_text="Whether the user profile is active")
     
+    # Waitlist state tracking (mirrors Django User.is_active flag)
+    waitlist_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when the user was first placed on the waitlist"
+    )
+    waitlist_promote_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Scheduled promotion time from waitlist to active state"
+    )
+    
     # Additional fields from ERD
     metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata")
 
