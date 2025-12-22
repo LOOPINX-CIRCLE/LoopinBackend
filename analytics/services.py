@@ -71,8 +71,8 @@ def get_user_lifecycle_metrics(
     active_users = users_qs.filter(is_active=True).count()
     waitlisted_users = users_qs.filter(is_active=False).count()
     
-    # Approval conversion rate (as percentage 0-100)
-    approval_rate = (active_users / total_users * 100) if total_users > 0 else 0
+    # Approval conversion rate as decimal (0-1), matching docs and API spec
+    approval_rate = (active_users / total_users) if total_users > 0 else 0
     
     # Time-series: new users per period
     time_series = (
@@ -118,7 +118,7 @@ def get_user_lifecycle_metrics(
         'total_users': total_users,
         'active_users': active_users,
         'waitlisted_users': waitlisted_users,
-        'approval_rate': round(approval_rate, 2),  # Keep as percentage (0-100) for template display
+        'approval_rate': round(approval_rate, 4),  # Decimal (0.92 = 92%), active_users / total_users
         'trend': paginated_trend,  # Match spec field name
         'pagination': {
             'limit': limit,
