@@ -517,6 +517,7 @@ sequenceDiagram
    - Profile pictures: 1-6 valid URLs
 5. Saves profile data
 6. Returns success
+7. For users completing their profile for the first time, the backend then places the account into a short **waitlist window** by setting `User.is_active = false` and scheduling an automatic promotion 3.5–4 hours in the future.
 
 **Request:**
 ```json
@@ -1052,6 +1053,7 @@ Content-Type: application/json
 **Endpoint:** `GET /api/auth/profile`
 
 **Description:** Returns complete user profile information. Requires JWT token.
+This endpoint is also the primary way for clients to determine whether a user is **waitlisted** or **fully active** by inspecting the `is_active` flag.
 
 **Headers:**
 ```
@@ -2059,7 +2061,7 @@ This section provides a comprehensive guide for integrating the Loopin Backend a
 
 #### **STEP 5: Get User Profile (Authenticated Endpoint)**
 
-**Purpose:** Retrieve complete user profile information after authentication.
+**Purpose:** Retrieve complete user profile information after authentication and determine whether the user is currently in the **waitlist** or **active** state.
 
 **When to Call:**
 - After successful login (when `needs_profile_completion = false`)
@@ -2125,7 +2127,10 @@ This section provides a comprehensive guide for integrating the Loopin Backend a
 - `event_interests` (array): Full interest objects with details
 - `profile_pictures` (array): List of picture URLs
 - `is_verified` (boolean): Phone verification status
-- `is_active` (boolean): Account active status
+- `is_active` (boolean): **Account active status from Django `User.is_active`**  
+  - `false` immediately after first-time profile completion → user is in **waitlist state** and must not be allowed to use core app features yet  
+  - `true` after automatic promotion → user is **fully active** and can use all app features  
+  - The backend automatically promotes users from waitlist to active once the current time passes the scheduled `waitlist_promote_at` timestamp, using normal request flow (no background workers, cron, or Celery).
 - `created_at` (string): Account creation timestamp
 - `updated_at` (string): Last update timestamp
 
