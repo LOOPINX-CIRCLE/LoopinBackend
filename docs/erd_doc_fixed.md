@@ -85,6 +85,8 @@ erDiagram
         JSONB metadata "Additional user data"
         BOOLEAN is_verified "Phone verified status"
         BOOLEAN is_active "Profile active"
+        DATETIME waitlist_started_at "When user first entered waitlist (nullable)"
+        DATETIME waitlist_promote_at "Scheduled promotion time to active (nullable)"
         DATETIME created_at "Record creation"
         DATETIME updated_at "Last update"
     }
@@ -520,6 +522,19 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Minimum 1, maximum 5 event interests
 - Name: 2-100 characters, letters only
 - Phone number validation (format: +XXXXXXXXXXX)
+
+**Waitlist Lifecycle:**
+- New users who complete their profile for the first time are immediately placed into a **waitlist state**:
+  - Django `AUTH_USER.is_active = False`
+  - `USER_PROFILE.is_active = False`
+  - `waitlist_started_at` set to the profile completion time
+  - `waitlist_promote_at` set to a randomized timestamp between **3.5 and 4 hours** in the future
+- While `is_active = False`, all endpoints and features that depend on this flag must treat the account as **restricted/waitlisted** and deny core actions.
+- During normal API traffic (no Celery/cron), the backend checks `waitlist_promote_at` and **atomically promotes** the user to active when `now >= waitlist_promote_at`:
+  - `AUTH_USER.is_active = True`
+  - `USER_PROFILE.is_active = True`
+  - `waitlist_started_at` and `waitlist_promote_at` cleared
+- Clients should use the `/api/auth/profile` endpoint and read the `is_active` field to distinguish **waitlisted** vs **active** users.
 
 **Admin Interface:**
 - `UserProfileAdmin` - Separate admin interface for customer profiles
