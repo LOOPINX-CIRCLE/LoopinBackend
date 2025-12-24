@@ -287,6 +287,13 @@ def analytics_dashboard_view(request):
         waitlist_metrics = {
             'total_waitlisted': 0,
             'approval_rate': 0.0,
+            'waitlist_promotion': {
+                'users_scheduled_for_promotion': 0,
+                'users_promoting_soon': 0,
+                'avg_expected_duration_hours': 0.0,
+                'promotion_window_min_hours': 3.5,
+                'promotion_window_max_hours': 4.0,
+            },
             'trend': [],
             'pagination': {'limit': 100, 'offset': 0, 'total': 0, 'has_more': False},
         }
