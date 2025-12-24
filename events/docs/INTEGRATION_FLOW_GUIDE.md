@@ -22,56 +22,56 @@ flowchart TD
     Role -->|Host| HostFlow[Host Flow]
     Role -->|Both| BothFlow[Can Access Both Flows]
     
-    AttendeeFlow --> BrowseEvents[GET /events<br/>Browse Events]
-    BrowseEvents --> ViewEvent[GET /events/{id}<br/>View Event Details]
+    AttendeeFlow --> BrowseEvents["GET /events - Browse Events"]
+    BrowseEvents --> ViewEvent["GET /events/{id} - View Details"]
     ViewEvent --> CheckRequest{Has Request?}
     
-    CheckRequest -->|No| RequestJoin[POST /events/{id}/requests<br/>Request to Join]
-    CheckRequest -->|Yes| CheckStatus[GET /events/{id}/my-request<br/>Check Request Status]
+    CheckRequest -->|No| RequestJoin["POST /events/{id}/requests - Request Join"]
+    CheckRequest -->|Yes| CheckStatus["GET /events/{id}/my-request - Check Status"]
     
     RequestJoin --> CheckStatus
     CheckStatus --> Status{Status?}
     
     Status -->|Pending| WaitPending[Show: Request Pending]
-    Status -->|Accepted| Confirm[POST /events/{id}/confirm-attendance<br/>Confirm Attendance]
+    Status -->|Accepted| Confirm["POST /events/{id}/confirm-attendance - Confirm"]
     Status -->|Declined| ShowDeclined[Show: Request Declined]
     
-    Confirm --> ViewTicket[GET /events/{id}/my-ticket<br/>View Ticket]
-    ViewTicket --> AllTickets[GET /events/my-tickets<br/>View All Tickets]
+    Confirm --> ViewTicket["GET /events/{id}/my-ticket - View Ticket"]
+    ViewTicket --> AllTickets["GET /events/my-tickets - All Tickets"]
     
-    HostFlow --> CreateEvent[POST /events<br/>Create Event]
-    CreateEvent --> ManageRequests[GET /events/{id}/requests<br/>View Requests]
+    HostFlow --> CreateEvent["POST /events - Create Event"]
+    CreateEvent --> ManageRequests["GET /events/{id}/requests - View Requests"]
     ManageRequests --> ProcessRequest{Process Request?}
     
-    ProcessRequest -->|Accept| AcceptReq[PUT /events/{id}/requests/{req_id}/accept<br/>Accept Request]
-    ProcessRequest -->|Decline| DeclineReq[PUT /events/{id}/requests/{req_id}/decline<br/>Decline Request]
-    ProcessRequest -->|Bulk| BulkAction[POST /events/{id}/requests/bulk-action<br/>Bulk Accept/Decline]
+    ProcessRequest -->|Accept| AcceptReq["PUT /events/{id}/requests/{req_id}/accept"]
+    ProcessRequest -->|Decline| DeclineReq["PUT /events/{id}/requests/{req_id}/decline"]
+    ProcessRequest -->|Bulk| BulkAction["POST /events/{id}/requests/bulk-action"]
     
     AcceptReq --> ManageRequests
     DeclineReq --> ManageRequests
     BulkAction --> ManageRequests
     
     HostFlow --> PayoutFlow[Payout Flow]
-    PayoutFlow --> BankAccounts[GET /payouts/bank-accounts<br/>List Bank Accounts]
+    PayoutFlow --> BankAccounts["GET /payouts/bank-accounts - List Accounts"]
     BankAccounts --> BankAction{Action?}
     
-    BankAction -->|Add| AddBank[POST /payouts/bank-accounts<br/>Add Bank Account]
-    BankAction -->|Edit| EditBank[PUT /payouts/bank-accounts/{id}<br/>Update Bank Account]
-    BankAction -->|Delete| DeleteBank[DELETE /payouts/bank-accounts/{id}<br/>Delete Bank Account]
+    BankAction -->|Add| AddBank["POST /payouts/bank-accounts - Add Account"]
+    BankAction -->|Edit| EditBank["PUT /payouts/bank-accounts/{id} - Update"]
+    BankAction -->|Delete| DeleteBank["DELETE /payouts/bank-accounts/{id} - Delete"]
     
-    AddBank --> CreatePayout[POST /payouts/requests<br/>Create Payout Request]
+    AddBank --> CreatePayout["POST /payouts/requests - Create Payout"]
     EditBank --> CreatePayout
     DeleteBank --> BankAccounts
     
-    CreatePayout --> ListPayouts[GET /payouts/requests<br/>List Payout Requests]
-    ListPayouts --> ViewPayout[GET /payouts/requests/{id}<br/>View Payout Details]
+    CreatePayout --> ListPayouts["GET /payouts/requests - List Payouts"]
+    ListPayouts --> ViewPayout["GET /payouts/requests/{id} - View Details"]
     
     BothFlow --> InvitationFlow[Invitation Flow]
-    InvitationFlow --> MyInvites[GET /events/my-invitations<br/>View My Invitations]
+    InvitationFlow --> MyInvites["GET /events/my-invitations - View Invites"]
     MyInvites --> RespondInvite{Respond?}
     
-    RespondInvite -->|Accept| AcceptInvite[PUT /events/invitations/{id}/respond<br/>Accept Invitation]
-    RespondInvite -->|Decline| DeclineInvite[PUT /events/invitations/{id}/respond<br/>Decline Invitation]
+    RespondInvite -->|Accept| AcceptInvite["PUT /events/invitations/{id}/respond - Accept"]
+    RespondInvite -->|Decline| DeclineInvite["PUT /events/invitations/{id}/respond - Decline"]
     
     AcceptInvite --> ViewTicket
     DeclineInvite --> MyInvites
@@ -86,21 +86,21 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A[1. GET /events<br/>Browse Events List] --> B[2. GET /events/{id}<br/>View Event Details]
+    A["1. GET /events - Browse Events"] --> B["2. GET /events/{id} - View Details"]
     B --> C{User Action?}
     
-    C -->|Request to Join| D[3. POST /events/{id}/requests<br/>Request to Join]
-    C -->|Check Status| E[4. GET /events/{id}/my-request<br/>Check Request Status]
+    C -->|Request to Join| D["3. POST /events/{id}/requests - Request Join"]
+    C -->|Check Status| E["4. GET /events/{id}/my-request - Check Status"]
     
     D --> E
     E --> F{Request Status?}
     
     F -->|Pending| G[Show: Waiting for Host]
-    F -->|Accepted| H[5. POST /events/{id}/confirm-attendance<br/>Confirm Attendance]
+    F -->|Accepted| H["5. POST /events/{id}/confirm-attendance - Confirm"]
     F -->|Declined| I[Show: Request Declined]
     
-    H --> J[6. GET /events/{id}/my-ticket<br/>View Ticket]
-    J --> K[7. GET /events/my-tickets<br/>View All Tickets]
+    H --> J["6. GET /events/{id}/my-ticket - View Ticket"]
+    J --> K["7. GET /events/my-tickets - All Tickets"]
     
     style A fill:#e3f2fd
     style B fill:#e3f2fd
@@ -115,28 +115,28 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[1. GET /events/venues<br/>List Venues] --> B{Create Venue?}
+    A["1. GET /events/venues - List Venues"] --> B{Create Venue?}
     
-    B -->|Yes| C[2. POST /events/venues<br/>Create Venue]
-    B -->|No| D[3. POST /events<br/>Create Event]
+    B -->|Yes| C["2. POST /events/venues - Create Venue"]
+    B -->|No| D["3. POST /events - Create Event"]
     C --> D
     
-    D --> E[4. GET /events/{id}/requests<br/>View Event Requests]
+    D --> E["4. GET /events/{id}/requests - View Requests"]
     E --> F{Action on Request?}
     
-    F -->|Accept Single| G[5. PUT /events/{id}/requests/{req_id}/accept<br/>Accept Request]
-    F -->|Decline Single| H[6. PUT /events/{id}/requests/{req_id}/decline<br/>Decline Request]
-    F -->|Bulk Action| I[7. POST /events/{id}/requests/bulk-action<br/>Bulk Accept/Decline]
+    F -->|Accept Single| G["5. PUT /events/{id}/requests/{req_id}/accept"]
+    F -->|Decline Single| H["6. PUT /events/{id}/requests/{req_id}/decline"]
+    F -->|Bulk Action| I["7. POST /events/{id}/requests/bulk-action"]
     
     G --> E
     H --> E
     I --> E
     
-    D --> J[8. POST /events/{id}/invitations<br/>Invite Users]
-    J --> K[9. GET /events/{id}/invitations<br/>View Sent Invitations]
+    D --> J["8. POST /events/{id}/invitations - Invite Users"]
+    J --> K["9. GET /events/{id}/invitations - View Sent"]
     
-    D --> L[10. PUT /events/{id}<br/>Update Event]
-    D --> M[11. DELETE /events/{id}<br/>Delete Event]
+    D --> L["10. PUT /events/{id} - Update Event"]
+    D --> M["11. DELETE /events/{id} - Delete Event"]
     
     style A fill:#e3f2fd
     style C fill:#fff3e0
@@ -151,21 +151,21 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[1. GET /payouts/bank-accounts<br/>List Bank Accounts] --> B{Has Bank Account?}
+    A["1. GET /payouts/bank-accounts - List Accounts"] --> B{Has Bank Account?}
     
-    B -->|No| C[2. POST /payouts/bank-accounts<br/>Add Bank Account]
+    B -->|No| C["2. POST /payouts/bank-accounts - Add Account"]
     B -->|Yes| D{Action?}
     
     C --> D
-    D -->|Edit| E[3. PUT /payouts/bank-accounts/{id}<br/>Update Bank Account]
-    D -->|Delete| F[4. DELETE /payouts/bank-accounts/{id}<br/>Delete Bank Account]
-    D -->|Create Payout| G[5. POST /payouts/requests<br/>Create Payout Request]
+    D -->|Edit| E["3. PUT /payouts/bank-accounts/{id} - Update"]
+    D -->|Delete| F["4. DELETE /payouts/bank-accounts/{id} - Delete"]
+    D -->|Create Payout| G["5. POST /payouts/requests - Create Payout"]
     
     E --> G
     F --> A
     
-    G --> H[6. GET /payouts/requests<br/>List Payout Requests]
-    H --> I[7. GET /payouts/requests/{id}<br/>View Payout Details]
+    G --> H["6. GET /payouts/requests - List Payouts"]
+    H --> I["7. GET /payouts/requests/{id} - View Details"]
     
     style A fill:#e3f2fd
     style C fill:#fff3e0
@@ -180,15 +180,15 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A[1. GET /events/my-invitations<br/>View My Invitations] --> B{Invitation Status?}
+    A["1. GET /events/my-invitations - View Invites"] --> B{Invitation Status?}
     
     B -->|Pending| C{User Action?}
-    B -->|Accepted| D[Already Accepted<br/>View Event/Ticket]
+    B -->|Accepted| D[Already Accepted - View Event/Ticket]
     B -->|Declined| E[Already Declined]
     B -->|Expired| F[Invitation Expired]
     
-    C -->|Accept| G[2. PUT /events/invitations/{id}/respond<br/>Response: going]
-    C -->|Decline| H[2. PUT /events/invitations/{id}/respond<br/>Response: not_going]
+    C -->|Accept| G["2. PUT /events/invitations/{id}/respond - going"]
+    C -->|Decline| H["2. PUT /events/invitations/{id}/respond - not_going"]
     
     G --> I{Event is Paid?}
     I -->|Yes| J[Navigate to Payment]
