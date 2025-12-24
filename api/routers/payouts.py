@@ -5,7 +5,7 @@ Handles bank account management and payout requests for event hosts.
 Architecture:
 - Bank accounts are linked to User (hosts)
 - Payout requests capture financial snapshots of events
-- Platform fee is 10% of base ticket fare
+- Platform fee is configurable via admin panel (default: 10%)
 - All calculations are done at request time for audit trail
 """
 
@@ -196,18 +196,19 @@ def calculate_event_financials(event: Event) -> Dict[str, Any]:
     Calculate all financial metrics for an event payout request.
     
     Business Logic:
-    - Buyer pays: Base ticket fare + 10% platform fee (e.g., ₹100 + ₹10 = ₹110)
+    - Buyer pays: Base ticket fare + platform fee (configurable via admin)
     - Host earns: Base ticket fare × Tickets sold (no platform fee deduction)
-    - Platform fee: Base ticket fare × 10% × Tickets sold
+    - Platform fee: Base ticket fare × platform fee % × Tickets sold (from config)
     
     Returns:
         Dictionary containing:
         - total_tickets_sold: Count of paid attendance records
         - attendees_details: List of attendee names and contacts
-        - platform_fee_amount: 10% of base ticket fare × tickets sold (paid by buyers)
+        - platform_fee_amount: Platform fee % of base ticket fare × tickets sold (paid by buyers)
         - final_earning: Base ticket fare × tickets sold (host earnings, no deduction)
     """
     from decimal import Decimal, ROUND_HALF_UP
+    from core.models import PlatformFeeConfig
     
     # Get all paid attendance records for this event
     paid_attendances = AttendanceRecord.objects.filter(
@@ -225,12 +226,15 @@ def calculate_event_financials(event: Event) -> Dict[str, Any]:
     # Host earns the base fare, platform fee is added on top (paid by buyer)
     host_earnings = base_ticket_fare * Decimal(total_tickets_sold)
     
-    # Calculate platform fee: 10% of base ticket fare × Tickets sold
+    # Calculate platform fee using dynamic configuration
     # This is what buyers pay extra (on top of base fare)
-    platform_fee_amount = base_ticket_fare * Decimal('0.10') * Decimal(total_tickets_sold)
+    platform_fee_amount = PlatformFeeConfig.calculate_platform_fee(
+        base_fare=base_ticket_fare,
+        quantity=total_tickets_sold
+    )
     
-    # Final ticket fare that buyers pay = Base + 10% platform fee
-    final_ticket_fare_per_ticket = base_ticket_fare * Decimal('1.10')
+    # Final ticket fare that buyers pay = Base + platform fee
+    final_ticket_fare_per_ticket = PlatformFeeConfig.calculate_final_price(base_ticket_fare)
     
     # Round to 2 decimal places
     host_earnings = host_earnings.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
