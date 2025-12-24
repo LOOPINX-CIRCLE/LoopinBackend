@@ -73,6 +73,7 @@ graph TB
             CHOICES[Choices<br/>Constants & Enums]
             UTILS[Utilities<br/>Logger, Cache, Permissions]
             DB_UTILS[Database Utils<br/>Connection Management]
+            PLATFORM_FEE[Platform Fee Config<br/>Singleton Configuration]
         end
     end
     
@@ -208,7 +209,9 @@ sequenceDiagram
 ```
 core/
 ├── __init__.py
-├── base_models.py          # Abstract base models
+├── models.py              # System-wide models (PlatformFeeConfig)
+├── admin.py               # Django admin configurations
+├── base_models.py         # Abstract base models
 ├── choices.py             # Application constants
 ├── db_utils.py            # Database utilities
 ├── exceptions.py          # Custom exceptions
@@ -217,17 +220,18 @@ core/
 │   ├── __init__.py
 │   ├── logger.py          # Logging utilities
 │   ├── cache.py           # Caching utilities
-│   ├── validators.py       # Data validators
-│   ├── decorators.py       # Custom decorators
-│   └── helpers.py          # Helper functions
+│   ├── validators.py      # Data validators
+│   ├── decorators.py      # Custom decorators
+│   └── helpers.py         # Helper functions
 ├── middleware/
 │   ├── __init__.py
-│   ├── analytics.py       # Analytics middleware
-│   └── security.py        # Security middleware
+│   ├── auth_middleware.py  # Authentication middleware
+│   ├── exception_handler.py # Exception handling
+│   └── request_logging.py # Request logging
 └── signals/
     ├── __init__.py
-    ├── user_signals.py    # User-related signals
-    └── audit_signals.py   # Audit-related signals
+    ├── notification_events.py # Notification signals
+    └── user_activity.py    # User activity signals
 ```
 
 ### Django Apps Architecture
@@ -260,6 +264,7 @@ app_name/
 
 | App | Purpose | Key Models | API Endpoints |
 |-----|---------|------------|---------------|
+| **core** | System-wide configuration | PlatformFeeConfig | Django Admin |
 | **users** | User authentication & profiles | UserProfile, PhoneOTP, EventInterest | `/api/auth/*` |
 | **events** | Event management | Event, Venue, EventRequest, EventInvite | `/api/events/*` |
 | **attendances** | Check-in/check-out | AttendanceRecord, TicketSecret | `/api/attendances/*` |
@@ -312,6 +317,26 @@ api/
 - **Foreign Key Constraints**: Data integrity
 - **Soft Deletes**: Data preservation
 - **Audit Trail**: Complete change tracking
+- **Singleton Pattern**: System-wide configuration (PlatformFeeConfig)
+- **Relationship Consistency**: AttendanceRecord links to UserProfile (not User) for proper data modeling
+
+#### **Core Models**
+
+**PlatformFeeConfig (Singleton)**
+- **Purpose**: System-wide platform fee configuration
+- **Pattern**: Singleton (only one instance with id=1)
+- **Access Control**: Superuser-only modification with password confirmation
+- **Caching**: 1-hour TTL with automatic invalidation on updates
+- **Usage**: All financial calculations (payouts, payments, analytics)
+- **Default Value**: 10% platform fee
+- **Business Logic**: Additive fee model (buyer pays base + fee, host earns full base)
+
+**Key Features:**
+- Admin-controlled via Django Admin interface
+- Three-tier caching: config object, percentage, decimal multiplier
+- Automatic cache invalidation on configuration changes
+- Used across all financial modules for consistency
+- Validation: 0-100% range with proper error handling
 
 #### **Connection Management**
 - **Connection Pooling**: Efficient database connections
@@ -377,12 +402,28 @@ services:
 - **Event Sourcing**: Audit trail and change tracking
 - **CQRS**: Command Query Responsibility Segregation
 - **Data Validation**: Multi-layer validation
+- **Configuration Management**: Singleton pattern for system-wide settings
 
 #### **Data Storage Strategy**
 - **Primary Storage**: PostgreSQL for transactional data
-- **Cache Storage**: Redis for frequently accessed data
+- **Cache Storage**: Redis for frequently accessed data (platform fee config cached for 1 hour)
 - **File Storage**: Local/cloud storage for media files
 - **Analytics Storage**: PostHog for user analytics
+- **Configuration Storage**: PlatformFeeConfig singleton in PostgreSQL with Redis caching
+
+#### **Key Architectural Changes**
+- **Platform Fee Configuration**: Moved from hardcoded 10% to configurable singleton model
+  - Admin-controlled via Django Admin (superuser-only)
+  - Cached for performance (1-hour TTL)
+  - Automatic cache invalidation on updates
+  - Used by all financial calculations (payouts, payments, analytics)
+- **Waitlist System**: Automatic promotion with 3.5-4 hour randomized window
+  - No admin approval required
+  - Promotion happens during normal API traffic
+  - Tracked via `waitlist_started_at` and `waitlist_promote_at` fields
+- **Attendance Record Relationship**: Foreign key changed from `User` to `UserProfile`
+  - Ensures proper data consistency
+  - Migration handles orphaned records automatically
 
 ### External Service Integration
 
@@ -391,12 +432,19 @@ services:
 - **Webhook Integration**: Event-driven external updates
 - **Queue Integration**: Asynchronous service calls
 - **Circuit Breaker**: Fault tolerance patterns
+- **Configuration Service**: Singleton pattern for system-wide settings
 
 #### **External Services**
 - **Twilio**: SMS service for OTP delivery
 - **PostHog**: User analytics and event tracking
 - **Supabase**: Database hosting and management
 - **Future Services**: Payment gateways, email services
+
+#### **Internal Configuration Services**
+- **Platform Fee Config**: Singleton model for dynamic fee management
+  - Admin interface for fee adjustments
+  - Cached configuration for performance
+  - Used across all financial modules
 
 ### Event-Driven Architecture
 
@@ -419,12 +467,14 @@ services:
 - **Database Cache**: Query result caching
 - **Session Cache**: User session storage
 - **CDN Cache**: Static file caching
+- **Configuration Cache**: Platform fee config cached for 1 hour
 
 #### **Cache Invalidation**
-- **Time-based**: TTL-based expiration
-- **Event-based**: Cache invalidation on data changes
+- **Time-based**: TTL-based expiration (1 hour for platform fee config)
+- **Event-based**: Cache invalidation on data changes (automatic on PlatformFeeConfig updates)
 - **Manual**: Explicit cache clearing
 - **Pattern-based**: Wildcard cache clearing
+- **Configuration Updates**: Automatic cache invalidation when platform fee is modified
 
 ## 🔄 Architectural Patterns
 
@@ -444,6 +494,12 @@ services:
 - **Business Logic**: Encapsulated in service classes
 - **API Layer**: Thin API layer
 - **Reusability**: Shared business logic
+
+#### **Singleton Pattern**
+- **PlatformFeeConfig**: System-wide configuration singleton
+- **Enforcement**: Database-level (id=1) and application-level (admin interface)
+- **Benefits**: Single source of truth for platform fee, prevents configuration drift
+- **Caching**: Performance optimization with automatic invalidation
 
 ### Architectural Principles
 
