@@ -66,17 +66,28 @@ def get_user_lifecycle_metrics(
     # Base queryset - all users with profiles
     users_qs = User.objects.select_related('profile').all()
     
-    # Total metrics
-    total_users = users_qs.count()
-    active_users = users_qs.filter(is_active=True).count()
-    waitlisted_users = users_qs.filter(is_active=False).count()
+    # Calculate period delta for filtering
+    period_delta = {
+        'weekly': timedelta(weeks=1),
+        'monthly': timedelta(days=30),
+        'yearly': timedelta(days=365),
+    }.get(period, timedelta(days=30))
     
-    # Approval conversion rate as decimal (0-1), matching docs and API spec
-    approval_rate = (active_users / total_users) if total_users > 0 else 0
+    # Filter users by period (users registered in the selected period window)
+    period_start = now - period_delta
+    period_users_qs = users_qs.filter(date_joined__gte=period_start)
     
-    # Time-series: new users per period
+    # Total metrics for the selected period
+    total_users = period_users_qs.count()
+    active_users = period_users_qs.filter(is_active=True).count()
+    waitlisted_users = period_users_qs.filter(is_active=False).count()
+    
+    # Approval conversion rate as percentage (0-100), matching get_waitlist_metrics format
+    approval_rate = (active_users / total_users * 100) if total_users > 0 else 0
+    
+    # Time-series: new users per period (filtered by period window)
     time_series = (
-        users_qs
+        period_users_qs
         .annotate(period=trunc_func('date_joined'))
         .values('period')
         .annotate(
@@ -103,22 +114,11 @@ def get_user_lifecycle_metrics(
     limit = min(limit, 1000)  # Cap at 1000
     paginated_trend = time_series_list[offset:offset + limit]
     
-    # New users in selected period
-    period_delta = {
-        'weekly': timedelta(weeks=1),
-        'monthly': timedelta(days=30),
-        'yearly': timedelta(days=365),
-    }.get(period, timedelta(days=30))
-    
-    new_users_period = users_qs.filter(
-        date_joined__gte=now - period_delta
-    ).count()
-    
     return {
         'total_users': total_users,
         'active_users': active_users,
         'waitlisted_users': waitlisted_users,
-        'approval_rate': round(approval_rate, 4),  # Decimal (0.92 = 92%), active_users / total_users
+        'approval_rate': round(approval_rate, 2),  # Percentage (0-100), e.g., 92.28 = 92.28%
         'trend': paginated_trend,  # Match spec field name
         'pagination': {
             'limit': limit,
@@ -135,7 +135,13 @@ def get_waitlist_metrics(
     offset: int = 0
 ) -> Dict[str, Any]:
     """
-    Get waitlist-specific metrics.
+    Get waitlist-specific metrics with 3.5-4 hour promotion window tracking.
+    
+    Waitlist Logic:
+    - New users completing profile are placed on waitlist (is_active=False)
+    - Random promotion delay: 3.5-4 hours (210-240 minutes) from profile completion
+    - waitlist_promote_at tracks scheduled promotion time
+    - Automatic promotion occurs during normal API requests when now >= waitlist_promote_at
     
     Args:
         period: 'weekly', 'monthly', or 'yearly'
@@ -143,7 +149,7 @@ def get_waitlist_metrics(
         offset: Number of trend data points to skip (default: 0)
     
     Returns:
-        Dict with waitlist metrics and trend graph
+        Dict with waitlist metrics, promotion statistics, and trend graph
     """
     now = timezone.now()
     
@@ -153,17 +159,73 @@ def get_waitlist_metrics(
         'yearly': TruncYear,
     }.get(period, TruncMonth)
     
-    users_qs = User.objects.all()
+    users_qs = User.objects.select_related('profile').all()
     
-    total_users = users_qs.count()
-    waitlisted_users = users_qs.filter(is_active=False).count()
-    active_users = users_qs.filter(is_active=True).count()
+    # Calculate period delta for filtering
+    period_delta = {
+        'weekly': timedelta(weeks=1),
+        'monthly': timedelta(days=30),
+        'yearly': timedelta(days=365),
+    }.get(period, timedelta(days=30))
+    
+    # Filter users by period (users registered in the selected period window)
+    period_start = now - period_delta
+    period_users_qs = users_qs.filter(date_joined__gte=period_start)
+    
+    total_users = period_users_qs.count()
+    waitlisted_users = period_users_qs.filter(is_active=False).count()
+    active_users = period_users_qs.filter(is_active=True).count()
     
     approval_rate = (active_users / total_users * 100) if total_users > 0 else 0
     
-    # Trend: new waitlisted users per period
+    # Waitlist promotion metrics (3.5-4 hour window)
+    from users.models import UserProfile
+    
+    # Users currently on waitlist with promotion times
+    waitlisted_profiles = UserProfile.objects.filter(
+        user__is_active=False,
+        waitlist_promote_at__isnull=False
+    ).select_related('user').order_by('waitlist_promote_at')
+    
+    # Count users scheduled for promotion
+    users_scheduled_for_promotion = waitlisted_profiles.filter(
+        waitlist_promote_at__lte=now
+    ).count()
+    
+    # Users scheduled to be promoted in next hour
+    next_hour = now + timedelta(hours=1)
+    users_promoting_soon = waitlisted_profiles.filter(
+        waitlist_promote_at__lte=next_hour,
+        waitlist_promote_at__gt=now
+    ).count()
+    
+    # Calculate average waitlist duration for users who have been promoted
+    # (users with waitlist_started_at but is_active=True means they were promoted)
+    promoted_users = UserProfile.objects.filter(
+        user__is_active=True,
+        waitlist_started_at__isnull=False
+    ).exclude(waitlist_started_at=None)
+    
+    # For currently waitlisted users, calculate expected duration
+    current_waitlist_durations = []
+    for profile in waitlisted_profiles[:100]:  # Sample first 100 for performance
+        if profile.waitlist_started_at and profile.waitlist_promote_at:
+            expected_duration = (profile.waitlist_promote_at - profile.waitlist_started_at).total_seconds() / 3600
+            current_waitlist_durations.append(expected_duration)
+    
+    # Average expected waitlist duration (should be ~3.5-4 hours)
+    avg_expected_duration = (
+        sum(current_waitlist_durations) / len(current_waitlist_durations)
+        if current_waitlist_durations else 0
+    )
+    
+    # Waitlist promotion window: 3.5-4 hours (210-240 minutes)
+    min_waitlist_hours = 3.5
+    max_waitlist_hours = 4.0
+    
+    # Trend: new waitlisted users per period (filtered by period window)
     waitlist_trend = (
-        users_qs
+        period_users_qs
         .filter(is_active=False)
         .annotate(period=trunc_func('date_joined'))
         .values('period')
@@ -187,6 +249,13 @@ def get_waitlist_metrics(
     return {
         'total_waitlisted': waitlisted_users,
         'approval_rate': round(approval_rate, 2),
+        'waitlist_promotion': {
+            'users_scheduled_for_promotion': users_scheduled_for_promotion,  # Ready to promote now
+            'users_promoting_soon': users_promoting_soon,  # Promoting in next hour
+            'avg_expected_duration_hours': round(avg_expected_duration, 2),  # Average wait time
+            'promotion_window_min_hours': min_waitlist_hours,  # 3.5 hours
+            'promotion_window_max_hours': max_waitlist_hours,  # 4.0 hours
+        },
         'trend': paginated_trend,
         'pagination': {
             'limit': limit,
@@ -219,18 +288,32 @@ def get_host_metrics(
     Returns:
         Dict with host metrics
     """
+    now = timezone.now()
+    
     trunc_func = {
         'weekly': TruncWeek,
         'monthly': TruncMonth,
         'yearly': TruncYear,
     }.get(period, TruncMonth)
     
-    # Total hosts = distinct event hosts
-    total_hosts = Event.objects.values('host').distinct().count()
+    # Calculate period delta for filtering
+    period_delta = {
+        'weekly': timedelta(weeks=1),
+        'monthly': timedelta(days=30),
+        'yearly': timedelta(days=365),
+    }.get(period, timedelta(days=30))
     
-    # New hosts over time
+    period_start = now - period_delta
+    
+    # Total hosts in the selected period = distinct event hosts who created events in period
+    total_hosts = Event.objects.filter(
+        created_at__gte=period_start
+    ).values('host').distinct().count()
+    
+    # New hosts over time (filtered by period window)
     new_hosts_trend = (
         Event.objects
+        .filter(created_at__gte=period_start)
         .annotate(period=trunc_func('created_at'))
         .values('period', 'host')
         .distinct()
@@ -252,19 +335,22 @@ def get_host_metrics(
     limit = min(limit, 1000)  # Cap at 1000
     paginated_trend = trend_list[offset:offset + limit]
     
-    # Host approval-to-host conversion rate
-    # Get all active users
-    active_users = User.objects.filter(is_active=True).count()
-    # Get users who have created at least one event
+    # Host approval-to-host conversion rate (for the selected period)
+    # Get active users who registered in the period
+    period_active_users = User.objects.filter(
+        is_active=True,
+        date_joined__gte=period_start
+    ).count()
+    # Get users who created events in the period
     users_with_events = User.objects.filter(
-        profile__hosted_events__isnull=False
+        profile__hosted_events__created_at__gte=period_start
     ).distinct().count()
     
-    conversion_rate = (users_with_events / active_users * 100) if active_users > 0 else 0
+    conversion_rate = (users_with_events / period_active_users * 100) if period_active_users > 0 else 0
     
     return {
         'total_hosts': total_hosts,
-        'conversion_rate': round(conversion_rate / 100, 4),  # Convert to decimal
+        'conversion_rate': round(conversion_rate, 2),  # Percentage (0-100), e.g., 4.63 = 4.63%
         'new_hosts': paginated_trend,  # Match spec field name
         'pagination': {
             'limit': limit,
@@ -343,15 +429,22 @@ def get_live_events_analytics(
             'revenue': float(revenue),
         })
     
-    # Time-series: number of active events over time
-    # This is tricky - we need to count events that were running at each period
-    # For simplicity, we'll count events that started in each period
+    # Calculate period delta for filtering trend
+    period_delta = {
+        'weekly': timedelta(weeks=1),
+        'monthly': timedelta(days=30),
+        'yearly': timedelta(days=365),
+    }.get(period, timedelta(days=30))
+    period_start = now - period_delta
+    
+    # Time-series: number of active events over time (filtered by period window)
+    # Count events that started in each period within the selected window
     active_events_trend = (
         Event.objects
         .filter(
             status='published',
-            start_time__lte=now,
-            end_time__gte=now
+            start_time__gte=period_start,
+            start_time__lte=now
         )
         .annotate(period=trunc_func('start_time'))
         .values('period')
@@ -459,8 +552,12 @@ def get_completed_events_analytics(
             payout_status = payout_request.status
         else:
             # Calculate from payment orders if no payout request
+            from core.models import PlatformFeeConfig
+            
             base_fare = float(event.ticket_price) if event.is_paid else 0.0
-            platform_fee = float(total_revenue * Decimal('0.10'))  # 10% platform fee
+            # Calculate platform fee using dynamic configuration
+            fee_decimal = PlatformFeeConfig.get_fee_decimal()
+            platform_fee = float(total_revenue * fee_decimal)
             gross_revenue = float(total_revenue)
             host_earnings = float(total_revenue - platform_fee)
             payout_status = 'no_request'
@@ -592,8 +689,10 @@ def get_host_deep_analytics(
             checked_in_count = event.attendance_records.filter(status='checked_in').count()
             check_in_rate = (checked_in_count / going_count * 100) if going_count > 0 else 0
             
-            # Platform fee (10% of revenue)
-            platform_fee = event_revenue * Decimal('0.10')
+            # Platform fee (from dynamic configuration)
+            from core.models import PlatformFeeConfig
+            fee_decimal = PlatformFeeConfig.get_fee_decimal()
+            platform_fee = event_revenue * fee_decimal
             total_platform_fees += platform_fee
             
             events_performance.append({
