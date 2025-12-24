@@ -410,7 +410,7 @@ Event.objects.select_related('venue')  # Joins VENUE table
     'total_users': int,           # Total registered users (cumulative)
     'active_users': int,          # Users with is_active=True
     'waitlisted_users': int,      # Users with is_active=False
-    'approval_rate': float,       # Decimal (0.92 = 92%), active_users / total_users
+    'approval_rate': float,       # Percentage (0-100), e.g., 92.28 = 92.28%
     'trend': [                    # Time-series data
         {
             'period': str,        # ISO date string
@@ -472,7 +472,13 @@ metrics = get_user_lifecycle_metrics(period='monthly')
 
 #### `get_waitlist_metrics(period: str) -> Dict[str, Any]`
 
-**Purpose**: Get waitlist-specific metrics and trends.
+**Purpose**: Get waitlist-specific metrics with 3.5-4 hour promotion window tracking.
+
+**Waitlist Promotion Logic**:
+- New users completing profile are placed on waitlist (`is_active=False`)
+- Random promotion delay: **3.5-4 hours** (210-240 minutes) from profile completion
+- `waitlist_promote_at` tracks scheduled promotion time
+- Automatic promotion occurs during normal API requests when `now >= waitlist_promote_at`
 
 **Parameters**:
 - `period` (str): Time period. Options: `'weekly'`, `'monthly'`, `'yearly'`. Default: `'monthly'`
@@ -481,7 +487,14 @@ metrics = get_user_lifecycle_metrics(period='monthly')
 ```python
 {
     'total_waitlisted': int,      # Total users in waitlist
-    'approval_rate': float,       # Overall approval rate (as percentage, not decimal)
+    'approval_rate': float,       # Overall approval rate (percentage, 0-100)
+    'waitlist_promotion': {
+        'users_scheduled_for_promotion': int,  # Ready to promote now (waitlist_promote_at <= now)
+        'users_promoting_soon': int,            # Promoting in next hour
+        'avg_expected_duration_hours': float,   # Average wait time (should be ~3.5-4 hours)
+        'promotion_window_min_hours': float,   # 3.5 hours (minimum wait)
+        'promotion_window_max_hours': float,    # 4.0 hours (maximum wait)
+    },
     'trend': [                    # New waitlisted users per period
         {
             'period': str,        # ISO date string
@@ -494,6 +507,12 @@ metrics = get_user_lifecycle_metrics(period='monthly')
 
 **Data Sources**:
 - `django.contrib.auth.models.User` where `is_active=False`
+- `users.models.UserProfile` with `waitlist_promote_at` and `waitlist_started_at` fields
+
+**Business Logic**:
+- **Waitlist Duration**: Random between 3.5-4 hours (210-240 minutes)
+- **Promotion Time**: Set when profile is completed: `waitlist_promote_at = now + random(210-240 minutes)`
+- **Automatic Promotion**: Checked during API requests, promoted when `now >= waitlist_promote_at`
 
 **Example**:
 ```python
@@ -502,6 +521,13 @@ metrics = get_waitlist_metrics(period='weekly')
 # {
 #     'total_waitlisted': 240,
 #     'approval_rate': 92.28,
+#     'waitlist_promotion': {
+#         'users_scheduled_for_promotion': 15,  # Ready now
+#         'users_promoting_soon': 8,            # Next hour
+#         'avg_expected_duration_hours': 3.75,  # ~3.5-4 hours
+#         'promotion_window_min_hours': 3.5,
+#         'promotion_window_max_hours': 4.0,
+#     },
 #     'trend': [...]
 # }
 ```
@@ -519,7 +545,7 @@ metrics = get_waitlist_metrics(period='weekly')
 ```python
 {
     'total_hosts': int,           # Distinct hosts (users who created events)
-    'conversion_rate': float,     # Decimal (0.046 = 4.6%), hosts / approved_users
+    'conversion_rate': float,     # Percentage (0-100), e.g., 4.63 = 4.63%
     'new_hosts': [                # New hosts over time
         {
             'period': str,        # ISO date string
@@ -1008,7 +1034,7 @@ GET /django/admin/dashboard/?period=monthly&paid_only=false
     "total_users": 3110,
     "active_users": 2870,
     "waitlisted_users": 240,
-    "approval_rate": 0.9228,
+    "approval_rate": 92.28,
     "trend": [
         {
             "period": "2025-01-01T00:00:00Z",
@@ -1167,7 +1193,7 @@ curl "http://localhost:8000/django/admin/dashboard/api/events?type=completed&lim
 ```json
 {
     "total_hosts": 133,
-    "conversion_rate": 0.0463,
+    "conversion_rate": 4.63,
     "new_hosts": [...],
     "hosts": [
         {
@@ -1264,7 +1290,7 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
     'total_users': int,           # All registered users
     'active_users': int,          # is_active=True
     'waitlisted_users': int,      # is_active=False
-    'approval_rate': float,       # Decimal (0.92 = 92%)
+    'approval_rate': float,       # Percentage (0-100), e.g., 92.28 = 92.28%
     'trend': [
         {
             'period': str,         # ISO date string
@@ -1282,6 +1308,13 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
 {
     'total_waitlisted': int,
     'approval_rate': float,       # Percentage (92.28)
+    'waitlist_promotion': {
+        'users_scheduled_for_promotion': int,  # Ready now
+        'users_promoting_soon': int,            # Next hour
+        'avg_expected_duration_hours': float,   # ~3.5-4 hours
+        'promotion_window_min_hours': float,   # 3.5 hours
+        'promotion_window_max_hours': float,    # 4.0 hours
+    },
     'trend': [
         {
             'period': str,
@@ -1296,7 +1329,7 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
 ```python
 {
     'total_hosts': int,
-    'conversion_rate': float,     # Decimal (0.046 = 4.6%)
+    'conversion_rate': float,     # Percentage (0-100), e.g., 4.63 = 4.63%
     'new_hosts': [
         {
             'period': str,
@@ -1416,15 +1449,24 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
 
 **Waitlist → Approval Flow**:
 1. User registers → `User` and `UserProfile` created
-2. `User.is_active = False` (waitlist state)
-3. Admin approves → `User.is_active = True` (active user)
+2. User completes profile → Placed on waitlist automatically
+3. `User.is_active = False` (waitlist state)
+4. `waitlist_promote_at` set to random time: **3.5-4 hours** (210-240 minutes) from profile completion
+5. Automatic promotion when `now >= waitlist_promote_at` during normal API requests
+6. `User.is_active = True` (active user) - no admin approval needed
+
+**Waitlist Promotion Window**:
+- **Minimum**: 3.5 hours (210 minutes)
+- **Maximum**: 4.0 hours (240 minutes)
+- **Random**: Each user gets random delay within this window
+- **Automatic**: Promotion happens during normal API traffic (no background workers)
 
 **Approval Rate**:
 ```
-approval_rate = active_users / total_users
+approval_rate = (active_users / total_users) * 100
 ```
 
-**Example**: 2870 active / 3110 total = 0.9228 (92.28%)
+**Example**: 2870 active / 3110 total = 92.28%
 
 ---
 
@@ -1434,10 +1476,10 @@ approval_rate = active_users / total_users
 
 **Conversion Rate**:
 ```
-conversion_rate = total_hosts / active_users
+conversion_rate = (total_hosts / active_users) * 100
 ```
 
-**Example**: 133 hosts / 2870 active users = 0.0463 (4.63%)
+**Example**: 133 hosts / 2870 active users = 4.63%
 
 ---
 
