@@ -4,7 +4,9 @@ FROM python:3.12-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev
+# Default to production settings - can be overridden via container environment
+# Override example: docker run -e DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev ...
+ENV DJANGO_SETTINGS_MODULE=loopin_backend.settings.prod
 ENV PYTHONPATH=/app
 
 # Set work directory
