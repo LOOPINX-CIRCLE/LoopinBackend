@@ -32,8 +32,11 @@ erDiagram
     
     %% Attendance Module Relationships
     EVENT ||--o{ ATTENDANCE_RECORD : "has attendance"
-    AUTH_USER ||--o{ ATTENDANCE_RECORD : "has attendance"
+    USER_PROFILE ||--o{ ATTENDANCE_RECORD : "has attendance"
     ATTENDANCE_RECORD ||--|| TICKET_SECRET : "has secret"
+    
+    %% Core Configuration Relationships
+    AUTH_USER ||--o{ PLATFORM_FEE_CONFIG : "updated by"
     
     %% Payment Module Relationships
     AUTH_USER ||--o{ PAYMENT_ORDER : "places orders"
@@ -84,9 +87,9 @@ erDiagram
         JSONB profile_pictures "Array of 1-6 image URLs"
         JSONB metadata "Additional user data"
         BOOLEAN is_verified "Phone verified status"
-        BOOLEAN is_active "Profile active"
+        BOOLEAN is_active "Profile active (mirrors AUTH_USER.is_active)"
         DATETIME waitlist_started_at "When user first entered waitlist (nullable)"
-        DATETIME waitlist_promote_at "Scheduled promotion time to active (nullable)"
+        DATETIME waitlist_promote_at "Scheduled promotion time (3.5-4h window, nullable)"
         DATETIME created_at "Record creation"
         DATETIME updated_at "Last update"
     }
@@ -273,7 +276,7 @@ erDiagram
     ATTENDANCE_RECORD {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT user_id FK "Attending user"
+        BIGINT user_id FK "Attending user profile (USER_PROFILE)"
         STRING status "going|not_going|maybe|checked_in|cancelled"
         STRING payment_status "unpaid|paid|refunded"
         STRING ticket_secret "Unique ticket code"
@@ -395,6 +398,16 @@ erDiagram
         DATETIME updated_at "Update"
     }
 
+    PLATFORM_FEE_CONFIG {
+        INT id PK "Singleton identifier (always 1)"
+        DECIMAL fee_percentage "Platform fee % (0.00-100.00, default: 10.00)"
+        BOOLEAN is_active "Configuration active status"
+        TEXT description "Optional description/notes"
+        BIGINT updated_by FK "Admin who last updated (nullable)"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Last update"
+    }
+
     %% Apply styling
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
     class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION,HOST_PAYOUT_REQUEST eventTables
@@ -402,6 +415,7 @@ erDiagram
     class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
     class NOTIFICATION notificationTables
     class AUDIT_LOG,AUDIT_LOG_SUMMARY auditTables
+    class PLATFORM_FEE_CONFIG coreTables
 ```
 
 ---
@@ -415,6 +429,8 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Multi-provider payment system** with transaction tracking
 - **Advanced attendance management** with check-in/check-out and secure ticketing
 - **Host payout management** with bank account management and financial calculations
+- **Configurable platform fee system** with admin-controlled fee percentage
+- **Automatic waitlist promotion** with 3.5-4 hour randomized window
 - **Complete audit trail** for security and compliance
 - **Flexible notification system** for user engagement
 
@@ -523,18 +539,23 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Name: 2-100 characters, letters only
 - Phone number validation (format: +XXXXXXXXXXX)
 
-**Waitlist Lifecycle:**
+**Waitlist Lifecycle (Automatic Promotion System):**
 - New users who complete their profile for the first time are immediately placed into a **waitlist state**:
   - Django `AUTH_USER.is_active = False`
   - `USER_PROFILE.is_active = False`
   - `waitlist_started_at` set to the profile completion time
-  - `waitlist_promote_at` set to a randomized timestamp between **3.5 and 4 hours** in the future
+  - `waitlist_promote_at` set to a randomized timestamp between **3.5 and 4 hours** (210-240 minutes) in the future
+- **Waitlist Promotion Window**: Random delay between 3.5-4 hours from profile completion
+  - Minimum wait: 3.5 hours (210 minutes)
+  - Maximum wait: 4.0 hours (240 minutes)
+  - Each user gets a random delay within this window
 - While `is_active = False`, all endpoints and features that depend on this flag must treat the account as **restricted/waitlisted** and deny core actions.
-- During normal API traffic (no Celery/cron), the backend checks `waitlist_promote_at` and **atomically promotes** the user to active when `now >= waitlist_promote_at`:
+- **Automatic Promotion**: During normal API traffic (no Celery/cron required), the backend checks `waitlist_promote_at` and **atomically promotes** the user to active when `now >= waitlist_promote_at`:
   - `AUTH_USER.is_active = True`
   - `USER_PROFILE.is_active = True`
-  - `waitlist_started_at` and `waitlist_promote_at` cleared
+  - `waitlist_started_at` and `waitlist_promote_at` cleared (set to NULL)
 - Clients should use the `/api/auth/profile` endpoint and read the `is_active` field to distinguish **waitlisted** vs **active** users.
+- **No Admin Approval Required**: Promotion happens automatically based on scheduled time, ensuring consistent user experience.
 
 **Admin Interface:**
 - `UserProfileAdmin` - Separate admin interface for customer profiles
@@ -782,6 +803,11 @@ User selects seats → Reservation created → Payment → Attendee record
 ### **3.1 ATTENDANCE_RECORD** 📝
 **Purpose:** Comprehensive attendance tracking
 
+**Key Change:**
+- **Foreign Key Updated**: `user` field now references `USER_PROFILE` instead of `AUTH_USER`
+- This ensures data consistency and proper relationship with user profiles
+- Migration `0002_fix_orphaned_and_alter_user_fk.py` handles the FK change and creates missing profiles
+
 **Features:**
 - `ticket_secret` - Unique 32-character ticket code
 - `payment_status` - unpaid/paid/refunded
@@ -792,6 +818,7 @@ User selects seats → Reservation created → Payment → Attendee record
 - Unique ticket secret per attendance
 - Check-in/check-out tracking
 - Duration calculation property
+- Links to `USER_PROFILE` for proper user relationship
 
 ---
 
@@ -948,11 +975,12 @@ created → pending → paid/completed OR failed/cancelled
 
 **Business Logic - Platform Fee Model:**
 
-The platform uses an **additive fee model** (not deductive):
+The platform uses an **additive fee model** (not deductive) with **configurable platform fee**:
 
 ```
-Example:
+Example (assuming 10% platform fee):
 - Base ticket fare: ₹100 (set by host)
+- Platform fee: 10% (configurable via admin panel, default: 10%)
 - Final ticket fare: ₹110 (paid by buyer = base + 10%)
 - Tickets sold: 50
 
@@ -969,8 +997,10 @@ Buyers paid: ₹5,500 (₹100 base + ₹10 fee per ticket)
 **Key Points:**
 - Host earns the **full base ticket fare** (no platform fee deduction)
 - Platform fee is **added on top** and paid by buyers
+- Platform fee is **configurable** via Django Admin (see `PLATFORM_FEE_CONFIG` model)
+- Default platform fee: 10% (can be changed by superusers)
 - Host earnings = Base ticket fare × Tickets sold
-- Platform fee = Base ticket fare × 10% × Tickets sold
+- Platform fee = Base ticket fare × Platform fee % × Tickets sold (from config)
 
 **Payout Status Workflow:**
 ```
@@ -1014,7 +1044,7 @@ rejected/cancelled
   - Sum of `seats` field
 - Revenue calculated from `PAYMENT_ORDER` where:
   - `status` = 'completed'
-- Platform fee calculated as: Base ticket fare × 10% × Tickets sold
+- Platform fee calculated as: Base ticket fare × Platform fee % × Tickets sold (from `PLATFORM_FEE_CONFIG`)
 - Host earnings calculated as: Base ticket fare × Tickets sold
 
 **Audit Trail:**
@@ -1051,6 +1081,72 @@ rejected/cancelled
 - 30-day retention
 - Batch processing for campaigns
 - Read status tracking
+
+---
+
+## **5.5 CORE CONFIGURATION MODULE** ⚙️
+
+### **5.5.1 PLATFORM_FEE_CONFIG** 💰
+**Purpose:** Singleton model for system-wide platform fee configuration
+
+**Key Features:**
+- **Singleton Pattern**: Only one instance exists (id=1, enforced at database level)
+- **Admin Configurable**: Superusers can modify platform fee via Django Admin
+- **Cached for Performance**: 1-hour cache TTL with automatic invalidation
+- **Security**: Password confirmation required for changes, superuser-only access
+
+**Fields:**
+- `id` - Always 1 (singleton identifier)
+- `fee_percentage` - Platform fee percentage (0.00-100.00, default: 10.00)
+- `is_active` - Whether this configuration is currently active
+- `description` - Optional notes about the fee configuration
+- `updated_by` - Admin user who last updated (nullable)
+- `created_at` / `updated_at` - Timestamps
+
+**Business Logic:**
+- Platform fee is a percentage (0-100) of the base ticket fare
+- Fee is **added on top** of base fare (buyer pays: base + fee)
+- Host earns **full base fare** (no deduction)
+- Platform collects the fee from buyers
+- Used by all financial calculations:
+  - Payout requests (`HOST_PAYOUT_REQUEST`)
+  - Payment orders (`PAYMENT_ORDER`)
+  - Analytics calculations
+  - Event revenue calculations
+
+**Admin Interface:**
+- Accessible only to superusers
+- Password confirmation required for changes
+- Clear UI showing fee percentage and decimal multiplier
+- Automatic cache invalidation on updates
+
+**Caching Strategy:**
+- Three-tier cache: `platform_fee_config`, `platform_fee_percentage`, `platform_fee_decimal`
+- 1-hour TTL (3600 seconds)
+- Automatic cache invalidation on configuration updates
+- Cache-aside pattern with fallback to database
+
+**Example Usage:**
+```python
+from core.models import PlatformFeeConfig
+
+# Get current fee percentage
+fee_percentage = PlatformFeeConfig.get_fee_percentage()  # Decimal('10.00')
+
+# Get fee as decimal multiplier
+fee_decimal = PlatformFeeConfig.get_fee_decimal()  # Decimal('0.10')
+
+# Calculate platform fee for 5 tickets at ₹100 base fare
+platform_fee = PlatformFeeConfig.calculate_platform_fee(
+    base_fare=Decimal('100.00'),
+    quantity=5
+)  # Decimal('50.00')
+
+# Calculate final price buyer pays
+final_price = PlatformFeeConfig.calculate_final_price(
+    base_fare=Decimal('100.00')
+)  # Decimal('110.00')
+```
 
 ---
 
@@ -1112,6 +1208,8 @@ rejected/cancelled
 | **1-to-1** | `AUTH_USER` ↔ `USER_PROFILE` | Every user has one profile |
 | **1-to-1** | `USER_PHONE_OTP` → Phone | One active OTP per phone |
 | **1-to-1** | `ATTENDANCE_RECORD` ↔ `TICKET_SECRET` | One secret per attendance |
+| **1-to-Many** | `USER_PROFILE` → `ATTENDANCE_RECORD` | User profile has many attendance records |
+| **1-to-Many** | `AUTH_USER` → `PLATFORM_FEE_CONFIG` | Admin updates platform fee config |
 | **1-to-Many** | `AUTH_USER` → `EVENT` | Host creates many events |
 | **1-to-Many** | `VENUE` → `EVENT` | Venue hosts many events |
 | **1-to-Many** | `EVENT` → `EVENT_REQUEST/INVITE/ATTENDEE` | Event has many interactions |
