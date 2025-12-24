@@ -209,32 +209,32 @@ flowchart LR
 flowchart TD
     Start([User Action]) --> Screen{Which Screen?}
     
-    Screen -->|Events List| Browse[GET /events]
+    Screen -->|Events List| Browse["GET /events"]
     Screen -->|Event Details| EventDetail{User Role?}
     
     EventDetail -->|Attendee| AttendeeActions{Action?}
     EventDetail -->|Host| HostActions{Action?}
     
-    AttendeeActions -->|Request Join| Request[POST /events/{id}/requests]
-    AttendeeActions -->|Check Status| CheckReq[GET /events/{id}/my-request]
-    AttendeeActions -->|Confirm| Confirm[POST /events/{id}/confirm-attendance]
-    AttendeeActions -->|View Ticket| Ticket[GET /events/{id}/my-ticket]
+    AttendeeActions -->|Request Join| Request["POST /events/id/requests"]
+    AttendeeActions -->|Check Status| CheckReq["GET /events/id/my-request"]
+    AttendeeActions -->|Confirm| Confirm["POST /events/id/confirm-attendance"]
+    AttendeeActions -->|View Ticket| Ticket["GET /events/id/my-ticket"]
     
-    HostActions -->|View Requests| ViewReq[GET /events/{id}/requests]
-    HostActions -->|Accept Request| Accept[PUT /events/{id}/requests/{req_id}/accept]
-    HostActions -->|Decline Request| Decline[PUT /events/{id}/requests/{req_id}/decline]
-    HostActions -->|Edit Event| Edit[PUT /events/{id}]
-    HostActions -->|Delete Event| Delete[DELETE /events/{id}]
+    HostActions -->|View Requests| ViewReq["GET /events/id/requests"]
+    HostActions -->|Accept Request| Accept["PUT /events/id/requests/req_id/accept"]
+    HostActions -->|Decline Request| Decline["PUT /events/id/requests/req_id/decline"]
+    HostActions -->|Edit Event| Edit["PUT /events/id"]
+    HostActions -->|Delete Event| Delete["DELETE /events/id"]
     
     Screen -->|Payouts| PayoutScreen{Action?}
-    PayoutScreen -->|List Accounts| ListBank[GET /payouts/bank-accounts]
-    PayoutScreen -->|Add Account| AddBank[POST /payouts/bank-accounts]
-    PayoutScreen -->|Create Payout| CreatePayout[POST /payouts/requests]
-    PayoutScreen -->|List Payouts| ListPayout[GET /payouts/requests]
+    PayoutScreen -->|List Accounts| ListBank["GET /payouts/bank-accounts"]
+    PayoutScreen -->|Add Account| AddBank["POST /payouts/bank-accounts"]
+    PayoutScreen -->|Create Payout| CreatePayout["POST /payouts/requests"]
+    PayoutScreen -->|List Payouts| ListPayout["GET /payouts/requests"]
     
     Screen -->|Invitations| InviteScreen{Action?}
-    InviteScreen -->|View Invites| MyInvites[GET /events/my-invitations]
-    InviteScreen -->|Respond| Respond[PUT /events/invitations/{id}/respond]
+    InviteScreen -->|View Invites| MyInvites["GET /events/my-invitations"]
+    InviteScreen -->|Respond| Respond["PUT /events/invitations/id/respond"]
     
     style Browse fill:#e3f2fd
     style Request fill:#fff3e0
