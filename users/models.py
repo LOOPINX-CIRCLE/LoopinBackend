@@ -412,11 +412,11 @@ class HostPayoutRequest(TimeStampedModel):
     - Calculated earnings (host receives full base fare)
     
     Business Logic:
-    - Buyer pays: Base ticket fare + 10% platform fee (e.g., ₹100 + ₹10 = ₹110 per ticket)
+    - Buyer pays: Base ticket fare + platform fee (configurable via admin, default: 10%)
     - Host earns: Base ticket fare × Tickets sold (no platform fee deduction)
-    - Platform fee: Base ticket fare × 10% × Tickets sold (collected from buyers, not deducted from host)
+    - Platform fee: Base ticket fare × platform fee % × Tickets sold (collected from buyers, not deducted from host)
     
-    Example:
+    Example (assuming 10% platform fee):
     - Base ticket fare: ₹100
     - Tickets sold: 50
     - Final ticket fare (buyer pays): ₹110 per ticket
@@ -534,5 +534,15 @@ class HostPayoutRequest(TimeStampedModel):
 
     @property
     def platform_fee_percentage(self):
-        """Platform fee percentage (always 10%)"""
-        return 10.0
+        """
+        Platform fee percentage from dynamic configuration.
+        
+        Returns:
+            float: Current platform fee percentage (0-100)
+        """
+        from core.models import PlatformFeeConfig
+        try:
+            return float(PlatformFeeConfig.get_fee_percentage())
+        except Exception:
+            # Fallback to default 10% if configuration unavailable
+            return 10.0
