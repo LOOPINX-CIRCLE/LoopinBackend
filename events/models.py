@@ -239,7 +239,13 @@ class EventInvite(TimeStampedModel):
 
 
 class EventAttendee(TimeStampedModel):
-    """Model for tracking event attendees"""
+    """
+    Model for tracking event attendees.
+    
+    Financial Linkage (CFO):
+    - Direct link to PaymentOrder that fulfilled this attendee
+    - Enables traceability: payment → attendee → payout
+    """
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="attendees")
     user = models.ForeignKey(
@@ -264,6 +270,14 @@ class EventAttendee(TimeStampedModel):
         related_name="attendees",
         help_text="Originating invitation if applicable"
     )
+    payment_order = models.ForeignKey(
+        'payments.PaymentOrder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="fulfilled_attendees",
+        help_text="Payment order that fulfilled this attendee (for paid events)"
+    )
     ticket_type = models.CharField(max_length=20, choices=TICKET_TYPE_CHOICES, default='general')
     seats = models.PositiveIntegerField(default=1)
     is_paid = models.BooleanField(default=False)
@@ -279,6 +293,7 @@ class EventAttendee(TimeStampedModel):
             models.Index(fields=["event", "user"]),
             models.Index(fields=["request"]),
             models.Index(fields=["invite"]),
+            models.Index(fields=["payment_order"]),  # For tracing payment → attendee
         ]
 
     def __str__(self):
