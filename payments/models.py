@@ -14,12 +14,21 @@ import uuid
 
 
 class PaymentOrder(TimeStampedModel):
-    """Model for tracking payment orders"""
+    """
+    Model for tracking payment orders.
+    
+    Financial Clarity (CFO):
+    - Immutable financial snapshot at payment time
+    - Clear link to event and user
+    - Tracks retry attempts vs final payment
+    - Supports reconciliation with gateway statements
+    """
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event = models.ForeignKey(
         Event, 
         on_delete=models.CASCADE,
-        related_name="payment_orders"
+        related_name="payment_orders",
+        help_text="Event for which payment is being made"
     )
     user = models.ForeignKey(
         'users.UserProfile', 
@@ -29,16 +38,57 @@ class PaymentOrder(TimeStampedModel):
     )
     order_reference = models.CharField(max_length=100, blank=True, help_text="Order reference identifier")
     order_id = models.CharField(max_length=100, unique=True, blank=True, help_text="Unique order identifier")
+    
+    # Payment amount and currency
     amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
-        validators=[MinValueValidator(0.01)]
+        validators=[MinValueValidator(0.01)],
+        help_text="Total amount paid (includes base price + platform fee)"
     )
     currency = models.CharField(
         max_length=10, 
         choices=CURRENCY_CHOICES,
         default="INR"
     )
+    
+    # Seats and quantity
+    seats_count = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of seats/tickets this payment covers"
+    )
+    
+    # Financial snapshot (immutable at payment time) - CFO requirement
+    base_price_per_seat = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Base ticket price per seat at payment time (immutable snapshot)"
+    )
+    platform_fee_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Platform fee percentage at payment time (immutable snapshot, e.g., 10.00 for 10%)"
+    )
+    platform_fee_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Total platform fee amount at payment time (immutable snapshot)"
+    )
+    host_earning_per_seat = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Host earning per seat at payment time (immutable snapshot, equals base_price_per_seat)"
+    )
+    
+    # Payment status and provider
     status = models.CharField(
         max_length=20,
         choices=PAYMENT_STATUS_CHOICES,
@@ -55,6 +105,22 @@ class PaymentOrder(TimeStampedModel):
     payment_method = models.CharField(max_length=50, blank=True)
     transaction_id = models.CharField(max_length=100, blank=True)
     failure_reason = models.TextField(blank=True)
+    
+    # Retry tracking (CTO requirement for multi-attempt safety)
+    parent_order = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='retry_attempts',
+        help_text="Parent order if this is a retry attempt"
+    )
+    is_final = models.BooleanField(
+        default=False,
+        help_text="True if this is the final successful payment (not a retry attempt)"
+    )
+    
+    # Refund tracking
     refund_amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
@@ -72,6 +138,9 @@ class PaymentOrder(TimeStampedModel):
             models.Index(fields=["provider_payment_id"]),
             models.Index(fields=["event", "user"]),
             models.Index(fields=["expires_at"]),
+            models.Index(fields=["is_final"]),
+            models.Index(fields=["parent_order"]),
+            models.Index(fields=["event", "user", "is_final"]),  # For finding final payment per user per event
         ]
 
     def __str__(self):
@@ -138,7 +207,19 @@ class PaymentOrder(TimeStampedModel):
     @property
     def is_paid(self):
         """Check if payment is completed"""
-        return self.status == 'completed'
+        return self.status in ['paid', 'completed']
+    
+    @property
+    def total_host_earning(self):
+        """Calculate total host earning for this payment (CFO: immutable calculation)"""
+        if self.host_earning_per_seat and self.seats_count:
+            return self.host_earning_per_seat * self.seats_count
+        return None
+    
+    @property
+    def total_platform_fee(self):
+        """Get total platform fee for this payment (CFO: immutable snapshot)"""
+        return self.platform_fee_amount or None
     
     @property
     def is_unpaid(self):
