@@ -25,6 +25,7 @@ from .services import (
     get_live_events_analytics,
     get_completed_events_analytics,
     get_host_deep_analytics,
+    get_payment_analytics,
 )
 
 logger = logging.getLogger(__name__)
@@ -273,6 +274,9 @@ def analytics_dashboard_view(request):
             offset=offset
         )
         
+        # Payment analytics
+        payment_analytics = get_payment_analytics(period=period)
+        
     except Exception as e:
         logger.error(f"Error loading analytics dashboard: {e}", exc_info=True)
         # Return empty metrics on error
@@ -317,6 +321,24 @@ def analytics_dashboard_view(request):
             'hosts': [],
             'total_hosts_analyzed': 0,
             'pagination': {'limit': 50, 'offset': 0, 'total': 0, 'has_more': False},
+        }
+        payment_analytics = {
+            'total_orders': 0,
+            'successful': 0,
+            'failed': 0,
+            'retry_attempts': 0,
+            'created_pending': 0,
+            'refunded': 0,
+            'cancelled': 0,
+            'expired': 0,
+            'success_rate': 0.0,
+            'failure_rate': 0.0,
+            'retry_rate': 0.0,
+            'chart_data': {'labels': [], 'data': [], 'colors': []},
+            'status_breakdown': [],
+            'final_vs_retry': {},
+            'trend': [],
+            'period': period,
         }
     
     # Serialize data for JavaScript charts
