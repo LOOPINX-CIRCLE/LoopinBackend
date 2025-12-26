@@ -1,8 +1,12 @@
 # PayU Payment Integration Guide - Frontend Developer Guide
 
-**For Android Developers Using Flutter (Dart)**
+**For Mobile Developers: Flutter (Dart) for Android & Swift for iOS**
 
-This guide explains how to integrate PayU payment processing into your Flutter mobile app. Follow this guide exactly. Do not invent fields or add business logic on the frontend.
+This guide explains how to integrate PayU payment processing into your mobile app. Follow this guide exactly. Do not invent fields or add business logic on the frontend.
+
+**Platforms Supported:**
+- **Android**: Flutter (Dart)
+- **iOS**: Swift (Native iOS)
 
 ---
 
@@ -12,9 +16,10 @@ This guide explains how to integrate PayU payment processing into your Flutter m
 2. **Do not invent request/response fields** - Use exactly what Swagger shows
 3. **Do not add business logic on frontend** - Backend handles all calculations
 4. **Use Swagger UI as reference** - https://loopinbackend-g17e.onrender.com/api/docs
-5. **Flutter models must match Swagger responses** - Field names and types must be exact
+5. **Models must match Swagger responses** - Field names and types must be exact (Flutter/Dart classes or Swift structs)
 6. **Payment is backend-only** - Never generate hashes or store payment secrets on frontend
 7. **Explain APIs from frontend usage only** - Do not explain backend implementation
+8. **Platform-specific code** - This guide provides examples for both Flutter/Dart (Android) and Swift (iOS)
 
 ---
 
@@ -345,9 +350,9 @@ Authorization: Bearer {token}
 
 ### 3.1 Building the PayU Form
 
-**Important:** Frontend must build an HTML form and auto-submit it to redirect to PayU.
+**Important:** Frontend must build an HTML form and auto-submit it to redirect to PayU, or build a URL with query parameters and launch it.
 
-**Flutter/Dart Implementation:**
+**Flutter/Dart Implementation (Android):**
 
 ```dart
 // Example Flutter code (pseudo-code, adapt to your HTTP library)
@@ -383,7 +388,7 @@ void redirectToPayU(Map<String, dynamic> payuPayload) async {
 }
 ```
 
-**Alternative: Build URL with Query Parameters**
+**Alternative: Build URL with Query Parameters (Flutter/Dart)**
 
 Some payment gateways allow GET redirects with query parameters. Check PayU documentation. If supported:
 
@@ -406,11 +411,99 @@ void redirectToPayU(Map<String, dynamic> payload) async {
 }
 ```
 
-**Important Notes:**
+**Swift Implementation (iOS):**
+
+**Option 1: Build URL with Query Parameters (Recommended)**
+
+```swift
+import UIKit
+
+func redirectToPayU(payuUrl: String, payload: [String: String]) {
+    var urlComponents = URLComponents(string: payuUrl)
+    var queryItems: [URLQueryItem] = []
+    
+    // Add all payload fields as query parameters
+    for (key, value) in payload {
+        queryItems.append(URLQueryItem(name: key, value: value))
+    }
+    
+    urlComponents?.queryItems = queryItems
+    
+    guard let url = urlComponents?.url else {
+        print("Error: Invalid PayU URL")
+        return
+    }
+    
+    // Open URL in Safari or in-app browser
+    if UIApplication.shared.canOpenURL(url) {
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+}
+```
+
+**Option 2: Build HTML Form and Load in WKWebView**
+
+```swift
+import UIKit
+import WebKit
+
+class PayUViewController: UIViewController, WKNavigationDelegate {
+    var webView: WKWebView!
+    var payuUrl: String!
+    var payload: [String: String]!
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Create WKWebView
+        webView = WKWebView(frame: view.bounds)
+        webView.navigationDelegate = self
+        view.addSubview(webView)
+        
+        // Build HTML form
+        let htmlForm = buildHTMLForm(url: payuUrl, payload: payload)
+        webView.loadHTMLString(htmlForm, baseURL: nil)
+    }
+    
+    func buildHTMLForm(url: String, payload: [String: String]) -> String {
+        var formInputs = ""
+        for (key, value) in payload {
+            let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
+            let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+            formInputs += "<input type=\"hidden\" name=\"\(encodedKey)\" value=\"\(encodedValue)\">\n"
+        }
+        
+        return """
+        <html>
+        <head>
+            <title>Redirecting to PayU...</title>
+        </head>
+        <body>
+            <form id="payuForm" action="\(url)" method="POST">
+                \(formInputs)
+            </form>
+            <script>
+                document.getElementById('payuForm').submit();
+            </script>
+        </body>
+        </html>
+        """
+    }
+    
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // Handle navigation if needed
+        decisionHandler(.allow)
+    }
+}
+```
+
+**Important Notes (Both Platforms):**
 - **Never modify payload fields** - Send exactly as received from backend
 - **Never generate hash** - Hash is generated by backend only
 - **Use HTTPS** - PayU URL is always HTTPS
 - **Handle redirect failure** - If redirect fails, show error and allow retry
+- **iOS**: Use `UIApplication.shared.open()` or `WKWebView` for redirects
+- **Android**: Use `url_launcher` package or `WebView` widget for redirects
 
 ---
 
@@ -431,7 +524,7 @@ When user returns from PayU (after payment):
 - Use stored `order_id` to call `GET /payments/orders/{order_id}`
 - Show appropriate message based on status
 
-**Flutter Implementation:**
+**Flutter/Dart Implementation (Android):**
 
 ```dart
 // When app resumes or user returns from payment
@@ -463,6 +556,65 @@ Future<void> checkPaymentStatus(String orderId) async {
 }
 ```
 
+**Swift Implementation (iOS):**
+
+```swift
+import UIKit
+
+// When app resumes or user returns from payment
+func checkPaymentStatus(orderId: String) {
+    guard let url = URL(string: "\(baseUrl)/api/payments/orders/\(orderId)") else {
+        print("Error: Invalid URL")
+        return
+    }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        guard let data = data, error == nil else {
+            print("Error: \(error?.localizedDescription ?? "Unknown error")")
+            return
+        }
+        
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let dataDict = json["data"] as? [String: Any],
+               let status = dataDict["status"] as? String {
+                
+                DispatchQueue.main.async {
+                    if status == "paid" {
+                        // Navigate to success screen
+                        self.navigateToPaymentSuccess()
+                    } else if status == "failed" {
+                        // Navigate to failure screen
+                        self.navigateToPaymentFailed()
+                    } else {
+                        // Keep polling
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            self.checkPaymentStatus(orderId: orderId)
+                        }
+                    }
+                }
+            }
+        } catch {
+            print("Error parsing JSON: \(error)")
+        }
+    }.resume()
+}
+
+func navigateToPaymentSuccess() {
+    // Navigate to success screen
+    // Example: performSegue(withIdentifier: "PaymentSuccess", sender: nil)
+}
+
+func navigateToPaymentFailed() {
+    // Navigate to failure screen
+    // Example: performSegue(withIdentifier: "PaymentFailed", sender: nil)
+}
+```
+
 ---
 
 ## Section 4: Complete Payment Flow Example
@@ -471,6 +623,7 @@ Future<void> checkPaymentStatus(String orderId) async {
 
 **Step 1: User Requests to Join Paid Event**
 
+**Flutter/Dart (Android):**
 ```dart
 // POST /events/{event_id}/requests
 final response = await http.post(
@@ -484,6 +637,32 @@ final data = json.decode(response.body);
 final reservationKey = data['data']['reservation_key']; // May be null for free events
 ```
 
+**Swift (iOS):**
+```swift
+// POST /events/{event_id}/requests
+func requestToJoinEvent(eventId: Int) {
+    guard let url = URL(string: "\(baseUrl)/api/events/\(eventId)/requests") else { return }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let body: [String: Any] = ["seats_requested": 1]
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataDict = json["data"] as? [String: Any] else { return }
+        
+        // Store reservation_key if provided (for paid events)
+        let reservationKey = dataDict["reservation_key"] as? String // May be nil for free events
+        UserDefaults.standard.set(reservationKey, forKey: "reservation_key")
+    }.resume()
+}
+```
+
 **Step 2: Host Approves Request**
 
 ```dart
@@ -495,6 +674,7 @@ final reservationKey = data['data']['reservation_key']; // May be null for free 
 
 **Step 3: Create Payment Order**
 
+**Flutter/Dart (Android):**
 ```dart
 // POST /payments/orders
 final orderResponse = await http.post(
@@ -519,8 +699,50 @@ final payuUrl = orderData['data']['payu_redirect']['payu_url'];
 await storage.write(key: 'current_order_id', value: orderId);
 ```
 
+**Swift (iOS):**
+```swift
+// POST /payments/orders
+func createPaymentOrder(eventId: Int, amount: Double, reservationKey: String?) {
+    guard let url = URL(string: "\(baseUrl)/api/payments/orders") else { return }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    var body: [String: Any] = [
+        "event_id": eventId,
+        "amount": amount
+    ]
+    if let reservationKey = reservationKey {
+        body["reservation_key"] = reservationKey
+    }
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataDict = json["data"] as? [String: Any],
+              let orderDict = dataDict["order"] as? [String: Any],
+              let orderId = orderDict["order_id"] as? String,
+              let payuRedirect = dataDict["payu_redirect"] as? [String: Any],
+              let payuUrl = payuRedirect["payu_url"] as? String,
+              let payload = payuRedirect["payload"] as? [String: String] else { return }
+        
+        // Store orderId for status checks
+        UserDefaults.standard.set(orderId, forKey: "current_order_id")
+        
+        // Redirect to PayU
+        DispatchQueue.main.async {
+            self.redirectToPayU(payuUrl: payuUrl, payload: payload)
+        }
+    }.resume()
+}
+```
+
 **Step 4: Redirect to PayU**
 
+**Flutter/Dart (Android):**
 ```dart
 // Build and submit PayU form
 await redirectToPayU({
@@ -531,8 +753,17 @@ await redirectToPayU({
 // Show loading: "Redirecting to payment gateway..."
 ```
 
+**Swift (iOS):**
+```swift
+// Build URL and redirect to PayU
+redirectToPayU(payuUrl: payuUrl, payload: payload)
+
+// Show loading: "Redirecting to payment gateway..."
+```
+
 **Step 5: Check Payment Status (Polling)**
 
+**Flutter/Dart (Android):**
 ```dart
 // After redirect or when app resumes
 Future<void> pollPaymentStatus(String orderId) async {
@@ -583,8 +814,53 @@ Future<void> pollPaymentStatus(String orderId) async {
 }
 ```
 
+**Swift (iOS):**
+```swift
+// After redirect or when app resumes
+var pollingAttempts = 0
+let maxAttempts = 20 // 20 attempts × 3 seconds = 60 seconds
+
+func pollPaymentStatus(orderId: String) {
+    guard pollingAttempts < maxAttempts else {
+        // Timeout
+        showTimeoutAlert(orderId: orderId)
+        return
+    }
+    
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        self.checkPaymentStatus(orderId: orderId) { status in
+            if status == "paid" {
+                // Success! Stop polling
+                self.navigateToPaymentSuccess()
+            } else if status == "failed" {
+                // Failed! Stop polling
+                self.navigateToPaymentFailed()
+            } else {
+                // Continue polling
+                self.pollingAttempts += 1
+                self.pollPaymentStatus(orderId: orderId)
+            }
+        }
+    }
+}
+
+func showTimeoutAlert(orderId: String) {
+    let alert = UIAlertController(
+        title: "Payment Status",
+        message: "Payment is taking longer than expected. Please check manually.",
+        preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "Check Status", style: .default) { _ in
+        self.checkPaymentStatusManually(orderId: orderId)
+    })
+    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    present(alert, animated: true)
+}
+```
+
 **Step 6: Confirm Attendance (After Payment Success)**
 
+**Flutter/Dart (Android):**
 ```dart
 // POST /events/{event_id}/confirm-attendance
 final confirmResponse = await http.post(
@@ -595,6 +871,30 @@ final confirmResponse = await http.post(
 
 // Navigate to ticket screen
 Navigator.pushNamed(context, '/ticket');
+```
+
+**Swift (iOS):**
+```swift
+// POST /events/{event_id}/confirm-attendance
+func confirmAttendance(eventId: Int, seats: Int) {
+    guard let url = URL(string: "\(baseUrl)/api/events/\(eventId)/confirm-attendance") else { return }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let body: [String: Any] = ["seats": seats]
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        // Handle response
+        DispatchQueue.main.async {
+            // Navigate to ticket screen
+            self.navigateToTicket()
+        }
+    }.resume()
+}
 ```
 
 ---
@@ -703,10 +1003,16 @@ Navigator.pushNamed(context, '/ticket');
 
 ### Mistake 1: Generating Hash on Frontend
 
-**Wrong:**
+**Wrong (Flutter/Dart):**
 ```dart
 // NEVER DO THIS
 String hash = generatePayUHash(payload);
+```
+
+**Wrong (Swift):**
+```swift
+// NEVER DO THIS
+let hash = generatePayUHash(payload: payload)
 ```
 
 **Why Wrong:**
@@ -719,11 +1025,18 @@ String hash = generatePayUHash(payload);
 
 ### Mistake 2: Modifying PayU Payload
 
-**Wrong:**
+**Wrong (Flutter/Dart):**
 ```dart
 // NEVER DO THIS
 payload['amount'] = '500.00'; // Changed amount
 payload['hash'] = 'new_hash'; // Changed hash
+```
+
+**Wrong (Swift):**
+```swift
+// NEVER DO THIS
+payload["amount"] = "500.00" // Changed amount
+payload["hash"] = "new_hash" // Changed hash
 ```
 
 **Why Wrong:**
@@ -752,10 +1065,16 @@ payload['hash'] = 'new_hash'; // Changed hash
 
 ### Mistake 4: Assuming Payment Success Immediately
 
-**Wrong:**
+**Wrong (Flutter/Dart):**
 ```dart
 // User returns from PayU → Assume payment success
 Navigator.pushNamed(context, '/success');
+```
+
+**Wrong (Swift):**
+```swift
+// User returns from PayU → Assume payment success
+navigateToPaymentSuccess()
 ```
 
 **Why Wrong:**
@@ -778,8 +1097,13 @@ Navigator.pushNamed(context, '/success');
 - User closes app during payment
 - Cannot check status when app reopens
 
-**Correct:**
-- Store order_id in local storage
+**Correct (Flutter/Dart):**
+- Store order_id in SharedPreferences or local storage
+- Check status on app resume
+- Allow manual status check
+
+**Correct (Swift):**
+- Store order_id in UserDefaults or Core Data
 - Check status on app resume
 - Allow manual status check
 
