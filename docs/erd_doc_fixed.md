@@ -11,17 +11,17 @@ This document provides a comprehensive, self-explanatory Entity Relationship Dia
     /* Canvas */
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'secondBkg': '#f9fafb',
+    'secondBkg': '#ffffff',
     'tertiaryBkg': '#ffffff',
 
-    /* Tables */
-    'primaryColor': '#e3f2fd',
+    /* Tables – keep VERY light */
+    'primaryColor': '#f8fafc',
     'primaryBorderColor': '#1e3a8a',
     'primaryTextColor': '#0f172a',
 
-    /* Secondary accents */
-    'secondaryColor': '#ede9fe',
-    'tertiaryColor': '#ecfeff',
+    /* Disable dark alternates */
+    'secondaryColor': '#f8fafc',
+    'tertiaryColor': '#f8fafc',
 
     /* Lines & text */
     'lineColor': '#334155',
@@ -445,14 +445,14 @@ erDiagram
         DATETIME updated_at "Last update"
     }
 
-    %% Apply domain-level color discipline (subtle fills, strong borders)
-    classDef userTables fill:#e0f2fe,stroke:#1e3a8a,color:#0f172a
-    classDef eventTables fill:#ecfeff,stroke:#155e75,color:#0f172a
-    classDef paymentTables fill:#fff7ed,stroke:#9a3412,color:#0f172a
-    classDef attendanceTables fill:#fefce8,stroke:#a16207,color:#0f172a
-    classDef auditTables fill:#f3e8ff,stroke:#6b21a8,color:#0f172a
-    classDef notificationTables fill:#ffe4e6,stroke:#9f1239,color:#020617
-    classDef coreTables fill:#f1f5f9,stroke:#334155,color:#020617
+    %% Apply domain-level color discipline (very light fills, strong borders, stripe-safe)
+    classDef userTables fill:#f0f9ff,stroke:#1e3a8a,stroke-width:2px,color:#0f172a
+    classDef eventTables fill:#ecfeff,stroke:#155e75,stroke-width:2px,color:#0f172a
+    classDef paymentTables fill:#fffaf0,stroke:#9a3412,stroke-width:2px,color:#0f172a
+    classDef attendanceTables fill:#fffbeb,stroke:#a16207,stroke-width:2px,color:#0f172a
+    classDef auditTables fill:#faf5ff,stroke:#6b21a8,stroke-width:2px,color:#0f172a
+    classDef notificationTables fill:#fff1f2,stroke:#9f1239,stroke-width:2px,color:#020617
+    classDef coreTables fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#020617
 
     %% Apply domain grouping
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
