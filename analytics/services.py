@@ -335,18 +335,20 @@ def get_host_metrics(
     limit = min(limit, 1000)  # Cap at 1000
     paginated_trend = trend_list[offset:offset + limit]
     
-    # Host approval-to-host conversion rate (for the selected period)
-    # Get active users who registered in the period
-    period_active_users = User.objects.filter(
-        is_active=True,
-        date_joined__gte=period_start
-    ).count()
-    # Get users who created events in the period
-    users_with_events = User.objects.filter(
-        profile__hosted_events__created_at__gte=period_start
+    # Host approval-to-host conversion rate
+    # According to spec: conversion_rate = (total_hosts / active_users) * 100
+    # Where total_hosts = ALL users who have created at least one event
+    # And active_users = ALL active users in the system (not filtered by period)
+    
+    # Get ALL active users in the system (not filtered by period)
+    active_users_all = User.objects.filter(is_active=True).count()
+    
+    # Get ALL users who have created at least one event (not filtered by period)
+    total_hosts_all = User.objects.filter(
+        profile__hosted_events__isnull=False
     ).distinct().count()
     
-    conversion_rate = (users_with_events / period_active_users * 100) if period_active_users > 0 else 0
+    conversion_rate = (total_hosts_all / active_users_all * 100) if active_users_all > 0 else 0
     
     return {
         'total_hosts': total_hosts,
