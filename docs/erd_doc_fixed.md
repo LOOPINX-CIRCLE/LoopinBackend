@@ -22,7 +22,6 @@ This document provides a comprehensive, self-explanatory Entity Relationship Dia
     /* Force all alternate row colors to white (prevent striping) */
     'secondaryColor': '#ffffff',
     'tertiaryColor': '#ffffff',
-    'primaryTextColor': '#0f172a',
     'secondaryTextColor': '#0f172a',
     'tertiaryTextColor': '#0f172a',
 
