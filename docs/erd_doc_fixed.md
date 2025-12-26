@@ -10,13 +10,12 @@ erDiagram
     %% ==================== RELATIONSHIPS ====================
     
     %% Users Module Relationships
-    AUTH_USER ||--|| USER_PROFILE : "has profile"
+    AUTH_USER ||--o| USER_PROFILE : "has profile (optional, 1-to-1)"
     AUTH_USER ||--o{ USER_PHONE_OTP : "has OTP records"
-    AUTH_USER ||--o{ BANK_ACCOUNT : "has bank accounts"
     USER_PROFILE }o--o{ EVENT_INTEREST : "has interests (M-to-M)"
     
     %% Events Module Relationships
-    AUTH_USER ||--o{ EVENT : "hosts events"
+    USER_PROFILE ||--o{ EVENT : "hosts events"
     VENUE ||--o{ EVENT : "hosts events"
     EVENT }o--o{ EVENT_INTEREST : "categorized by (M-to-M)"
     EVENT ||--o{ EVENT_REQUEST : "receives requests"
@@ -24,10 +23,11 @@ erDiagram
     EVENT ||--o{ EVENT_ATTENDEE : "has attendees"
     EVENT ||--o{ CAPACITY_RESERVATION : "has reservations"
     EVENT ||--o{ EVENT_IMAGE : "has images"
-    AUTH_USER ||--o{ EVENT_REQUEST : "requests events"
-    AUTH_USER ||--o{ EVENT_INVITE : "sends invites"
-    AUTH_USER ||--o{ EVENT_INVITE : "receives invites"
-    AUTH_USER ||--o{ EVENT_ATTENDEE : "attends events"
+    USER_PROFILE ||--o{ EVENT_REQUEST : "requests events"
+    USER_PROFILE ||--o{ EVENT_INVITE : "sends invites (host)"
+    USER_PROFILE ||--o{ EVENT_INVITE : "receives invites (invited user)"
+    USER_PROFILE ||--o{ EVENT_ATTENDEE : "attends events"
+    USER_PROFILE ||--o{ CAPACITY_RESERVATION : "reserves capacity"
     EVENT_REQUEST ||--o| EVENT_ATTENDEE : "converts to"
     
     %% Attendance Module Relationships
@@ -39,13 +39,13 @@ erDiagram
     AUTH_USER ||--o{ PLATFORM_FEE_CONFIG : "updated by"
     
     %% Payment Module Relationships
-    AUTH_USER ||--o{ PAYMENT_ORDER : "places orders"
+    USER_PROFILE ||--o{ PAYMENT_ORDER : "places orders"
     EVENT ||--o{ PAYMENT_ORDER : "linked to"
     PAYMENT_ORDER ||--o{ PAYMENT_TRANSACTION : "has transactions"
     PAYMENT_ORDER ||--o{ PAYMENT_WEBHOOK : "receives webhooks"
     
     %% Payout Module Relationships
-    AUTH_USER ||--o{ BANK_ACCOUNT : "owns bank accounts"
+    USER_PROFILE ||--o{ BANK_ACCOUNT : "owns bank accounts (host)"
     BANK_ACCOUNT ||--o{ HOST_PAYOUT_REQUEST : "receives payouts"
     EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
     
@@ -110,7 +110,7 @@ erDiagram
     BANK_ACCOUNT {
         BIGINT id PK "Primary key"
         UUID uuid "Public unique identifier"
-        BIGINT host_id FK "Host user (AUTH_USER)"
+        BIGINT host_id FK "Host user profile (USER_PROFILE)"
         STRING bank_name "Bank name (max 100)"
         STRING account_number "Account number (max 30)"
         STRING ifsc_code "IFSC code (11 chars)"
@@ -175,7 +175,7 @@ erDiagram
 
     EVENT {
         BIGINT id PK "Primary key"
-        BIGINT host_id FK "Event host (AUTH_USER)"
+        BIGINT host_id FK "Event host (USER_PROFILE)"
         BIGINT venue_id FK "Linked venue (nullable)"
         UUID uuid "Public unique identifier"
         STRING slug "URL-friendly slug"
@@ -220,7 +220,7 @@ erDiagram
     EVENT_REQUEST {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Requested event"
-        BIGINT requester_id FK "User requesting"
+        BIGINT requester_id FK "User profile requesting (USER_PROFILE)"
         UUID uuid "Public unique identifier"
         STRING status "pending|accepted|declined|cancelled|expired"
         TEXT message "Request message"
@@ -266,7 +266,7 @@ erDiagram
     CAPACITY_RESERVATION {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT user_id FK "Reserving user"
+        BIGINT user_id FK "Reserving user profile (USER_PROFILE)"
         UUID reservation_key "Unique reservation token"
         INT seats_reserved "Seats held"
         BOOLEAN consumed "Reservation used"
@@ -453,13 +453,43 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 ## **1. USERS MODULE** 🎫
 
 ### **1.1 AUTH_USER** (Django Built-in) 🔐
-**Purpose:** Core authentication and authorization (Admin-Level Access)
+**Purpose:** Core authentication and authorization for **Internal Platform Operators Only**
 
-**⚠️ Important Distinction:**
-- **AUTH_USER** = Django's built-in authentication model
-- **ADMIN-ONLY ACCESS**: Only visible in Django Admin for staff/superuser accounts
-- Used for platform administrators, staff members, and internal users
-- **NOT** the same as USER_PROFILE (which represents normal customers/users)
+**🔒 CRITICAL IDENTITY SEPARATION:**
+
+**AUTH_USER = Internal Platform Operators**
+- Platform administrators (`is_staff=True`, `is_superuser=True`)
+- Finance/Ops team members
+- Internal staff (CEO, CFO, Admins)
+- **NEVER** used for customer actions (payments, attendance, hosting)
+
+**USER_PROFILE = External Platform Customers**
+- Hosts (event creators)
+- Attendees (event participants)
+- All customer-facing actions belong here
+- Payments, attendance, events, tickets — ALL customer data
+
+**⚠️ Strict Enforcement Rules:**
+
+1. **Payments MUST belong to USER_PROFILE only**
+   - `PAYMENT_ORDER.user_id` → `USER_PROFILE` ✅
+   - `EVENT_ATTENDEE.user_id` → `USER_PROFILE` ✅
+   - `ATTENDANCE_RECORD.user_id` → `USER_PROFILE` ✅
+   - ❌ An AUTH_USER must NEVER pay, attend, host, or check in
+
+2. **Admin actions must never impersonate USER_PROFILE**
+   - Admin (AUTH_USER) can: View, Audit, Approve payouts, Configure fees, Cancel events
+   - Admin must NOT: Create PAYMENT_ORDER, Create EVENT_ATTENDEE, Trigger check-ins, Generate ticket secrets
+
+3. **Audit log records BOTH identities**
+   - `AUDIT_LOG.actor_user_id` → `AUTH_USER` (who performed admin action)
+   - `AUDIT_LOG.object_id` → `USER_PROFILE`-owned objects (what was acted upon)
+
+**Relationship to USER_PROFILE:**
+- Optional 1-to-1 relationship: `AUTH_USER` ↔ `USER_PROFILE`
+- Not all AUTH_USER records have USER_PROFILE (admin accounts may not need one)
+- Not all USER_PROFILE records need admin access (customers don't need `is_staff=True`)
+- **This separation is intentional and must be enforced at service boundaries**
 
 **Django Admin Access:**
 - **Admin-level users** (`is_staff=True` or `is_superuser=True`) see:
@@ -477,15 +507,22 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Permission management via Groups and Permissions
 
 **Relationships:**
-- 1-to-1 → `USER_PROFILE` (optional - only created for customers)
-- 1-to-many → All user-created content (events, requests, etc.)
+- 1-to-1 → `USER_PROFILE` (optional - only created for customers, not admins)
+- 1-to-many → `USER_PHONE_OTP` (authentication records)
+- 1-to-many → `PLATFORM_FEE_CONFIG.updated_by` (admin configuration updates)
+- 1-to-many → `AUDIT_LOG.actor_user_id` (admin actions logged)
+
+**⚠️ AUTH_USER does NOT directly relate to customer actions:**
+- Events, payments, attendance, tickets → All belong to `USER_PROFILE`
+- Admin actions are logged via `AUDIT_LOG`, not direct relationships
 
 **Business Logic:**
 - Username is typically the phone number (e.g., +916205829376)
 - Active users can authenticate via OTP or password
 - UUID provides public identifier for APIs
-- Staff/superuser accounts are for internal platform administration
-- Regular customer accounts link to USER_PROFILE for extended data
+- Staff/superuser accounts are for **internal platform administration ONLY**
+- Customer accounts link to USER_PROFILE for extended data and all customer actions
+- **Never use AUTH_USER for customer-facing features** (payments, events, attendance)
 
 **Admin Interface:**
 - Custom `UserAdmin` extends Django's `BaseUserAdmin`
@@ -496,13 +533,32 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 ---
 
 ### **1.2 USER_PROFILE** 👤
-**Purpose:** Extended profile information for Normal Users/Customers
+**Purpose:** Customer profile data for **External Platform Customers Only**
 
-**⚠️ Important Distinction:**
-- **USER_PROFILE** = Customer/End-user profile data
-- **CUSTOMER ACCESS**: Visible in Django Admin for managing normal users
-- Represents actual customers using the platform (not admin staff)
-- Linked to AUTH_USER via 1-to-1 relationship (optional)
+**🔒 CRITICAL IDENTITY SEPARATION:**
+
+**USER_PROFILE = External Platform Customers**
+- All hosts (event creators)
+- All attendees (event participants)
+- All customer-facing actions belong here
+- **Source of truth for all customer data**
+
+**⚠️ Customer Actions MUST use USER_PROFILE:**
+- ✅ `EVENT.host_id` → `USER_PROFILE` (hosts create events)
+- ✅ `PAYMENT_ORDER.user_id` → `USER_PROFILE` (customers pay)
+- ✅ `EVENT_ATTENDEE.user_id` → `USER_PROFILE` (customers attend)
+- ✅ `ATTENDANCE_RECORD.user_id` → `USER_PROFILE` (customers check in)
+- ✅ `EVENT_REQUEST.requester_id` → `USER_PROFILE` (customers request to join)
+- ✅ `BANK_ACCOUNT.host_id` → `USER_PROFILE` (hosts receive payouts)
+- ✅ `CAPACITY_RESERVATION.user_id` → `USER_PROFILE` (customers reserve seats)
+
+**Never use AUTH_USER for these actions** — enforce at service boundaries.
+
+**Relationship to AUTH_USER:**
+- Optional 1-to-1 relationship: `USER_PROFILE` ↔ `AUTH_USER`
+- Customer accounts link to AUTH_USER for authentication only
+- All customer actions use USER_PROFILE, not AUTH_USER
+- Admin accounts (AUTH_USER with `is_staff=True`) may not have USER_PROFILE
 
 **Django Admin Access:**
 - **Normal users/customers** see in admin (if they have access):
@@ -574,11 +630,16 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Search by name, phone number, location, bio
 - Horizontal filter for event interests selection
 
-**Relationship to AUTH_USER:**
-- Not all AUTH_USER records have USER_PROFILE (admin accounts may not)
-- Not all USER_PROFILE records need admin access (customers don't need `is_staff=True`)
-- USER_PROFILE represents the actual customer/user using the platform
-- AUTH_USER represents the authentication account (can be admin or customer)
+**Business Rules - Identity Separation:**
+- All customer actions (payments, events, attendance) MUST use `USER_PROFILE`
+- `AUTH_USER` is ONLY for authentication and admin operations
+- Admin actions are logged via `AUDIT_LOG` with `actor_user_id` → `AUTH_USER`
+- Customer data objects link to `USER_PROFILE`, never directly to `AUTH_USER`
+- This separation enables:
+  - ✅ Cleaner permission logic
+  - ✅ Safer admin operations
+  - ✅ Easier audit trails
+  - ✅ No accidental admin↔customer overlap
 
 ---
 
@@ -1239,7 +1300,7 @@ final_price = PlatformFeeConfig.calculate_final_price(
 | **1-to-1** | `ATTENDANCE_RECORD` ↔ `TICKET_SECRET` | One secret per attendance |
 | **1-to-Many** | `USER_PROFILE` → `ATTENDANCE_RECORD` | User profile has many attendance records |
 | **1-to-Many** | `AUTH_USER` → `PLATFORM_FEE_CONFIG` | Admin updates platform fee config |
-| **1-to-Many** | `AUTH_USER` → `EVENT` | Host creates many events |
+| **1-to-Many** | `USER_PROFILE` → `EVENT` | Host creates many events |
 | **1-to-Many** | `VENUE` → `EVENT` | Venue hosts many events |
 | **1-to-Many** | `EVENT` → `EVENT_REQUEST/INVITE/ATTENDEE` | Event has many interactions |
 | **1-to-Many** | `EVENT_REQUEST` → `EVENT_ATTENDEE` | Request converts to attendee |
