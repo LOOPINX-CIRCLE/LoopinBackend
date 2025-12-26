@@ -418,6 +418,112 @@ curl -X DELETE http://localhost:8000/api/events/$EVENT_ID \
 
 ---
 
+## Payments API
+
+### Create Payment Order
+`POST /api/payments/orders`
+
+Create a payment order for an event and get PayU redirect payload.
+
+**Authentication**: Required (JWT)
+
+**Request Body**:
+```json
+{
+  "event_id": 1,
+  "amount": 110.00,
+  "reservation_key": "uuid-string" // Optional, required for paid events
+}
+```
+
+**Response** (201 Created):
+```json
+{
+  "payu_url": "https://secure.payu.in/_payment",
+  "payload": {
+    "key": "merchant_key",
+    "txnid": "order_id",
+    "amount": "110.00",
+    "productinfo": "Event Ticket",
+    "firstname": "John",
+    "email": "john@example.com",
+    "phone": "9876543210",
+    "surl": "https://api.example.com/payments/payu/success",
+    "furl": "https://api.example.com/payments/payu/failure",
+    "hash": "sha512_hash"
+  }
+}
+```
+
+**Business Rules**:
+- Only for paid events (`event.is_paid == True`)
+- Requires valid capacity reservation for paid events
+- Amount must match calculated total (base price + platform fee) × seats
+- Order expires in 10 minutes
+
+### Get Payment Order
+`GET /api/payments/orders/{order_id}`
+
+Get payment order details.
+
+**Authentication**: Required (JWT)
+
+**Response** (200 OK):
+```json
+{
+  "id": 1,
+  "order_id": "ORD_20251227120000_1_abc123",
+  "event_id": 1,
+  "amount": "110.00",
+  "currency": "INR",
+  "status": "paid",
+  "payment_provider": "payu",
+  "seats_count": 1,
+  "base_price_per_seat": "100.00",
+  "platform_fee_percentage": "10.00",
+  "platform_fee_amount": "10.00",
+  "host_earning_per_seat": "100.00",
+  "is_final": true,
+  "expires_at": "2025-12-27T12:10:00Z",
+  "created_at": "2025-12-27T12:00:00Z"
+}
+```
+
+### PayU Success Callback
+`POST /api/payments/payu/success`
+
+Handle PayU success callback (redirect from PayU).
+
+**Authentication**: Not required (PayU callback)
+
+**Request**: PayU form data with hash verification
+
+**Response**: Redirects to frontend success page
+
+### PayU Failure Callback
+`POST /api/payments/payu/failure`
+
+Handle PayU failure callback (redirect from PayU).
+
+**Authentication**: Not required (PayU callback)
+
+**Request**: PayU form data with hash verification
+
+**Response**: Redirects to frontend failure page
+
+### PayU Webhook
+`POST /api/payments/payu/webhook`
+
+Handle PayU webhook (server-to-server notification).
+
+**Authentication**: Not required (PayU webhook)
+
+**Request**: PayU webhook payload with signature
+
+**Response**: 200 OK (idempotent processing)
+
+---
+
 ## API Docs
 
 Interactive API documentation available at:
