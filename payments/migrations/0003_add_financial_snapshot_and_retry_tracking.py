@@ -5,11 +5,22 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 
+def backfill_seats_count(apps, schema_editor):
+    """Backfill seats_count for existing payment orders (default to 1)"""
+    PaymentOrder = apps.get_model('payments', 'PaymentOrder')
+    PaymentOrder.objects.filter(seats_count__isnull=True).update(seats_count=1)
+
+
+def reverse_backfill_seats_count(apps, schema_editor):
+    """Reverse migration - no action needed"""
+    pass
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('events', '0003_add_financial_snapshot_and_retry_tracking'),
         ('payments', '0002_alter_paymentorder_user'),
+        ('events', '0002_alter_capacityreservation_user_alter_event_host_and_more'),
         ('users', '0003_userprofile_waitlist_promote_at_and_more'),
     ]
 
@@ -75,5 +86,9 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name='paymentorder',
             index=models.Index(fields=['event', 'user', 'is_final'], name='payments_pa_event_i_05bf95_idx'),
+        ),
+        migrations.RunPython(
+            backfill_seats_count,
+            reverse_backfill_seats_count,
         ),
     ]
