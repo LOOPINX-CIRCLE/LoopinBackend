@@ -447,14 +447,15 @@ erDiagram
         DATETIME updated_at "Last update"
     }
 
-    %% Apply domain-level color discipline (very light fills, strong borders, stripe-safe)
-    classDef userTables fill:#f0f9ff,stroke:#1e3a8a,stroke-width:2px,color:#0f172a
-    classDef eventTables fill:#ecfeff,stroke:#155e75,stroke-width:2px,color:#0f172a
-    classDef paymentTables fill:#fffaf0,stroke:#9a3412,stroke-width:2px,color:#0f172a
-    classDef attendanceTables fill:#fffbeb,stroke:#a16207,stroke-width:2px,color:#0f172a
-    classDef auditTables fill:#faf5ff,stroke:#6b21a8,stroke-width:2px,color:#0f172a
-    classDef notificationTables fill:#fff1f2,stroke:#9f1239,stroke-width:2px,color:#020617
-    classDef coreTables fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#020617
+    %% Apply domain-level color discipline (pure white fills, strong borders, NO striping)
+    %% All fills are #ffffff to prevent ANY row striping within tables
+    classDef userTables fill:#ffffff,stroke:#1e3a8a,stroke-width:2px,color:#0f172a
+    classDef eventTables fill:#ffffff,stroke:#155e75,stroke-width:2px,color:#0f172a
+    classDef paymentTables fill:#ffffff,stroke:#9a3412,stroke-width:2px,color:#0f172a
+    classDef attendanceTables fill:#ffffff,stroke:#a16207,stroke-width:2px,color:#0f172a
+    classDef auditTables fill:#ffffff,stroke:#6b21a8,stroke-width:2px,color:#0f172a
+    classDef notificationTables fill:#ffffff,stroke:#9f1239,stroke-width:2px,color:#020617
+    classDef coreTables fill:#ffffff,stroke:#334155,stroke-width:2px,color:#020617
 
     %% Apply domain grouping
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
