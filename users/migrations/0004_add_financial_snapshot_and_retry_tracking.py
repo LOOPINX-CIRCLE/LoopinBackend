@@ -6,8 +6,8 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('payments', '0003_add_financial_snapshot_and_retry_tracking'),
         ('users', '0003_userprofile_waitlist_promote_at_and_more'),
+        ('payments', '0003_add_financial_snapshot_and_retry_tracking'),
     ]
 
     operations = [
