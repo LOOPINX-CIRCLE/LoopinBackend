@@ -137,12 +137,16 @@ class EventService:
     @staticmethod
     @transaction.atomic
     def create_event(host, title, description, start_time, end_time, venue=None, 
-                     status='draft', is_public=True, max_capacity=0, cover_images=None):
+                     status='draft', is_public=True, max_capacity=0, cover_images=None, auth_user=None):
         """
         Create a new event with validation.
         
+        SECURITY ENFORCEMENT (IDENTITY MODEL):
+        - host must be USER_PROFILE (not AUTH_USER)
+        - AUTH_USER (admin) cannot create events as customers
+        
         Args:
-            host: User hosting the event
+            host: UserProfile hosting the event
             title: Event title
             description: Event description
             start_time: Event start time
@@ -152,10 +156,33 @@ class EventService:
             is_public: Is event public (default: True)
             max_capacity: Maximum capacity (default: 0 for unlimited)
             cover_images: List of cover image URLs
+            auth_user: Optional AUTH_USER for identity enforcement check
         
         Returns:
             Event instance
+            
+        Raises:
+            AuthorizationError: If AUTH_USER attempts to create event
         """
+        # SECURITY: Identity enforcement - verify host is USER_PROFILE
+        from users.models import UserProfile
+        if not isinstance(host, UserProfile):
+            from core.exceptions import ValidationError
+            raise ValidationError(
+                "Event host must be a UserProfile instance, not AUTH_USER.",
+                code="INVALID_HOST_TYPE"
+            )
+        
+        # SECURITY: If auth_user is provided, ensure it's not an admin creating events
+        if auth_user:
+            from django.contrib.auth.models import User
+            if isinstance(auth_user, User) and (auth_user.is_staff or auth_user.is_superuser):
+                from core.exceptions import AuthorizationError
+                raise AuthorizationError(
+                    "Admin accounts (AUTH_USER) cannot create events as customers. Only USER_PROFILE can create events.",
+                    code="ADMIN_CANNOT_CREATE_EVENT"
+                )
+        
         if cover_images is None:
             cover_images = []
         
@@ -231,9 +258,13 @@ class EventRequestService:
     
     @staticmethod
     @transaction.atomic
-    def create_request(requester, event, message='', seats_requested=1):
+    def create_request(requester, event, message='', seats_requested=1, auth_user=None):
         """
         Create an event request.
+        
+        SECURITY ENFORCEMENT (IDENTITY MODEL):
+        - requester must be USER_PROFILE (not AUTH_USER)
+        - AUTH_USER (admin) cannot make event requests
         
         For paid events, this only creates the request. Payment must be completed
         before attendance can be confirmed.
@@ -243,10 +274,32 @@ class EventRequestService:
             event: Event being requested
             message: Optional request message
             seats_requested: Number of seats requested
+            auth_user: Optional AUTH_USER for identity enforcement check
         
         Returns:
             EventRequest instance
+            
+        Raises:
+            AuthorizationError: If AUTH_USER attempts to create request
         """
+        # SECURITY: Identity enforcement - verify requester is USER_PROFILE
+        from users.models import UserProfile
+        if not isinstance(requester, UserProfile):
+            from core.exceptions import ValidationError
+            raise ValidationError(
+                "Event request requester must be a UserProfile instance, not AUTH_USER.",
+                code="INVALID_REQUESTER_TYPE"
+            )
+        
+        # SECURITY: If auth_user is provided, ensure it's not an admin
+        if auth_user:
+            from django.contrib.auth.models import User
+            if isinstance(auth_user, User) and (auth_user.is_staff or auth_user.is_superuser):
+                from core.exceptions import AuthorizationError
+                raise AuthorizationError(
+                    "Admin accounts (AUTH_USER) cannot make event requests. Only USER_PROFILE can request to join events.",
+                    code="ADMIN_CANNOT_REQUEST_EVENT"
+                )
         # Check if event is available for requests
         if event.status != 'published':
             raise ValueError("Can only request for published events")
