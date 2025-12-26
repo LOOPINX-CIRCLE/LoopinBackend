@@ -38,8 +38,8 @@ COPY . /app/
 # Create necessary directories
 RUN mkdir -p /app/staticfiles /app/media /app/logs
 
-# Set proper permissions
-RUN chmod -R 755 /app
+# Set proper permissions and ensure entrypoint is executable
+RUN chmod -R 755 /app && chmod +x /app/entrypoint.sh
 
 # Expose port
 EXPOSE 8000
