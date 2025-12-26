@@ -73,30 +73,61 @@ class AttendanceRecord(TimeStampedModel):
         """Generate a unique ticket secret for this attendance"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
 
+    def validate_ticket_secret_for_checkin(self):
+        """
+        Validate ticket secret can be used for check-in.
+        
+        SECURITY ENFORCEMENT (MANDATORY):
+        - ticket_secret can be validated ONLY IF:
+          - event.is_paid == False (free event)
+          OR
+          - payment_order.status == "paid" (verified payment)
+        
+        Even if EVENT_ATTENDEE and ATTENDANCE_RECORD exist, this check
+        prevents unpaid users from checking in to paid events.
+        
+        Raises:
+            ValidationError: If payment is required but not verified
+        """
+        from core.exceptions import ValidationError
+        
+        # Free events: always allow
+        if not self.event.is_paid:
+            return True
+        
+        # Paid events: MUST have payment_order with status='paid'
+        if not self.payment_order:
+            raise ValidationError(
+                "Payment verification failed. Cannot check in without confirmed payment.",
+                code="PAYMENT_NOT_VERIFIED"
+            )
+        
+        if self.payment_order.status != 'paid':
+            raise ValidationError(
+                f"Payment order status is '{self.payment_order.status}', not 'paid'. Cannot check in without confirmed payment.",
+                code="PAYMENT_NOT_VERIFIED"
+            )
+        
+        # Double-check payment_status field matches
+        if self.payment_status != 'paid':
+            raise ValidationError(
+                "Payment verification failed. Payment status mismatch.",
+                code="PAYMENT_NOT_VERIFIED"
+            )
+        
+        return True
+    
     def check_in(self):
         """
         Mark user as checked in.
         
-        Payment enforcement:
-        - For paid events, verifies payment before allowing check-in.
+        SECURITY ENFORCEMENT:
+        - For paid events, validates payment_order.status == 'paid' before check-in
+        - Prevents unpaid users from checking in even if records exist
         """
         if self.status == 'going':
-            # Payment enforcement: For paid events, verify payment before check-in
-            if self.event.is_paid:
-                from events.services import require_payment_for_event
-                require_payment_for_event(
-                    self.event,
-                    self.user,
-                    action_name="check in to this event"
-                )
-                
-                # Double-check payment_status matches
-                if self.payment_status != 'paid':
-                    from core.exceptions import ValidationError
-                    raise ValidationError(
-                        "Payment verification failed. Cannot check in without confirmed payment.",
-                        code="PAYMENT_NOT_VERIFIED"
-                    )
+            # SECURITY: Validate ticket secret and payment before check-in
+            self.validate_ticket_secret_for_checkin()
             
             from django.utils import timezone
             self.checked_in_at = timezone.now()
