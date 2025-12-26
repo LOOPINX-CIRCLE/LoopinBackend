@@ -195,6 +195,11 @@ def calculate_event_financials(event: Event) -> Dict[str, Any]:
     """
     Calculate all financial metrics for an event payout request.
     
+    Uses PaymentOrder table as source of truth (most reliable):
+    - Filters by status='paid' or 'completed' and is_final=True
+    - Uses immutable financial snapshots from PaymentOrder
+    - Excludes retry attempts (only final payments)
+    
     Business Logic:
     - Buyer pays: Base ticket fare + platform fee (configurable via admin)
     - Host earns: Base ticket fare × Tickets sold (no platform fee deduction)
@@ -202,52 +207,78 @@ def calculate_event_financials(event: Event) -> Dict[str, Any]:
     
     Returns:
         Dictionary containing:
-        - total_tickets_sold: Count of paid attendance records
+        - total_tickets_sold: Count of seats from paid payment orders
         - attendees_details: List of attendee names and contacts
-        - platform_fee_amount: Platform fee % of base ticket fare × tickets sold (paid by buyers)
-        - final_earning: Base ticket fare × tickets sold (host earnings, no deduction)
+        - platform_fee_amount: Total platform fee from payment orders (immutable snapshot)
+        - final_earning: Total host earnings from payment orders (immutable snapshot)
     """
     from decimal import Decimal, ROUND_HALF_UP
-    from core.models import PlatformFeeConfig
+    from payments.models import PaymentOrder
     
-    # Get all paid attendance records for this event
-    paid_attendances = AttendanceRecord.objects.filter(
+    # Get all paid payment orders for this event (final payments only, exclude retry attempts)
+    paid_orders = PaymentOrder.objects.filter(
         event=event,
-        payment_status__in=['paid', 'completed'],
-        status__in=['going', 'checked_in']
-    ).select_related('user', 'user__profile')
-    
-    total_tickets_sold = sum(attendance.seats for attendance in paid_attendances)
-    
-    # Base ticket fare (what host sets)
-    base_ticket_fare = event.ticket_price or Decimal('0.00')
-    
-    # Calculate host earnings: Base ticket fare × Tickets sold
-    # Host earns the base fare, platform fee is added on top (paid by buyer)
-    host_earnings = base_ticket_fare * Decimal(total_tickets_sold)
-    
-    # Calculate platform fee using dynamic configuration
-    # This is what buyers pay extra (on top of base fare)
-    platform_fee_amount = PlatformFeeConfig.calculate_platform_fee(
-        base_fare=base_ticket_fare,
-        quantity=total_tickets_sold
+        status__in=['paid', 'completed'],
+        is_final=True  # Only count final successful payments, not retry attempts
     )
     
-    # Final ticket fare that buyers pay = Base + platform fee
-    final_ticket_fare_per_ticket = PlatformFeeConfig.calculate_final_price(base_ticket_fare)
+    # Calculate totals from PaymentOrder immutable financial snapshots
+    total_host_earning = Decimal('0.00')
+    total_platform_fee = Decimal('0.00')
+    total_revenue = Decimal('0.00')
+    total_tickets_sold = 0
+    
+    # Get base ticket fare from first order (or event if no orders yet)
+    base_ticket_fare = event.ticket_price or Decimal('0.00')
+    final_ticket_fare_per_ticket = base_ticket_fare
+    
+    for order in paid_orders:
+        # Use immutable financial snapshots from PaymentOrder
+        if order.total_host_earning:
+            total_host_earning += order.total_host_earning
+        if order.total_platform_fee:
+            total_platform_fee += order.total_platform_fee
+        total_revenue += order.amount
+        total_tickets_sold += order.seats_count
+        
+        # Get base ticket fare from order snapshot (if available)
+        if order.base_price_per_seat:
+            base_ticket_fare = order.base_price_per_seat
+        
+        # Get final ticket fare from calculation (base + platform fee)
+        if order.platform_fee_percentage and order.base_price_per_seat:
+            from core.models import PlatformFeeConfig
+            final_ticket_fare_per_ticket = PlatformFeeConfig.calculate_final_price(order.base_price_per_seat)
+    
+    # If no orders, use event ticket_price (edge case)
+    if total_tickets_sold == 0:
+        base_ticket_fare = event.ticket_price or Decimal('0.00')
+        from core.models import PlatformFeeConfig
+        final_ticket_fare_per_ticket = PlatformFeeConfig.calculate_final_price(base_ticket_fare)
     
     # Round to 2 decimal places
-    host_earnings = host_earnings.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    platform_fee_amount = platform_fee_amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    total_host_earning = total_host_earning.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    total_platform_fee = total_platform_fee.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     final_ticket_fare_per_ticket = final_ticket_fare_per_ticket.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     
-    # Final earning is simply the host earnings (no deduction)
-    final_earning = host_earnings
+    # Final earning is total host earnings from payment orders
+    final_earning = total_host_earning
+    platform_fee_amount = total_platform_fee
     
-    # Get attendees details
+    # Get attendees details from EventAttendee (linked to payment orders)
+    from events.models import EventAttendee
+    paid_attendees = EventAttendee.objects.filter(
+        event=event,
+        is_paid=True,
+        payment_order__isnull=False,
+        status__in=['going', 'checked_in']
+    ).select_related('user', 'user__profile', 'payment_order')
+    
+    # Ensure we use same count as payment orders
+    # But get attendee details for the response
     attendees_details = []
-    for attendance in paid_attendances:
-        user = attendance.user
+    for attendee in paid_attendees:
+        user = attendee.user
         profile = getattr(user, 'profile', None)
         
         # Get name from profile or user
@@ -326,7 +357,7 @@ def create_payout_request(
         from payments.models import PaymentOrder
         paid_orders = PaymentOrder.objects.filter(
             event=event,
-            status='paid',
+            status__in=['paid', 'completed'],
             is_final=True,  # Only final payments, not retry attempts
         )
         
