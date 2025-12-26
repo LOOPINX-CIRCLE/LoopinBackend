@@ -476,6 +476,217 @@ def get_live_events_analytics(
 
 
 # ============================================================================
+# PAYMENT ANALYTICS
+# ============================================================================
+
+def get_payment_analytics(
+    period: str = 'monthly',
+    event_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Get payment statistics and breakdown by status.
+    
+    Provides data for pie charts showing payment attempt distribution:
+    - Successful payments (final)
+    - Failed payments
+    - Retry attempts
+    - Created/Pending
+    - Refunded
+    - Expired
+    
+    Args:
+        period: 'weekly', 'monthly', or 'yearly' (for time-series data)
+        event_id: Optional event ID to filter payments for specific event
+    
+    Returns:
+        Dict with payment statistics and chart data
+    """
+    now = timezone.now()
+    
+    # Base queryset - all payment orders
+    payments_qs = PaymentOrder.objects.all()
+    
+    # Filter by event if provided
+    if event_id:
+        payments_qs = payments_qs.filter(event_id=event_id)
+    
+    # Calculate period delta for filtering
+    period_delta = {
+        'weekly': timedelta(weeks=1),
+        'monthly': timedelta(days=30),
+        'yearly': timedelta(days=365),
+    }.get(period, timedelta(days=30))
+    
+    period_start = now - period_delta
+    
+    # Filter payments by period
+    period_payments_qs = payments_qs.filter(created_at__gte=period_start)
+    
+    # Total payment orders in period
+    total_orders = period_payments_qs.count()
+    
+    # Count by status categories
+    # 1. Successful payments (final)
+    successful = period_payments_qs.filter(
+        status__in=['paid', 'completed'],
+        is_final=True
+    ).count()
+    
+    # 2. Failed payments
+    failed = period_payments_qs.filter(status='failed').count()
+    
+    # 3. Retry attempts (paid/completed but not final, or has parent_order but not final)
+    # Retries are payments that have a parent_order OR are paid/completed but not marked as final
+    retry_attempts = period_payments_qs.filter(
+        Q(parent_order__isnull=False, is_final=False) |  # Has parent and not final
+        Q(status__in=['paid', 'completed'], is_final=False, parent_order__isnull=True)  # Paid but not final and no parent
+    ).distinct().count()
+    
+    # 4. Created/Pending (initial state)
+    created_pending = period_payments_qs.filter(
+        status__in=['created', 'pending']
+    ).count()
+    
+    # 5. Refunded
+    refunded = period_payments_qs.filter(status='refunded').count()
+    
+    # 6. Cancelled
+    cancelled = period_payments_qs.filter(status='cancelled').count()
+    
+    # 7. Expired (orders that have expired_at in the past and status is not final)
+    expired = period_payments_qs.filter(
+        expires_at__lt=now,
+        status__in=['created', 'pending'],
+        is_final=False
+    ).count()
+    
+    # Calculate success rate
+    total_attempts = successful + failed + retry_attempts
+    success_rate = (successful / total_attempts * 100) if total_attempts > 0 else 0
+    
+    # Calculate failure rate
+    failure_rate = (failed / total_attempts * 100) if total_attempts > 0 else 0
+    
+    # Calculate retry rate (retry attempts / total attempts)
+    retry_rate = (retry_attempts / total_attempts * 100) if total_attempts > 0 else 0
+    
+    # Chart data for pie chart (simplified - only show non-zero categories)
+    chart_data = {
+        'labels': [],
+        'data': [],
+        'colors': [],  # Suggested colors for each category
+    }
+    
+    if successful > 0:
+        chart_data['labels'].append('Successful')
+        chart_data['data'].append(successful)
+        chart_data['colors'].append('#28a745')  # Green
+    
+    if failed > 0:
+        chart_data['labels'].append('Failed')
+        chart_data['data'].append(failed)
+        chart_data['colors'].append('#dc3545')  # Red
+    
+    if retry_attempts > 0:
+        chart_data['labels'].append('Retry Attempts')
+        chart_data['data'].append(retry_attempts)
+        chart_data['colors'].append('#ffc107')  # Yellow/Orange
+    
+    if created_pending > 0:
+        chart_data['labels'].append('Created/Pending')
+        chart_data['data'].append(created_pending)
+        chart_data['colors'].append('#17a2b8')  # Cyan
+    
+    if refunded > 0:
+        chart_data['labels'].append('Refunded')
+        chart_data['data'].append(refunded)
+        chart_data['colors'].append('#6c757d')  # Gray
+    
+    if cancelled > 0:
+        chart_data['labels'].append('Cancelled')
+        chart_data['data'].append(cancelled)
+        chart_data['colors'].append('#6c757d')  # Gray
+    
+    if expired > 0:
+        chart_data['labels'].append('Expired')
+        chart_data['data'].append(expired)
+        chart_data['colors'].append('#ff9800')  # Orange
+    
+    # Detailed breakdown by status
+    status_breakdown = period_payments_qs.values('status').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    # Detailed breakdown: Final vs Retry
+    final_vs_retry = {
+        'final_successful': period_payments_qs.filter(
+            status__in=['paid', 'completed'],
+            is_final=True
+        ).count(),
+        'retry_attempts': retry_attempts,
+        'has_parent_order': period_payments_qs.filter(
+            parent_order__isnull=False
+        ).count(),
+    }
+    
+    # Time-series data (optional - can be used for line charts)
+    trunc_func = {
+        'weekly': TruncWeek,
+        'monthly': TruncMonth,
+        'yearly': TruncYear,
+    }.get(period, TruncMonth)
+    
+    time_series = (
+        period_payments_qs
+        .annotate(period=trunc_func('created_at'))
+        .values('period')
+        .annotate(
+            total=Count('id'),
+            successful=Count('id', filter=Q(status__in=['paid', 'completed'], is_final=True)),
+            failed=Count('id', filter=Q(status='failed')),
+            retry=Count('id', filter=Q(
+                Q(parent_order__isnull=False, is_final=False) |
+                Q(status__in=['paid', 'completed'], is_final=False, parent_order__isnull=True)
+            )),
+            created_pending=Count('id', filter=Q(status__in=['created', 'pending'])),
+        )
+        .order_by('period')
+    )
+    
+    # Convert to list format for Chart.js
+    trend = [
+        {
+            'period': item['period'].isoformat() if item['period'] else None,
+            'total': item['total'],
+            'successful': item['successful'],
+            'failed': item['failed'],
+            'retry': item['retry'],
+            'created_pending': item['created_pending'],
+        }
+        for item in time_series
+    ]
+    
+    return {
+        'total_orders': total_orders,
+        'successful': successful,
+        'failed': failed,
+        'retry_attempts': retry_attempts,
+        'created_pending': created_pending,
+        'refunded': refunded,
+        'cancelled': cancelled,
+        'expired': expired,
+        'success_rate': round(success_rate, 2),
+        'failure_rate': round(failure_rate, 2),
+        'retry_rate': round(retry_rate, 2),
+        'chart_data': chart_data,  # For pie charts
+        'status_breakdown': list(status_breakdown),  # Detailed status counts
+        'final_vs_retry': final_vs_retry,  # Final vs retry breakdown
+        'trend': trend,  # Time-series data for line/bar charts
+        'period': period,
+    }
+
+
+# ============================================================================
 # COMPLETED EVENTS ANALYTICS
 # ============================================================================
 
@@ -539,29 +750,49 @@ def get_completed_events_analytics(
         # Seats filled
         seats_filled = sum(att.seats for att in attendees)
         
-        # Revenue from completed payments
-        completed_payments = event.payment_orders.filter(status='completed')
-        total_revenue = completed_payments.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        # Get payout request if exists
+        # Get payout request if exists (historical snapshot)
         payout_request = event.payout_requests.first()
         
         if payout_request:
+            # Use immutable snapshot from payout request
             base_fare = float(payout_request.base_ticket_fare)
             platform_fee = float(payout_request.platform_fee_amount)
             gross_revenue = float(payout_request.final_ticket_fare * payout_request.total_tickets_sold)
             host_earnings = float(payout_request.final_earning)
             payout_status = payout_request.status
         else:
-            # Calculate from payment orders if no payout request
-            from core.models import PlatformFeeConfig
+            # Calculate from PaymentOrder table (source of truth)
+            # Use is_final=True to exclude retry attempts, status='paid' or 'completed'
+            from payments.models import PaymentOrder
             
-            base_fare = float(event.ticket_price) if event.is_paid else 0.0
-            # Calculate platform fee using dynamic configuration
-            fee_decimal = PlatformFeeConfig.get_fee_decimal()
-            platform_fee = float(total_revenue * fee_decimal)
+            paid_orders = PaymentOrder.objects.filter(
+                event=event,
+                status__in=['paid', 'completed'],
+                is_final=True  # Only final successful payments, not retry attempts
+            )
+            
+            # Calculate totals from PaymentOrder immutable financial snapshots
+            total_host_earning = Decimal('0.00')
+            total_platform_fee = Decimal('0.00')
+            total_revenue = Decimal('0.00')
+            base_fare_decimal = event.ticket_price or Decimal('0.00')
+            
+            for order in paid_orders:
+                # Use immutable financial snapshots from PaymentOrder
+                if order.total_host_earning:
+                    total_host_earning += order.total_host_earning
+                if order.total_platform_fee:
+                    total_platform_fee += order.total_platform_fee
+                total_revenue += order.amount
+                
+                # Get base fare from order snapshot (if available)
+                if order.base_price_per_seat:
+                    base_fare_decimal = order.base_price_per_seat
+            
+            base_fare = float(base_fare_decimal) if event.is_paid else 0.0
+            platform_fee = float(total_platform_fee)
             gross_revenue = float(total_revenue)
-            host_earnings = float(total_revenue - platform_fee)
+            host_earnings = float(total_host_earning)
             payout_status = 'no_request'
         
         # Attendance conversion rate
@@ -674,28 +905,37 @@ def get_host_deep_analytics(
                 total=Sum('seats')
             )['total'] or 0
             
-            # Revenue
-            event_revenue = event.payment_orders.filter(status='completed').aggregate(
-                total=Sum('amount')
-            )['total'] or Decimal('0.00')
+            # Revenue from PaymentOrder (source of truth)
+            # Use is_final=True to exclude retry attempts, status='paid' or 'completed'
+            from payments.models import PaymentOrder
+            
+            paid_orders = PaymentOrder.objects.filter(
+                event=event,
+                status__in=['paid', 'completed'],
+                is_final=True  # Only final successful payments, not retry attempts
+            )
+            
+            # Calculate revenue and platform fee from PaymentOrder immutable snapshots
+            event_revenue = Decimal('0.00')
+            event_platform_fee = Decimal('0.00')
+            
+            for order in paid_orders:
+                event_revenue += order.amount
+                if order.total_platform_fee:
+                    event_platform_fee += order.total_platform_fee
             
             total_lifetime_revenue += event_revenue
+            total_platform_fees += event_platform_fee
             
-            # Payment success rate
+            # Payment success rate (all attempts vs final successful)
             total_payments = event.payment_orders.count()
-            successful_payments = event.payment_orders.filter(status='completed').count()
+            successful_payments = paid_orders.count()
             payment_success_rate = (successful_payments / total_payments * 100) if total_payments > 0 else 0
             
             # Attendance check-in rate
             going_count = event.going_count
             checked_in_count = event.attendance_records.filter(status='checked_in').count()
             check_in_rate = (checked_in_count / going_count * 100) if going_count > 0 else 0
-            
-            # Platform fee (from dynamic configuration)
-            from core.models import PlatformFeeConfig
-            fee_decimal = PlatformFeeConfig.get_fee_decimal()
-            platform_fee = event_revenue * fee_decimal
-            total_platform_fees += platform_fee
             
             events_performance.append({
                 'event_id': event.id,
