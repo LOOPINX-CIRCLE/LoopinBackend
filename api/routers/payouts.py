@@ -316,8 +316,20 @@ def create_payout_request(
     bank_account: BankAccount,
     financials: Dict[str, Any]
 ) -> HostPayoutRequest:
-    """Create a payout request with financial snapshot"""
+    """
+    Create a payout request with financial snapshot.
+    
+    Links payment orders to payout for reconciliation (CFO requirement).
+    """
     with transaction.atomic():
+        # Get all paid payment orders for this event (for reconciliation)
+        from payments.models import PaymentOrder
+        paid_orders = PaymentOrder.objects.filter(
+            event=event,
+            status='paid',
+            is_final=True,  # Only final payments, not retry attempts
+        )
+        
         payout = HostPayoutRequest.objects.create(
             bank_account=bank_account,
             event=event,
@@ -334,9 +346,14 @@ def create_payout_request(
             final_earning=financials["final_earning"],
             status='pending',
         )
+        
+        # Link payment orders to payout for reconciliation
+        payout.payment_orders.set(paid_orders)
+        
         logger.info(
             f"Payout request created: {payout.id} for event {event.id}, "
-            f"earning: {payout.final_earning} INR"
+            f"earning: {payout.final_earning} INR, "
+            f"linked to {paid_orders.count()} payment orders"
         )
         return payout
 
