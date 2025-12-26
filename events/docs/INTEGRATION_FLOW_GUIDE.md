@@ -602,6 +602,7 @@ This flow explains how a normal user joins an event. Follow this order exactly.
 **When to Call:**
 - When user taps "Request to Join" button on event details screen
 - Only if user hasn't requested before
+- Works for both free and paid events
 
 **Screen:** Event Details Screen
 
@@ -615,17 +616,24 @@ This flow explains how a normal user joins an event. Follow this order exactly.
 
 **Response Structure (check Swagger for exact fields):**
 - Request object with status "pending"
+- For paid events: May include `reservation_key` (store this for payment flow)
 
 **What to Do:**
 1. Show success message: "Request submitted. Waiting for host approval."
 2. Update UI to show "Request Pending" status
 3. Disable "Request to Join" button
 4. Call GET /events/{event_id}/my-request to get updated status
+5. **For Paid Events:** Store `reservation_key` if provided (needed for payment later)
 
 **UI State:**
 - Before request: Show "Request to Join" button
 - After request: Show "Request Pending" status
 - Error: Show error message from backend
+
+**Important Notes:**
+- **Paid Events:** After host approves, user must complete payment before attendee record is created
+- **Capacity Reservation:** For paid events, backend creates temporary reservation when host approves
+- **Payment Required:** See `@payments/docs/PAYU_INTEGRATION_GUIDE.md` for payment flow after request approval
 
 #### Step 4: Check Request Status
 
@@ -647,27 +655,43 @@ This flow explains how a normal user joins an event. Follow this order exactly.
 - Request object with:
   - `status`: "pending" | "accepted" | "declined" | "cancelled"
   - `can_confirm`: bool (true if status is "accepted" and not yet confirmed)
+  - `reservation_key`: string (for paid events, if request accepted - store this for payment)
   - Other request details
 
 **What to Do:**
 1. If `status` is "pending": Show "Request Pending" message
-2. If `status` is "accepted" and `can_confirm` is true: Show "Confirm Attendance" button
+2. If `status` is "accepted":
+   - **For Free Events:** Show "Confirm Attendance" button if `can_confirm` is true
+   - **For Paid Events:** Show "Pay Now" button (navigate to payment flow - see `@payments/docs/PAYU_INTEGRATION_GUIDE.md`)
+   - Store `reservation_key` if provided (needed for payment)
 3. If `status` is "declined": Show "Request Declined" message with host message
 4. If `status` is "cancelled": Show "Request Cancelled" message
 
 **UI State:**
 - Pending: Show pending indicator
-- Accepted: Show "Confirm Attendance" button
+- Accepted (Free Event): Show "Confirm Attendance" button
+- Accepted (Paid Event): Show "Pay Now" button (navigate to payment flow)
 - Declined: Show declined message
 - Error (404): User hasn't requested (show "Request to Join" button)
 
-#### Step 5: Confirm Attendance
+**Important for Paid Events:**
+- After request is accepted, user must complete payment before confirming attendance
+- Payment flow: See `@payments/docs/PAYU_INTEGRATION_GUIDE.md`
+- After payment success, user can then confirm attendance
+
+#### Step 5: Confirm Attendance (Free Events) or Payment (Paid Events)
+
+**For FREE Events:**
+- **API:** POST /events/{event_id}/confirm-attendance
+- **When to Call:** When user taps "Confirm Attendance" button
+- **Only if:** Request status is "accepted" and `can_confirm` is true
+
+**For PAID Events:**
+- **Payment Required First:** User must complete payment before confirming attendance
+- **See Payment Guide:** Refer to `@payments/docs/PAYU_INTEGRATION_GUIDE.md` for complete payment flow
+- **Flow:** Request → Host Approves → Create Payment Order → Pay via PayU → Confirm Attendance
 
 **API:** POST /events/{event_id}/confirm-attendance
-
-**When to Call:**
-- When user taps "Confirm Attendance" button
-- Only if request status is "accepted" and `can_confirm` is true
 
 **Screen:** Event Details Screen
 
@@ -688,15 +712,22 @@ This flow explains how a normal user joins an event. Follow this order exactly.
   - `qr_code_data`: string (for QR code generation)
 
 **What to Do:**
-1. Show success message: "Attendance confirmed! Your ticket is ready."
-2. Navigate to ticket screen or show ticket details
-3. Generate QR code using `qr_code_data` field
-4. Update UI to show ticket instead of "Confirm Attendance" button
+1. **For Free Events:** Show success message: "Attendance confirmed! Your ticket is ready."
+2. **For Paid Events:** Backend verifies payment before confirming. If payment not found, returns error.
+3. Navigate to ticket screen or show ticket details
+4. Generate QR code using `qr_code_data` field
+5. Update UI to show ticket instead of "Confirm Attendance" button
 
 **UI State:**
-- Before confirmation: Show "Confirm Attendance" button
+- Before confirmation: Show "Confirm Attendance" button (free) or "Pay & Confirm" (paid)
 - After confirmation: Show ticket with QR code
 - Error: Show error message from backend
+  - For paid events: "Payment required" error means user must complete payment first
+
+**Important Notes:**
+- **Paid Events:** Backend enforces payment verification. User cannot confirm attendance without successful payment.
+- **Payment Status:** Backend checks for `PAYMENT_ORDER.status == "paid"` before allowing confirmation.
+- **Payment Flow:** See `@payments/docs/PAYU_INTEGRATION_GUIDE.md` for detailed payment integration guide.
 
 #### Step 6: View Ticket for Specific Event
 
@@ -723,6 +754,11 @@ This flow explains how a normal user joins an event. Follow this order exactly.
 3. Show ticket secret (for manual verification)
 4. Show event details
 5. Show payment status if paid event
+6. For paid events: Only accessible if payment is successful (`PAYMENT_ORDER.status == "paid"`)
+
+**Important:**
+- **Paid Events:** Backend blocks ticket access if payment is not completed
+- If 403/404 error: User may not have completed payment for paid event
 
 **UI State:**
 - Success: Display ticket
@@ -761,7 +797,89 @@ This flow explains how a normal user joins an event. Follow this order exactly.
 
 ---
 
-### 3.2 Host Flow (Creating & Managing Events)
+### 3.2 Paid Events - Payment Flow
+
+**Important:** This section describes the payment flow for paid events. For detailed payment API integration, see `@payments/docs/PAYU_INTEGRATION_GUIDE.md`.
+
+#### Overview
+
+Paid events require users to complete payment before confirming attendance. The flow is:
+
+1. User requests to join event (same as free events)
+2. Host approves request → Capacity reservation created
+3. **User must complete payment** → Payment order created, PayU redirect
+4. Payment success → User can confirm attendance
+5. Attendance confirmed → Ticket generated
+
+#### Key Differences from Free Events
+
+| Free Events | Paid Events |
+|-------------|-------------|
+| Request → Accept → Confirm Attendance | Request → Accept → **Payment** → Confirm Attendance |
+| No payment required | Payment required (`PAYMENT_ORDER.status == "paid"`) |
+| Ticket generated immediately | Ticket generated after payment success |
+| No capacity reservation | Capacity reservation holds seats during payment |
+
+#### Payment Flow Steps
+
+**Step 1: Host Approves Request**
+- Same as free events
+- Backend creates capacity reservation (seats held temporarily)
+- Response includes `reservation_key` (store this for payment)
+
+**Step 2: Create Payment Order**
+- **API:** `POST /payments/orders` (see `@payments/docs/PAYU_INTEGRATION_GUIDE.md`)
+- User taps "Pay Now" button
+- Frontend sends: `event_id`, `amount`, `reservation_key`
+- Backend creates payment order, returns PayU redirect payload
+
+**Step 3: Redirect to PayU**
+- Frontend builds HTML form with PayU payload
+- Auto-submits form to redirect user to PayU gateway
+- User completes payment on PayU
+
+**Step 4: Check Payment Status**
+- **API:** `GET /payments/orders/{order_id}` (see `@payments/docs/PAYU_INTEGRATION_GUIDE.md`)
+- Frontend polls order status after redirect
+- Status changes: `created` → `pending` → `paid` or `failed`
+
+**Step 5: Confirm Attendance (After Payment Success)**
+- Only if `PAYMENT_ORDER.status == "paid"`
+- **API:** `POST /events/{event_id}/confirm-attendance` (same as free events)
+- Backend verifies payment before confirming
+- Ticket generated after confirmation
+
+#### Payment Enforcement Rules
+
+Backend enforces these rules for paid events:
+
+1. **Cannot confirm attendance without payment:**
+   - `POST /events/{event_id}/confirm-attendance` returns error if payment not completed
+
+2. **Cannot view ticket without payment:**
+   - `GET /events/{event_id}/my-ticket` returns 403/404 if payment not completed
+
+3. **Cannot check-in without payment:**
+   - QR code validation checks payment status for paid events
+
+4. **Payment status is source of truth:**
+   - Only `PAYMENT_ORDER.status == "paid"` is accepted
+   - No other payment indicators are valid
+
+#### Complete Payment Integration Guide
+
+For complete payment API integration details, including:
+- Request/response schemas
+- PayU redirect implementation
+- Status polling strategies
+- Error handling
+- Testing scenarios
+
+**See:** `@payments/docs/PAYU_INTEGRATION_GUIDE.md`
+
+---
+
+### 3.3 Host Flow (Creating & Managing Events)
 
 This flow explains how a host creates and manages events. Only users who create events are hosts.
 
@@ -1278,6 +1396,7 @@ This flow explains how users respond to invitations they received.
 - Backend handles all logic (creating attendee, generating ticket, etc.)
 - Frontend just shows result and navigates accordingly
 - Do not create attendee records on frontend
+- **For Paid Events:** Backend verifies payment before accepting invitation. If `requires_payment` is true, user must complete payment flow (see `@payments/docs/PAYU_INTEGRATION_GUIDE.md`) before attendee record is created.
 
 ---
 
