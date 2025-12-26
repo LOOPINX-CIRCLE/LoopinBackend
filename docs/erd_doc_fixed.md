@@ -247,8 +247,10 @@ erDiagram
     EVENT_ATTENDEE {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT user_id FK "Attending user"
+        BIGINT user_id FK "Attending user (UserProfile)"
         BIGINT request_id FK "Originating request (nullable)"
+        BIGINT invite_id FK "Originating invite (nullable)"
+        BIGINT payment_order_id FK "Payment order that fulfilled this (nullable)"
         UUID uuid "Public unique identifier"
         STRING ticket_type "standard|vip|early_bird|premium|general|group|couple|family|student|senior_citizen|disabled|other"
         INT seats "Number of seats"
@@ -277,6 +279,7 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
         BIGINT user_id FK "Attending user profile (USER_PROFILE)"
+        BIGINT payment_order_id FK "Payment order that fulfilled this (nullable)"
         STRING status "going|not_going|maybe|checked_in|cancelled"
         STRING payment_status "unpaid|paid|refunded"
         STRING ticket_secret "Unique ticket code"
@@ -302,19 +305,26 @@ erDiagram
     PAYMENT_ORDER {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT user_id FK "Paying user"
+        BIGINT user_id FK "Paying user (UserProfile)"
         UUID uuid "Public unique identifier"
         STRING order_reference "Order reference ID"
         STRING order_id "Unique order ID"
-        DECIMAL amount "Order amount (min 0.01)"
+        DECIMAL amount "Total amount (base + platform fee)"
         STRING currency "INR|USD|EUR|GBP"
+        INT seats_count "Number of seats/tickets (default: 1)"
+        DECIMAL base_price_per_seat "Base ticket price at payment time (immutable)"
+        DECIMAL platform_fee_percentage "Platform fee % at payment time (immutable)"
+        DECIMAL platform_fee_amount "Total platform fee at payment time (immutable)"
+        DECIMAL host_earning_per_seat "Host earning per seat at payment time (immutable)"
         STRING status "created|pending|paid|completed|failed|cancelled|refunded|unpaid"
-        STRING payment_provider "razorpay|stripe|paypal|paytm|phonepe|gpay|cash|bank_transfer"
+        STRING payment_provider "razorpay|stripe|paypal|paytm|phonepe|gpay|payu|cash|bank_transfer"
         STRING provider_payment_id "Provider payment ID"
         JSONB provider_response "Provider response"
         STRING payment_method "Payment method"
         STRING transaction_id "Transaction ID"
         TEXT failure_reason "Failure details"
+        BIGINT parent_order_id FK "Parent order if retry attempt (nullable)"
+        BOOLEAN is_final "True if final successful payment (not retry)"
         DECIMAL refund_amount "Refund amount"
         TEXT refund_reason "Refund reason"
         DATETIME refunded_at "Refund time"
@@ -840,11 +850,11 @@ User selects seats → Reservation created → Payment → Attendee record
 ## **4. PAYMENT MODULE** 💳
 
 ### **4.1 PAYMENT_ORDER** 💰
-**Purpose:** Central payment order management
+**Purpose:** Central payment order management with financial snapshot and retry tracking
 
 **Payment Providers:**
 - `razorpay`, `stripe`, `paypal`
-- `paytm`, `phonepe`, `gpay`
+- `paytm`, `phonepe`, `gpay`, `payu`
 - `cash`, `bank_transfer`
 
 **Status Flow:**
@@ -857,16 +867,34 @@ created → pending → paid/completed OR failed/cancelled
 **Key Fields:**
 - `order_reference` - Human-readable ID
 - `order_id` - Unique system ID
-- `amount` - Decimal(10,2), min 0.01
+- `amount` - Total amount (base price + platform fee)
 - `currency` - INR/USD/EUR/GBP
+- `seats_count` - Number of seats/tickets (default: 1)
+- `base_price_per_seat` - Base ticket price at payment time (immutable snapshot)
+- `platform_fee_percentage` - Platform fee % at payment time (immutable snapshot)
+- `platform_fee_amount` - Total platform fee at payment time (immutable snapshot)
+- `host_earning_per_seat` - Host earning per seat at payment time (immutable snapshot)
+- `parent_order` - Parent order if this is a retry attempt (nullable)
+- `is_final` - True if this is the final successful payment (not a retry)
 - `provider_response` - Complete provider data
 - `refund_amount` - Partial/full refunds
 
+**Financial Snapshot (CFO Requirement):**
+- All financial fields (`base_price_per_seat`, `platform_fee_percentage`, `platform_fee_amount`, `host_earning_per_seat`) are captured at payment time
+- These values are immutable and never change retroactively
+- Enables accurate financial reconciliation even if pricing rules change later
+
+**Retry Tracking (CTO Requirement):**
+- `parent_order` links retry attempts to original order
+- `is_final` flag distinguishes final successful payment from retry attempts
+- Only final payments (`is_final=True`) are used for reconciliation and payouts
+
 **Business Rules:**
 - `order_reference` auto-generated if not provided
-- Expires after 24 hours if unpaid
+- Expires after 10 minutes (configurable) if unpaid
 - Refunds tracked with reason
-- Platform fees calculated separately
+- Financial snapshot captured when payment succeeds
+- Previous orders marked as non-final when new payment succeeds
 
 ---
 
@@ -950,7 +978,7 @@ created → pending → paid/completed OR failed/cancelled
 ---
 
 ### **4.5.2 HOST_PAYOUT_REQUEST** 💰
-**Purpose:** Immutable financial snapshot for host payout requests from event earnings
+**Purpose:** Immutable financial snapshot for host payout requests from event earnings with payment reconciliation
 
 **Key Concept:** This model captures a complete, immutable snapshot of event and financial data at the time a payout is requested. This ensures accurate audit trails even if event details change later.
 
@@ -970,8 +998,9 @@ created → pending → paid/completed OR failed/cancelled
     {"name": "Jane Smith", "contact": "jane@example.com"}
   ]
   ```
-- `platform_fee_amount` - Total platform fee (10% of base × tickets sold)
+- `platform_fee_amount` - Total platform fee (platform fee % of base × tickets sold)
 - `final_earning` - Host earnings (base ticket fare × tickets sold)
+- `payment_orders` - Many-to-Many relationship to PaymentOrder records that funded this payout (for reconciliation)
 
 **Business Logic - Platform Fee Model:**
 
@@ -1252,12 +1281,20 @@ final_price = PlatformFeeConfig.calculate_final_price(
 ### **8.4 Event Attendance Flow (Paid)**
 ```
 1. User requests to join → `EVENT_REQUEST` created
-2. Host approves → `CAPACITY_RESERVATION` created
-3. User initiates payment → `PAYMENT_ORDER` created
-4. Payment processing → `PAYMENT_TRANSACTION` logged
-5. Payment success → `EVENT_ATTENDEE` created + `TICKET_SECRET` generated
-6. User receives notification
-7. At event → Check-in using ticket secret
+2. Host approves → `CAPACITY_RESERVATION` created (seats reserved)
+3. User initiates payment → `PAYMENT_ORDER` created (status='created')
+4. Backend generates PayU hash → Returns redirect payload
+5. Frontend redirects to PayU → User completes payment
+6. PayU redirects to success/failure URL → Backend verifies hash
+7. PayU sends webhook → Backend finalizes payment (idempotent)
+8. Payment success → Financial snapshot captured (immutable):
+   - base_price_per_seat, platform_fee_percentage, platform_fee_amount, host_earning_per_seat
+9. Payment success → `PAYMENT_ORDER.status='paid'`, `is_final=True`
+10. Payment success → `EVENT_ATTENDEE` created with `payment_order` link
+11. Payment success → `ATTENDANCE_RECORD` created with `payment_order` link + `TICKET_SECRET` generated
+12. Payment success → `CAPACITY_RESERVATION` consumed, event `going_count` updated
+13. User receives notification
+14. At event → Check-in using ticket secret (payment verified)
 ```
 
 ### **8.5 Event Check-in Flow**
