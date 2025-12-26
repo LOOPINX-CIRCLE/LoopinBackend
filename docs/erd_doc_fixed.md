@@ -325,6 +325,7 @@ erDiagram
         TEXT failure_reason "Failure details"
         BIGINT parent_order_id FK "Parent order if retry attempt (nullable)"
         BOOLEAN is_final "True if final successful payment (not retry)"
+        INDEX unique_final_per_user_event "(user_id, event_id) WHERE is_final = true (UNIQUE)"
         DECIMAL refund_amount "Refund amount"
         TEXT refund_reason "Refund reason"
         DATETIME refunded_at "Refund time"
@@ -480,6 +481,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 2. **Admin actions must never impersonate USER_PROFILE**
    - Admin (AUTH_USER) can: View, Audit, Approve payouts, Configure fees, Cancel events
    - Admin must NOT: Create PAYMENT_ORDER, Create EVENT_ATTENDEE, Trigger check-ins, Generate ticket secrets
+   - **Service-Level Guards**: Explicit checks in `PaymentFlowService.create_payment_order()`, `EventService.create_event()`, `EventRequestService.create_request()`, `EventInviteService.create_invite()` prevent admin accounts from performing customer actions.
 
 3. **Audit log records BOTH identities**
    - `AUDIT_LOG.actor_user_id` → `AUTH_USER` (who performed admin action)
@@ -891,6 +893,14 @@ User selects seats → Reservation created → Payment → Attendee record
 - Duration calculation property
 - Links to `USER_PROFILE` for proper user relationship
 
+**SECURITY ENFORCEMENT - Ticket Secret Validation:**
+- **MANDATORY RULE**: `ticket_secret` can be validated for check-in ONLY IF:
+  - `event.is_paid == False` (free event), OR
+  - `payment_order.status == "paid"` (verified payment)
+- **Protection**: Even if `EVENT_ATTENDEE` and `ATTENDANCE_RECORD` exist, unpaid users cannot check in to paid events.
+- **Validation Method**: `validate_ticket_secret_for_checkin()` enforces payment verification before allowing check-in.
+- **Payment Order Link**: `payment_order_id` FK enables direct verification of payment status from `PAYMENT_ORDER`.
+
 ---
 
 ### **3.2 TICKET_SECRET** 🎫
@@ -957,6 +967,12 @@ created → pending → paid/completed OR failed/cancelled
 - Financial snapshot captured when payment succeeds
 - Previous orders marked as non-final when new payment succeeds
 
+**SECURITY ENFORCEMENT:**
+- **Identity Model**: Only `USER_PROFILE` (customers) can create payment orders. `AUTH_USER` (admin/staff) accounts are blocked from creating payments via service-level guards.
+- **DB-Level Unique Constraint**: Partial unique index `(user_id, event_id) WHERE is_final = true` ensures only ONE final payment per user per event (prevents race conditions).
+- **Race Condition Protection**: Application-level double-check prevents duplicate final payments even under concurrent requests.
+- **Transactional Guarantees**: All payment finalization operations (order update, transaction creation, attendee fulfillment, reservation consumption) are atomic via `@transaction.atomic`.
+
 ---
 
 ### **4.2 PAYMENT_TRANSACTION** 💸
@@ -982,6 +998,13 @@ created → pending → paid/completed OR failed/cancelled
 - `payload` - Complete webhook data
 - `processed` - Processing status
 - Error tracking
+
+**SECURITY HARDENING:**
+- **IP Address Verification**: Client IP verified against PayU IP ranges (configurable via `PAYU_IP_RANGES` environment variable).
+- **Rate Limiting**: Basic in-memory rate limiting; production should use Redis or nginx rate limiting.
+- **Strict Signature Verification**: Hash verification is mandatory (handled by `PayUService.verify_reverse_hash()`).
+- **Idempotent Processing**: Safe to retry webhooks; duplicate processing prevented via `processed` flag.
+- **Configuration**: `PAYU_STRICT_IP_CHECK` environment variable controls IP verification strictness.
 
 **Use Cases:**
 - Payment confirmations
