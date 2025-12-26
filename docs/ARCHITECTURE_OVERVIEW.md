@@ -268,7 +268,7 @@ app_name/
 | **users** | User authentication & profiles | UserProfile, PhoneOTP, EventInterest | `/api/auth/*` |
 | **events** | Event management | Event, Venue, EventRequest, EventInvite | `/api/events/*` |
 | **attendances** | Check-in/check-out | AttendanceRecord, TicketSecret | `/api/attendances/*` |
-| **payments** | Payment processing | PaymentOrder, PaymentTransaction | `/api/payments/*` |
+| **payments** | Payment processing (PayU integration) | PaymentOrder, PaymentTransaction, PaymentWebhook | `/api/payments/*` |
 | **audit** | System auditing | AuditLog, AuditLogSummary | Internal |
 | **notifications** | User communication | Notification, NotificationTemplate | `/api/notifications/*` |
 
