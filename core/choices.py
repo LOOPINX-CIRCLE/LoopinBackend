@@ -121,6 +121,7 @@ PAYMENT_PROVIDER_CHOICES = [
     ('paytm', 'Paytm'),
     ('phonepe', 'PhonePe'),
     ('gpay', 'Google Pay'),
+    ('payu', 'PayU'),
     ('cash', 'Cash'),
     ('bank_transfer', 'Bank Transfer'),
 ]
