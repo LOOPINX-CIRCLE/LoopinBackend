@@ -8,20 +8,23 @@ This document provides a comprehensive, self-explanatory Entity Relationship Dia
 %%{init: {
   'theme': 'base',
   'themeVariables': {
-    /* Canvas */
+    /* Canvas - all uniform white */
     'background': '#ffffff',
     'mainBkg': '#ffffff',
     'secondBkg': '#ffffff',
     'tertiaryBkg': '#ffffff',
 
-    /* Tables – keep VERY light */
-    'primaryColor': '#f8fafc',
+    /* Table rows - ALL same light color (NO striping) */
+    'primaryColor': '#ffffff',
     'primaryBorderColor': '#1e3a8a',
     'primaryTextColor': '#0f172a',
 
-    /* Disable dark alternates */
-    'secondaryColor': '#f8fafc',
-    'tertiaryColor': '#f8fafc',
+    /* Force all alternate row colors to white (prevent striping) */
+    'secondaryColor': '#ffffff',
+    'tertiaryColor': '#ffffff',
+    'primaryTextColor': '#0f172a',
+    'secondaryTextColor': '#0f172a',
+    'tertiaryTextColor': '#0f172a',
 
     /* Lines & text */
     'lineColor': '#334155',
