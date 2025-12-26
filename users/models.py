@@ -518,6 +518,14 @@ class HostPayoutRequest(TimeStampedModel):
         help_text="Internal notes about this payout request"
     )
 
+    # Payment linkage for reconciliation (CFO requirement)
+    payment_orders = models.ManyToManyField(
+        'payments.PaymentOrder',
+        related_name='payout_requests',
+        blank=True,
+        help_text="Payment orders that funded this payout (for reconciliation)"
+    )
+    
     class Meta:
         verbose_name = "Host Payout Request"
         verbose_name_plural = "Host Payout Requests"
