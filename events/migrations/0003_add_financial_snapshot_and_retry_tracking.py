@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('events', '0002_alter_capacityreservation_user_alter_event_host_and_more'),
-        ('payments', '0002_alter_paymentorder_user'),
+        ('payments', '0003_add_financial_snapshot_and_retry_tracking'),
         ('users', '0003_userprofile_waitlist_promote_at_and_more'),
     ]
 
