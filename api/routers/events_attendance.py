@@ -202,6 +202,18 @@ def get_event_with_checks(event_id: int, user: User) -> Event:
 
 
 @sync_to_async
+def get_user_profile(user: User) -> UserProfile:
+    """Get user profile for authenticated user"""
+    try:
+        return user.profile
+    except UserProfile.DoesNotExist:
+        raise ValidationError(
+            "User profile not found. Please complete your profile.",
+            code="PROFILE_NOT_FOUND"
+        )
+
+
+@sync_to_async
 def check_host_permission(user: User, event: Event) -> bool:
     """Check if user is the event host"""
     return event.host.user == user
@@ -762,25 +774,40 @@ async def confirm_attendance_free_event(
     user: User = Depends(get_current_user),
 ):
     """
-    Confirm attendance for a free event after request acceptance.
+    Confirm attendance for an event after request acceptance.
+    
+    Payment Enforcement:
+    - For FREE events: Confirms attendance and generates ticket immediately
+    - For PAID events: Requires successful payment before confirmation
     
     Flow:
     1. User's request must be accepted
-    2. User confirms attendance with number of seats
-    3. System generates ticket with unique secret code
-    4. User can view ticket anytime
+    2. For paid events: Payment must be completed (PAYMENT_ORDER.status == 'paid')
+    3. User confirms attendance with number of seats
+    4. System generates ticket with unique secret code
+    5. User can view ticket anytime
     
     - **Auth**: Required
     - **Returns**: Generated ticket with secret code
     """
     event = await get_event_with_checks(event_id, user)
+    user_profile = await get_user_profile(user)
     
     @sync_to_async
     @transaction.atomic
     def confirm_attendance():
+        from events.services import require_payment_for_event
+        
+        # Payment enforcement: For paid events, verify payment before confirmation
+        require_payment_for_event(
+            event,
+            user_profile,
+            action_name="confirm attendance for this event"
+        )
+        
         # Check if request exists and is accepted
         try:
-            request = EventRequest.objects.get(event=event, requester=user, status='accepted')
+            request = EventRequest.objects.get(event=event, requester=user_profile, status='accepted')
         except EventRequest.DoesNotExist:
             raise ValidationError(
                 "You need to have an accepted request before confirming attendance. Please wait for the host to accept your request.",
@@ -788,7 +815,7 @@ async def confirm_attendance_free_event(
             )
         
         # Check if already confirmed
-        existing_attendee = EventAttendee.objects.filter(event=event, user=user, status='going').first()
+        existing_attendee = EventAttendee.objects.filter(event=event, user=user_profile, status='going').first()
         if existing_attendee:
             raise ValidationError(
                 "You have already confirmed your attendance for this event.",
@@ -811,24 +838,29 @@ async def confirm_attendance_free_event(
                     }
                 )
         
+        # Determine payment status
+        is_paid = event.is_paid
+        payment_status = 'paid' if is_paid else 'unpaid'
+        price_paid = event.ticket_price if is_paid else Decimal('0.00')
+        
         # Create attendee record
         attendee = EventAttendee.objects.create(
             event=event,
-            user=user,
+            user=user_profile,
             request=request,
             seats=confirmation.seats,
             status='going',
-            is_paid=False,
-            price_paid=Decimal('0.00'),
+            is_paid=is_paid,
+            price_paid=price_paid,
         )
         
         # Create attendance record with ticket
         ticket_secret = generate_ticket_secret()
         attendance_record = AttendanceRecord.objects.create(
             event=event,
-            user=user,
+            user=user_profile,
             status='going',
-            payment_status='unpaid',  # Free event
+            payment_status=payment_status,
             ticket_secret=ticket_secret,
             seats=confirmation.seats,
         )
@@ -837,7 +869,7 @@ async def confirm_attendance_free_event(
         event.going_count = EventAttendee.objects.filter(event=event, status='going').count()
         event.save(update_fields=['going_count'])
         
-        logger.info(f"Attendance confirmed for user {user.id} at event {event_id}, ticket: {ticket_secret}")
+        logger.info(f"Attendance confirmed for user {user_profile.id} at event {event_id}, ticket: {ticket_secret}, paid: {is_paid}")
         
         return attendance_record
     
@@ -1100,16 +1132,11 @@ async def respond_to_invitation(
       - If "going" for paid event: Creates attendee, requires payment
       - Sends notification to host
     """
+    user_profile = await get_user_profile(user)
+    
     @sync_to_async
     @transaction.atomic
     def process_response():
-        from users.models import UserProfile
-        # Get UserProfile for the user
-        try:
-            user_profile = user.profile
-        except UserProfile.DoesNotExist:
-            user_profile, _ = UserProfile.objects.get_or_create(user=user)
-        
         try:
             invite = EventInvite.objects.select_related("event", "invited_user", "event__host").get(
                 id=invite_id,
@@ -1134,6 +1161,15 @@ async def respond_to_invitation(
         event = invite.event
         
         if response_data.response == 'going':
+            from events.services import require_payment_for_event
+            
+            # Payment enforcement: For paid events, verify payment before accepting invite
+            require_payment_for_event(
+                event,
+                user_profile,
+                action_name="accept invitation for this event"
+            )
+            
             invite.status = 'accepted'
             invite.save(update_fields=['status', 'updated_at'])
             
@@ -1152,44 +1188,48 @@ async def respond_to_invitation(
                         }
                     )
             
+            # Determine payment status
+            is_paid = event.is_paid
+            payment_status = 'paid' if is_paid else 'unpaid'
+            price_paid = event.ticket_price if is_paid else Decimal('0.00')
+            
             # Create attendee record
             attendee, created = EventAttendee.objects.get_or_create(
                 event=event,
-                user=user,
+                user=user_profile,
                 defaults={
                     'status': 'going',
                     'seats': 1,
-                    'is_paid': event.is_paid,
-                    'price_paid': Decimal('0.00') if not event.is_paid else event.ticket_price,
+                    'is_paid': is_paid,
+                    'price_paid': price_paid,
                 }
             )
             
-            # For free events, generate ticket immediately
-            if not event.is_paid:
-                ticket_secret = generate_ticket_secret()
-                AttendanceRecord.objects.get_or_create(
-                    event=event,
-                    user=user,
-                    defaults={
-                        'status': 'going',
-                        'payment_status': 'unpaid',
-                        'ticket_secret': ticket_secret,
-                        'seats': 1,
-                    }
-                )
+            if not created:
+                attendee.status = 'going'
+                attendee.is_paid = is_paid
+                attendee.price_paid = price_paid
+                attendee.save(update_fields=['status', 'is_paid', 'price_paid', 'updated_at'])
+            
+            # Generate ticket (for both free and paid events, since payment is verified)
+            ticket_secret = generate_ticket_secret()
+            AttendanceRecord.objects.get_or_create(
+                event=event,
+                user=user_profile,
+                defaults={
+                    'status': 'going',
+                    'payment_status': payment_status,
+                    'ticket_secret': ticket_secret,
+                    'seats': 1,
+                }
+            )
             
             # Update event going_count
             event.going_count = EventAttendee.objects.filter(event=event, status='going').count()
             event.save(update_fields=['going_count'])
             
-            # Notify host - get UserProfile for user
-            try:
-                user_profile = user.profile
-                user_display_name = user_profile.name or user_profile.phone_number or user.username
-            except AttributeError:
-                from users.models import UserProfile
-                user_profile, _ = UserProfile.objects.get_or_create(user=user)
-                user_display_name = user_profile.name or user_profile.phone_number or user.username
+            # Notify host
+            user_display_name = user_profile.name or user_profile.phone_number or user.username
             
             send_notification(
                 recipient=event.host,
@@ -1255,21 +1295,43 @@ async def get_my_tickets(
     """
     Get all tickets for the current user.
     
+    Payment Enforcement:
+    - Only returns tickets for paid events if payment is verified
+    - Free event tickets are always returned
+    
     - **Auth**: Required
     - **Query Params**: Optional event_id filter
     - **Returns**: List of user's tickets with secret codes
     """
+    user_profile = await get_user_profile(user)
+    
     @sync_to_async
     def get_tickets():
+        from events.services import verify_payment_for_event
+        
         queryset = AttendanceRecord.objects.select_related("event", "user").filter(
-            user=user,
+            user=user_profile,
             status='going'
         ).order_by("-created_at")
         
         if event_id:
             queryset = queryset.filter(event_id=event_id)
         
-        return list(queryset)
+        tickets = list(queryset)
+        
+        # Payment enforcement: Filter out unpaid tickets for paid events
+        valid_tickets = []
+        for ticket in tickets:
+            if ticket.event.is_paid:
+                # For paid events, verify payment before returning ticket
+                if verify_payment_for_event(ticket.event, user_profile):
+                    valid_tickets.append(ticket)
+                # Skip unpaid tickets for paid events
+            else:
+                # Free events: always include
+                valid_tickets.append(ticket)
+        
+        return valid_tickets
     
     tickets = await get_tickets()
     
@@ -1300,19 +1362,42 @@ async def get_my_ticket_for_event(
     """
     Get ticket for a specific event.
     
+    Payment Enforcement:
+    - For paid events, verifies payment before returning ticket
+    - Returns 404 if payment is not verified for paid events
+    
     - **Auth**: Required
     - **Returns**: Ticket details with secret code and QR code data
     """
     event = await get_event_with_checks(event_id, user)
+    user_profile = await get_user_profile(user)
     
     @sync_to_async
     def get_ticket():
+        from events.services import require_payment_for_event
+        
+        # Payment enforcement: For paid events, verify payment before returning ticket
+        require_payment_for_event(
+            event,
+            user_profile,
+            action_name="view ticket for this event"
+        )
+        
         try:
-            return AttendanceRecord.objects.select_related("event").get(
+            ticket = AttendanceRecord.objects.select_related("event").get(
                 event=event,
-                user=user,
+                user=user_profile,
                 status='going'
             )
+            
+            # Double-check payment status matches
+            if event.is_paid and ticket.payment_status != 'paid':
+                raise ValidationError(
+                    "Payment verification failed. Cannot access ticket without confirmed payment.",
+                    code="PAYMENT_NOT_VERIFIED"
+                )
+            
+            return ticket
         except AttendanceRecord.DoesNotExist:
             raise NotFoundError(
                 "You don't have a ticket for this event. Please confirm your attendance first.",
