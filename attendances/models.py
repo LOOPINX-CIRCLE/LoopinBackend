@@ -13,13 +13,27 @@ import string
 
 
 class AttendanceRecord(TimeStampedModel):
-    """Model for tracking event attendance with payment and check-in"""
+    """
+    Model for tracking event attendance with payment and check-in.
+    
+    Financial Linkage (CFO):
+    - Direct link to PaymentOrder enables reconciliation
+    - Clear audit trail: payment → attendance → check-in
+    """
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="attendance_records")
     user = models.ForeignKey(
         'users.UserProfile', 
         on_delete=models.CASCADE,
         related_name="attendance_records",
         help_text="User profile attending the event"
+    )
+    payment_order = models.ForeignKey(
+        'payments.PaymentOrder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_records",
+        help_text="Payment order that fulfilled this attendance (for paid events)"
     )
     status = models.CharField(
         max_length=20,
@@ -44,6 +58,7 @@ class AttendanceRecord(TimeStampedModel):
             models.Index(fields=["payment_status"]),
             models.Index(fields=["event", "user"]),
             models.Index(fields=["checked_in_at"]),
+            models.Index(fields=["payment_order"]),  # For tracing payment → attendance
         ]
 
     def __str__(self):
@@ -59,8 +74,30 @@ class AttendanceRecord(TimeStampedModel):
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
 
     def check_in(self):
-        """Mark user as checked in"""
+        """
+        Mark user as checked in.
+        
+        Payment enforcement:
+        - For paid events, verifies payment before allowing check-in.
+        """
         if self.status == 'going':
+            # Payment enforcement: For paid events, verify payment before check-in
+            if self.event.is_paid:
+                from events.services import require_payment_for_event
+                require_payment_for_event(
+                    self.event,
+                    self.user,
+                    action_name="check in to this event"
+                )
+                
+                # Double-check payment_status matches
+                if self.payment_status != 'paid':
+                    from core.exceptions import ValidationError
+                    raise ValidationError(
+                        "Payment verification failed. Cannot check in without confirmed payment.",
+                        code="PAYMENT_NOT_VERIFIED"
+                    )
+            
             from django.utils import timezone
             self.checked_in_at = timezone.now()
             self.status = 'checked_in'
