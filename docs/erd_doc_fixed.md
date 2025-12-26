@@ -5,7 +5,33 @@
 This document provides a comprehensive, self-explanatory Entity Relationship Diagram (ERD) of the Loopin backend database. All tables, fields, relationships, and business logic are documented to reflect the current implementation.
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd','primaryTextColor':'#1565c0','primaryBorderColor':'#1976d2','lineColor':'#42a5f5','secondaryColor':'#f3e5f5','tertiaryColor':'#e8f5e9','background':'#ffffff','mainBkg':'#ffffff','secondBkg':'#f5f5f5','tertiaryBkg':'#ffffff'}}}%%
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    /* Canvas */
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'secondBkg': '#f9fafb',
+    'tertiaryBkg': '#ffffff',
+
+    /* Tables */
+    'primaryColor': '#e3f2fd',
+    'primaryBorderColor': '#1e3a8a',
+    'primaryTextColor': '#0f172a',
+
+    /* Secondary accents */
+    'secondaryColor': '#ede9fe',
+    'tertiaryColor': '#ecfeff',
+
+    /* Lines & text */
+    'lineColor': '#334155',
+    'textColor': '#0f172a',
+
+    /* Typography */
+    'fontFamily': 'Inter, Arial, sans-serif',
+    'fontSize': '14px'
+  }
+}}%%
 erDiagram
     %% ==================== RELATIONSHIPS ====================
     
@@ -419,7 +445,16 @@ erDiagram
         DATETIME updated_at "Last update"
     }
 
-    %% Apply styling
+    %% Apply domain-level color discipline (subtle fills, strong borders)
+    classDef userTables fill:#e0f2fe,stroke:#1e3a8a,color:#0f172a
+    classDef eventTables fill:#ecfeff,stroke:#155e75,color:#0f172a
+    classDef paymentTables fill:#fff7ed,stroke:#9a3412,color:#0f172a
+    classDef attendanceTables fill:#fefce8,stroke:#a16207,color:#0f172a
+    classDef auditTables fill:#f3e8ff,stroke:#6b21a8,color:#0f172a
+    classDef notificationTables fill:#ffe4e6,stroke:#9f1239,color:#020617
+    classDef coreTables fill:#f1f5f9,stroke:#334155,color:#020617
+
+    %% Apply domain grouping
     class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
     class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION,HOST_PAYOUT_REQUEST eventTables
     class ATTENDANCE_RECORD,TICKET_SECRET attendanceTables
