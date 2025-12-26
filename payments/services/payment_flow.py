@@ -55,9 +55,14 @@ class PaymentFlowService:
         event: Event,
         amount: Decimal,
         reservation_key: Optional[str] = None,
+        auth_user=None,  # For identity enforcement check
     ) -> PaymentOrder:
         """
         Create a payment order.
+        
+        SECURITY ENFORCEMENT (IDENTITY MODEL):
+        - AUTH_USER (admin) must NEVER create payment orders
+        - Only USER_PROFILE (customers) can create payment orders
         
         Business Rules:
         - Only create if capacity is reserved (reservation_key provided)
@@ -71,6 +76,7 @@ class PaymentFlowService:
             event: Event for which payment is being made
             amount: Payment amount
             reservation_key: Optional capacity reservation key
+            auth_user: Optional AUTH_USER for identity enforcement check
             
         Returns:
             PaymentOrder: Created payment order
@@ -78,7 +84,15 @@ class PaymentFlowService:
         Raises:
             ValidationError: If reservation is invalid or missing
             BusinessLogicError: If order creation fails
+            AuthorizationError: If AUTH_USER attempts to create payment order
         """
+        # SECURITY: Identity enforcement - AUTH_USER must never create payment orders
+        if auth_user and (auth_user.is_staff or auth_user.is_superuser):
+            from core.exceptions import AuthorizationError
+            raise AuthorizationError(
+                "Admin accounts (AUTH_USER) cannot create payment orders. Only customers (USER_PROFILE) can make payments.",
+                code="ADMIN_CANNOT_PAY"
+            )
         # Validate reservation if provided
         if reservation_key:
             try:
@@ -215,12 +229,32 @@ class PaymentFlowService:
             )
             host_earning_per_seat = base_price_per_seat  # Host earns full base price
             
+            # SECURITY: Ensure only ONE payment_order per (user, event) can be final
             # Mark previous orders for this user+event as non-final (retry tracking)
             PaymentOrder.objects.filter(
                 event=order.event,
                 user=order.user,
                 is_final=True
             ).exclude(id=order.id).update(is_final=False)
+            
+            # SECURITY: Double-check no other final order exists (race condition protection)
+            existing_final = PaymentOrder.objects.filter(
+                event=order.event,
+                user=order.user,
+                is_final=True
+            ).exclude(id=order.id).first()
+            
+            if existing_final:
+                logger.error(
+                    f"Race condition detected: Final order {existing_final.order_id} exists "
+                    f"for user {order.user.id}, event {order.event.id}. "
+                    f"Preventing duplicate finalization."
+                )
+                raise BusinessLogicError(
+                    "A final payment order already exists for this user and event. "
+                    "Cannot finalize multiple orders.",
+                    code="DUPLICATE_FINAL_ORDER"
+                )
             
             # Update order status with financial snapshot
             order.status = 'paid'
