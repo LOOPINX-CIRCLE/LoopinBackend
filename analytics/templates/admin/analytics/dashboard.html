@@ -1,0 +1,672 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Analytics Dashboard | {{ block.super }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .dashboard-container {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #417690;
+    }
+    
+    .dashboard-header h1 {
+        margin: 0;
+        color: #417690;
+        font-size: 28px;
+    }
+    
+    .period-selector {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .period-selector label {
+        font-weight: bold;
+        color: #417690;
+    }
+    
+    .period-selector select {
+        padding: 8px 12px;
+        border: 1px solid #417690;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .metric-card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .metric-card h3 {
+        margin: 0 0 15px 0;
+        color: #417690;
+        font-size: 18px;
+        border-bottom: 2px solid #417690;
+        padding-bottom: 10px;
+    }
+    
+    .metric-value {
+        font-size: 36px;
+        font-weight: bold;
+        color: #417690;
+        margin: 10px 0;
+    }
+    
+    .metric-label {
+        color: #666;
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+    
+    .metric-subvalue {
+        font-size: 18px;
+        color: #333;
+        margin-top: 10px;
+    }
+    
+    .chart-container {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .chart-container h3 {
+        margin: 0 0 20px 0;
+        color: #417690;
+        font-size: 20px;
+        border-bottom: 2px solid #417690;
+        padding-bottom: 10px;
+    }
+    
+    .chart-wrapper {
+        position: relative;
+        height: 400px;
+        margin-top: 20px;
+    }
+    
+    .events-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    .events-table th,
+    .events-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .events-table th {
+        background-color: #417690;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .events-table tr:hover {
+        background-color: #f5f5f5;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    
+    .status-pending { background-color: #ffc107; color: #000; }
+    .status-approved { background-color: #28a745; color: #fff; }
+    .status-processing { background-color: #17a2b8; color: #fff; }
+    .status-completed { background-color: #28a745; color: #fff; }
+    .status-rejected { background-color: #dc3545; color: #fff; }
+    
+    .section {
+        margin-bottom: 40px;
+    }
+    
+    .section-title {
+        font-size: 24px;
+        color: #417690;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 3px solid #417690;
+    }
+    
+    .filter-buttons {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .filter-btn {
+        padding: 8px 16px;
+        border: 1px solid #417690;
+        background: white;
+        color: #417690;
+        border-radius: 4px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .filter-btn.active {
+        background: #417690;
+        color: white;
+    }
+    
+    .filter-btn:hover {
+        background: #417690;
+        color: white;
+    }
+    
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+        font-style: italic;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>📊 Analytics Dashboard</h1>
+        <div class="period-selector">
+            <label for="period-select">Time Period:</label>
+            <select id="period-select" onchange="updatePeriod(this.value)">
+                <option value="weekly" {% if current_period == 'weekly' %}selected{% endif %}>Weekly</option>
+                <option value="monthly" {% if current_period == 'monthly' %}selected{% endif %}>Monthly</option>
+                <option value="yearly" {% if current_period == 'yearly' %}selected{% endif %}>Yearly</option>
+            </select>
+        </div>
+    </div>
+    
+    <!-- User Lifecycle Metrics -->
+    <div class="section">
+        <h2 class="section-title">👥 User Lifecycle Metrics</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Registered Users</h3>
+                <div class="metric-value">{{ user_metrics.total_users }}</div>
+                <div class="metric-label">Cumulative total</div>
+            </div>
+            <div class="metric-card">
+                <h3>Active Users</h3>
+                <div class="metric-value">{{ user_metrics.active_users }}</div>
+                <div class="metric-label">Approved & Active</div>
+            </div>
+            <div class="metric-card">
+                <h3>Waitlisted Users</h3>
+                <div class="metric-value">{{ user_metrics.waitlisted_users }}</div>
+                <div class="metric-label">Pending Approval</div>
+            </div>
+            <div class="metric-card">
+                <h3>Approval Rate</h3>
+                <div class="metric-value">{{ user_metrics.approval_rate|floatformat:2 }}%</div>
+                <div class="metric-label">Active ÷ Total</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h3>User Registration Trend</h3>
+            <div class="chart-wrapper">
+                <canvas id="user-trend-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Waitlist Metrics -->
+    <div class="section">
+        <h2 class="section-title">⏳ Waitlist Analytics (3.5-4 Hour Promotion Window)</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Waitlisted</h3>
+                <div class="metric-value">{{ waitlist_metrics.total_waitlisted }}</div>
+                <div class="metric-label">Users pending automatic promotion</div>
+            </div>
+            <div class="metric-card">
+                <h3>Approval Rate</h3>
+                <div class="metric-value">{{ waitlist_metrics.approval_rate|floatformat:2 }}%</div>
+                <div class="metric-label">Overall conversion</div>
+            </div>
+            {% if waitlist_metrics.waitlist_promotion %}
+            <div class="metric-card">
+                <h3>Ready to Promote</h3>
+                <div class="metric-value">{{ waitlist_metrics.waitlist_promotion.users_scheduled_for_promotion }}</div>
+                <div class="metric-label">Scheduled promotion time reached</div>
+            </div>
+            <div class="metric-card">
+                <h3>Promoting Soon</h3>
+                <div class="metric-value">{{ waitlist_metrics.waitlist_promotion.users_promoting_soon }}</div>
+                <div class="metric-label">Promoting in next hour</div>
+            </div>
+            <div class="metric-card">
+                <h3>Avg Wait Duration</h3>
+                <div class="metric-value">{{ waitlist_metrics.waitlist_promotion.avg_expected_duration_hours|floatformat:2 }}h</div>
+                <div class="metric-label">Expected: {{ waitlist_metrics.waitlist_promotion.promotion_window_min_hours }}-{{ waitlist_metrics.waitlist_promotion.promotion_window_max_hours }}h</div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="chart-container">
+            <h3>Waitlist Trend</h3>
+            <div class="chart-wrapper">
+                <canvas id="waitlist-trend-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Host Metrics -->
+    <div class="section">
+        <h2 class="section-title">🏠 Host Metrics</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Hosts</h3>
+                <div class="metric-value">{{ host_metrics.total_hosts }}</div>
+                <div class="metric-label">Users who created events</div>
+            </div>
+            <div class="metric-card">
+                <h3>Approval-to-Host Conversion</h3>
+                <div class="metric-value">{{ host_metrics.conversion_rate|floatformat:2 }}%</div>
+                <div class="metric-label">Active users → Hosts</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h3>New Hosts Over Time</h3>
+            <div class="chart-wrapper">
+                <canvas id="hosts-trend-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Live Events -->
+    <div class="section">
+        <h2 class="section-title">🎉 Live Events (Running Now)</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Running Events</h3>
+                <div class="metric-value">{{ live_events.running_events }}</div>
+                <div class="metric-label">Currently active</div>
+            </div>
+        </div>
+        
+        {% if live_events.events %}
+        <div class="chart-container">
+            <h3>Live Events Details</h3>
+            <table class="events-table">
+                <thead>
+                    <tr>
+                        <th>Event Title</th>
+                        <th>Host</th>
+                        <th>Venue</th>
+                        <th>Attendees</th>
+                        <th>Revenue (₹)</th>
+                        <th>Start Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in live_events.events %}
+                    <tr>
+                        <td><strong>{{ event.title }}</strong></td>
+                        <td>{{ event.host }}</td>
+                        <td>{{ event.venue }}</td>
+                        <td>{{ event.attendees }}</td>
+                        <td>₹{{ event.revenue|floatformat:2 }}</td>
+                        <td>{{ event.start_time|date:"M d, Y H:i" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">No live events at the moment</div>
+        {% endif %}
+        
+        <div class="chart-container">
+            <h3>Active Events Trend</h3>
+            <div class="chart-wrapper">
+                <canvas id="live-events-trend-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Completed Events -->
+    <div class="section">
+        <h2 class="section-title">✅ Completed Events Analytics</h2>
+        <div class="filter-buttons">
+            <a href="?period={{ current_period }}" class="filter-btn {% if not paid_only and not free_only %}active{% endif %}">All Events</a>
+            <a href="?period={{ current_period }}&paid_only=true" class="filter-btn {% if paid_only %}active{% endif %}">Paid Only</a>
+            <a href="?period={{ current_period }}&free_only=true" class="filter-btn {% if free_only %}active{% endif %}">Free Only</a>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total Completed</h3>
+                <div class="metric-value">{{ completed_events.completed_events|length }}</div>
+                <div class="metric-label">Events finished</div>
+            </div>
+        </div>
+        
+        {% if completed_events.completed_events %}
+        <div class="chart-container">
+            <h3>Completed Events Details</h3>
+            <table class="events-table">
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Host</th>
+                        <th>Date</th>
+                        <th>Venue</th>
+                        <th>Seats Filled</th>
+                        <th>Revenue (₹)</th>
+                        <th>Host Earnings (₹)</th>
+                        <th>Platform Fee (₹)</th>
+                        <th>Payout Status</th>
+                        <th>Attendance Rate</th>
+                        <th>No-Show Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in completed_events.completed_events %}
+                    <tr>
+                        <td><strong>{{ event.title }}</strong></td>
+                        <td>{{ event.host }}</td>
+                        <td>{{ event.event_date|date:"M d, Y" }}</td>
+                        <td>{{ event.venue }}</td>
+                        <td>{{ event.seats_filled }}</td>
+                        <td>₹{{ event.revenue|floatformat:2 }}</td>
+                        <td>₹{{ event.host_earning|floatformat:2 }}</td>
+                        <td>₹{{ event.platform_fee|floatformat:2 }}</td>
+                        <td>
+                            <span class="status-badge status-{{ event.payout_status }}">
+                                {{ event.payout_status|title }}
+                            </span>
+                        </td>
+                        <td>{{ event.conversion_rate_display }}%</td>
+                        <td>{{ event.no_show_rate_display }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">No completed events found</div>
+        {% endif %}
+    </div>
+    
+    <!-- Host Deep Analytics -->
+    <div class="section">
+        <h2 class="section-title">🔍 Host-Level Deep Analytics</h2>
+        {% if host_analytics.hosts %}
+            {% for host in host_analytics.hosts %}
+            <div class="chart-container">
+                <h3>{{ host.name }} - Performance Overview</h3>
+                <div class="metrics-grid" style="margin-top: 20px;">
+                    <div class="metric-card">
+                        <h4>Total Events</h4>
+                        <div class="metric-value">{{ host.events_hosted }}</div>
+                        <div class="metric-subvalue">
+                            Draft: {{ host.breakdown.draft }} | 
+                            Published: {{ host.breakdown.published }} | 
+                            Completed: {{ host.breakdown.completed }}
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Lifetime Revenue</h4>
+                        <div class="metric-value">₹{{ host.lifetime_revenue|floatformat:2 }}</div>
+                        <div class="metric-subvalue">Total revenue generated</div>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Lifetime Earnings</h4>
+                        <div class="metric-value">₹{{ host.lifetime_earnings|floatformat:2 }}</div>
+                        <div class="metric-subvalue">From payout requests</div>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Platform Fees</h4>
+                        <div class="metric-value">₹{{ host.platform_fees|floatformat:2 }}</div>
+                        <div class="metric-subvalue">Generated from this host</div>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Engagement Score</h4>
+                        <div class="metric-value">{{ host.engagement_score }}</div>
+                        <div class="metric-subvalue">Composite metric (0-100)</div>
+                    </div>
+                </div>
+                
+                {% if host.events_performance %}
+                <h4 style="margin-top: 30px; margin-bottom: 15px;">Event Performance Details</h4>
+                <table class="events-table">
+                    <thead>
+                        <tr>
+                            <th>Event</th>
+                            <th>Status</th>
+                            <th>Seats Sold</th>
+                            <th>Revenue (₹)</th>
+                            <th>Payment Success Rate</th>
+                            <th>Check-In Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for perf in host.events_performance %}
+                        <tr>
+                            <td>{{ perf.title }}</td>
+                            <td>{{ perf.status|title }}</td>
+                            <td>{{ perf.seats_sold }}</td>
+                            <td>₹{{ perf.revenue|floatformat:2 }}</td>
+                            <td>{{ perf.payment_success_rate }}%</td>
+                            <td>{{ perf.check_in_rate }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">No host analytics available</div>
+        {% endif %}
+    </div>
+    
+    <!-- Future Expansion Placeholders -->
+    <div class="section">
+        <h2 class="section-title">🚀 Future Analytics (Coming Soon)</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Event Category Performance</h3>
+                <div class="empty-state" style="padding: 20px;">Placeholder for category analytics</div>
+            </div>
+            <div class="metric-card">
+                <h3>Revenue Forecasting</h3>
+                <div class="empty-state" style="padding: 20px;">Placeholder for predictive analytics</div>
+            </div>
+            <div class="metric-card">
+                <h3>User Churn Prediction</h3>
+                <div class="empty-state" style="padding: 20px;">Placeholder for churn analysis</div>
+            </div>
+            <div class="metric-card">
+                <h3>Host Ranking Leaderboard</h3>
+                <div class="empty-state" style="padding: 20px;">Placeholder for leaderboard</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+// Chart data from Django template (JSON serialized)
+const userTrendData = {{ user_trend_json|safe }};
+const waitlistTrendData = {{ waitlist_trend_json|safe }};
+const hostsTrendData = {{ hosts_trend_json|safe }};
+const liveEventsTrendData = {{ live_events_trend_json|safe }};
+
+// User Trend Chart
+const userTrendCtx = document.getElementById('user-trend-chart').getContext('2d');
+new Chart(userTrendCtx, {
+    type: 'line',
+    data: {
+        labels: userTrendData.map(d => d.period),
+        datasets: [
+            {
+                label: 'Total Registered',
+                data: userTrendData.map(d => d.total),
+                borderColor: 'rgb(65, 118, 144)',
+                backgroundColor: 'rgba(65, 118, 144, 0.1)',
+                tension: 0.4
+            },
+            {
+                label: 'Active Users',
+                data: userTrendData.map(d => d.active),
+                borderColor: 'rgb(40, 167, 69)',
+                backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                tension: 0.4
+            },
+            {
+                label: 'Waitlisted',
+                data: userTrendData.map(d => d.waitlisted),
+                borderColor: 'rgb(255, 193, 7)',
+                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                tension: 0.4
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' },
+            title: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Waitlist Trend Chart
+const waitlistTrendCtx = document.getElementById('waitlist-trend-chart').getContext('2d');
+new Chart(waitlistTrendCtx, {
+    type: 'bar',
+    data: {
+        labels: waitlistTrendData.map(d => d.period),
+        datasets: [{
+            label: 'New Waitlisted Users',
+            data: waitlistTrendData.map(d => d.count),
+            backgroundColor: 'rgba(255, 193, 7, 0.6)',
+            borderColor: 'rgb(255, 193, 7)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            title: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Hosts Trend Chart
+const hostsTrendCtx = document.getElementById('hosts-trend-chart').getContext('2d');
+new Chart(hostsTrendCtx, {
+    type: 'line',
+    data: {
+        labels: hostsTrendData.map(d => d.period),
+        datasets: [{
+            label: 'New Hosts',
+            data: hostsTrendData.map(d => d.count),
+            borderColor: 'rgb(65, 118, 144)',
+            backgroundColor: 'rgba(65, 118, 144, 0.1)',
+            tension: 0.4,
+            fill: true
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            title: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Live Events Trend Chart
+const liveEventsTrendCtx = document.getElementById('live-events-trend-chart').getContext('2d');
+new Chart(liveEventsTrendCtx, {
+    type: 'bar',
+    data: {
+        labels: liveEventsTrendData.map(d => d.period),
+        datasets: [{
+            label: 'Active Events',
+            data: liveEventsTrendData.map(d => d.count),
+            backgroundColor: 'rgba(40, 167, 69, 0.6)',
+            borderColor: 'rgb(40, 167, 69)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            title: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Period selector handler
+function updatePeriod(period) {
+    const url = new URL(window.location);
+    url.searchParams.set('period', period);
+    window.location.href = url.toString();
+}
+</script>
+{% endblock %}
+

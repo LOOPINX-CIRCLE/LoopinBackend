@@ -7,7 +7,8 @@ from .base import *
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0').split(',')
+# Allow all hosts in development for easier testing
+ALLOWED_HOSTS = ['*']
 
 # Development-specific apps
 INSTALLED_APPS += [
@@ -55,8 +56,9 @@ LOGGING = {
     },
 }
 
-# CORS settings for development
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+# CORS settings for development - Use specific origins from config
+# CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')
 
 # Email backend for development
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

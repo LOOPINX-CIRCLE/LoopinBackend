@@ -4,7 +4,10 @@ FROM python:3.12-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=loopin_backend.settings
+# Default to production settings - can be overridden via container environment
+# Override example: docker run -e DJANGO_SETTINGS_MODULE=loopin_backend.settings.dev ...
+ENV DJANGO_SETTINGS_MODULE=loopin_backend.settings.prod
+ENV PYTHONPATH=/app
 
 # Set work directory
 WORKDIR /app
@@ -16,7 +19,14 @@ RUN apt-get update \
         build-essential \
         libpq-dev \
         netcat-traditional \
+        curl \
+        git \
+        vim \
+        htop \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip to latest version
+RUN pip install --upgrade pip
 
 # Install Python dependencies
 COPY requirements.txt /app/
@@ -25,8 +35,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . /app/
 
+# Create necessary directories
+RUN mkdir -p /app/staticfiles /app/media /app/logs
+
+# Set proper permissions and ensure entrypoint is executable
+RUN chmod -R 755 /app && chmod +x /app/entrypoint.sh
+
 # Expose port
 EXPOSE 8000
 
-# Default command (can be overridden in docker-compose.yml)
-CMD ["gunicorn", "loopin_backend.asgi:application", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# Runtime startup - run through entrypoint to apply migrations then launch ASGI server
+CMD ["/app/entrypoint.sh", "python3", "-m", "uvicorn", "loopin_backend.asgi:application", "--host", "0.0.0.0", "--port", "8000"]

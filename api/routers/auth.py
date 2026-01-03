@@ -37,7 +37,7 @@ class UserRegister(BaseModel):
     last_name: Optional[str] = None
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "username": "johndoe",
                 "email": "john@example.com",
