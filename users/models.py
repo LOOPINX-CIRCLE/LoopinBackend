@@ -106,7 +106,6 @@ class EventInterest(TimeStampedModel):
     """Model for event interests/categories"""
     name = models.CharField(max_length=100, unique=True, help_text="Name of the event interest")
     slug = models.SlugField(max_length=100, unique=True, blank=True, help_text="URL-friendly slug")
-    description = models.TextField(blank=True, help_text="Description of the event interest")
     is_active = models.BooleanField(default=True, help_text="Whether this interest is active")
     
     def __str__(self):
