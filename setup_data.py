@@ -23,33 +23,32 @@ def create_superuser():
 def load_event_interests():
     """Load default event interests"""
     interests = [
-        {"name": "Music", "description": "Concerts, festivals, and musical events"},
-        {"name": "Sports", "description": "Sports events, tournaments, and competitions"},
-        {"name": "Food & Drink", "description": "Food festivals, wine tastings, and culinary events"},
-        {"name": "Technology", "description": "Tech meetups, conferences, and workshops"},
-        {"name": "Art & Culture", "description": "Art exhibitions, cultural events, and performances"},
-        {"name": "Travel", "description": "Travel meetups, adventure trips, and exploration events"},
-        {"name": "Fitness", "description": "Fitness classes, marathons, and wellness events"},
-        {"name": "Business", "description": "Networking events, business conferences, and seminars"},
-        {"name": "Education", "description": "Educational workshops, courses, and learning events"},
-        {"name": "Entertainment", "description": "Movies, shows, and entertainment events"},
-        {"name": "Gaming", "description": "Gaming tournaments, LAN parties, and gaming events"},
-        {"name": "Photography", "description": "Photography workshops, photo walks, and exhibitions"},
-        {"name": "Dance", "description": "Dance classes, performances, and dance events"},
-        {"name": "Comedy", "description": "Comedy shows, stand-up performances, and humor events"},
-        {"name": "Fashion", "description": "Fashion shows, styling events, and fashion meetups"},
-        {"name": "Health & Wellness", "description": "Wellness retreats, meditation, and health events"},
-        {"name": "Volunteering", "description": "Community service, charity events, and volunteer work"},
-        {"name": "Outdoor", "description": "Hiking, camping, and outdoor adventure events"},
-        {"name": "Networking", "description": "Professional networking and social meetups"},
-        {"name": "Workshop", "description": "Hands-on workshops and skill-building events"}
+        "Music",
+        "Sports",
+        "Food & Drink",
+        "Technology",
+        "Art & Culture",
+        "Travel",
+        "Fitness",
+        "Business",
+        "Education",
+        "Entertainment",
+        "Gaming",
+        "Photography",
+        "Dance",
+        "Comedy",
+        "Fashion",
+        "Health & Wellness",
+        "Volunteering",
+        "Outdoor",
+        "Networking",
+        "Workshop"
     ]
 
     created_count = 0
-    for interest_data in interests:
+    for interest_name in interests:
         interest, created = EventInterest.objects.get_or_create(
-            name=interest_data["name"],
-            defaults={"description": interest_data["description"]}
+            name=interest_name
         )
         if created:
             created_count += 1
