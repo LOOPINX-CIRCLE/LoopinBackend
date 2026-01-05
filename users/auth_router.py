@@ -710,7 +710,6 @@ async def get_user_profile(token: str = Depends(security)):
             EventInterestResponse(
                 id=interest.id,
                 name=interest.name,
-                description=interest.description,
                 is_active=interest.is_active,
                 created_at=interest.created_at.isoformat(),
                 updated_at=interest.updated_at.isoformat()
@@ -768,8 +767,7 @@ async def get_event_interests(token: str = Depends(security)):
         interests_data = [
             {
                 "id": interest.id,
-                "name": interest.name,
-                "description": interest.description
+                "name": interest.name
             }
             for interest in event_interests
         ]
