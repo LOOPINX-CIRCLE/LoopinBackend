@@ -93,26 +93,14 @@ def safe_import(module_name: str, description: str):
         yield None
 
 
-# Import FastAPI application
+# Import routers directly to include in main app (instead of mounting)
+# This ensures all routes appear in the OpenAPI schema
 try:
-    from api.main import app as fastapi_app
-    logger.info("✅ FastAPI application imported successfully")
+    from api.routers import users, hosts, events, events_attendance, payouts, payments
+    logger.info("✅ API routers imported successfully")
 except Exception as e:
-    logger.critical(f"❌ Failed to import FastAPI application: {e}", exc_info=True)
+    logger.critical(f"❌ Failed to import API routers: {e}", exc_info=True)
     sys.exit(1)
-
-# Import phone auth router after Django is set up
-with safe_import('users.auth_router', 'Phone Authentication router') as auth_router_module:
-    if auth_router_module:
-        try:
-            router = getattr(auth_router_module, 'router', None)
-            if router:
-                fastapi_app.include_router(router, tags=["Phone Authentication"])
-                logger.info("✅ Phone Authentication router registered successfully")
-            else:
-                logger.warning("⚠️  Phone Authentication router module found but 'router' attribute missing")
-        except Exception as e:
-            logger.error(f"❌ Failed to register Phone Authentication router: {e}", exc_info=True)
 
 # Get Django WSGI application for admin interface
 try:
@@ -219,6 +207,20 @@ app = FastAPI(
     redoc_url="/api/redoc" if IS_DEVELOPMENT else None,  # Disable ReDoc in production
 )
 
+# Add CORS middleware (from fastapi_app)
+try:
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    logger.info("✅ CORS middleware added")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to add CORS middleware: {e}")
+
 # Add compression middleware for production
 if IS_PRODUCTION:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -270,11 +272,102 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Mount the fastapi_app at /api for proper path handling
-# Note: We only mount, not append routes, to avoid duplicate operation IDs in OpenAPI spec
-app.mount("/api", fastapi_app)
-logger.info("✅ FastAPI application mounted at /api")
-logger.info(f"✅ Included {len(fastapi_app.routes)} routes from fastapi_app into main app")
+# Add exception handlers from fastapi_app
+try:
+    from core.exceptions import (
+        LoopinBaseException,
+        ValidationError,
+        AuthenticationError,
+        AuthorizationError,
+        NotFoundError,
+        ConflictError,
+        RateLimitError,
+        ExternalServiceError,
+        DatabaseError,
+        BusinessLogicError,
+    )
+    
+    @app.exception_handler(LoopinBaseException)
+    async def loopin_exception_handler(request: Request, exc: LoopinBaseException):
+        """Handle custom Loopin exceptions and convert to HTTP responses"""
+        status_mapping = {
+            ValidationError: status.HTTP_400_BAD_REQUEST,
+            AuthenticationError: status.HTTP_401_UNAUTHORIZED,
+            AuthorizationError: status.HTTP_403_FORBIDDEN,
+            NotFoundError: status.HTTP_404_NOT_FOUND,
+            ConflictError: status.HTTP_409_CONFLICT,
+            RateLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
+            ExternalServiceError: status.HTTP_502_BAD_GATEWAY,
+            DatabaseError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            BusinessLogicError: status.HTTP_400_BAD_REQUEST,
+        }
+        status_code = status_mapping.get(type(exc), status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": False,
+                "error": exc.message,
+                "error_code": exc.code or type(exc).__name__,
+                "details": exc.details,
+            }
+        )
+    logger.info("✅ Loopin exception handlers added")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to add Loopin exception handlers: {e}")
+
+
+# Include all API routers with /api prefix
+# This ensures all routes appear in the OpenAPI schema
+# Note: Routers that already have prefixes (like /events, /payouts) will be 
+# concatenated with /api, so /events becomes /api/events
+try:
+    app.include_router(users.router, prefix="/api/users", tags=["users"])
+    logger.info("✅ Users router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include users router: {e}")
+
+try:
+    app.include_router(hosts.router, prefix="/api/hosts", tags=["Host Leads"])
+    logger.info("✅ Host Leads router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include hosts router: {e}")
+
+try:
+    app.include_router(events.router, prefix="/api", tags=["events"])
+    logger.info("✅ Events router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include events router: {e}")
+
+try:
+    app.include_router(events_attendance.router, prefix="/api", tags=["events"])
+    logger.info("✅ Events Attendance router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include events attendance router: {e}")
+
+try:
+    app.include_router(payouts.router, prefix="/api", tags=["payouts"])
+    logger.info("✅ Payouts router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include payouts router: {e}")
+
+try:
+    app.include_router(payments.router, prefix="/api", tags=["payments"])
+    logger.info("✅ Payments router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include payments router: {e}")
+
+# Import phone auth router after Django is set up
+with safe_import('users.auth_router', 'Phone Authentication router') as auth_router_module:
+    if auth_router_module:
+        try:
+            router = getattr(auth_router_module, 'router', None)
+            if router:
+                app.include_router(router, prefix="/api", tags=["Phone Authentication"])
+                logger.info("✅ Phone Authentication router registered successfully")
+            else:
+                logger.warning("⚠️  Phone Authentication router module found but 'router' attribute missing")
+        except Exception as e:
+            logger.error(f"❌ Failed to register Phone Authentication router: {e}", exc_info=True)
 
 # Mount Django WSGI app at /django for admin interface
 app.mount("/django", WSGIMiddleware(django_wsgi_app))
@@ -300,6 +393,17 @@ if hasattr(settings, 'MEDIA_ROOT'):
 else:
     logger.warning("⚠️  MEDIA_ROOT not configured in Django settings")
 
+
+# API root endpoint
+@app.get("/api", operation_id="api_root")
+@app.get("/api/", operation_id="api_root_slash")
+async def api_root():
+    """API root endpoint."""
+    return {
+        "message": "Welcome to Loopin Backend API",
+        "version": "2.0.0",
+        "docs": "/api/docs" if IS_DEVELOPMENT else None,
+    }
 
 # Root endpoint with comprehensive information
 @app.get("/", operation_id="root_asgi")
