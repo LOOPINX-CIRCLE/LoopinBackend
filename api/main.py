@@ -143,7 +143,7 @@ print("📋 All routers loaded successfully!")
 print("=" * 60)
 
 # Root endpoint
-@app.get("/")
+@app.get("/", operation_id="root_api")
 async def root():
     """Root endpoint for API."""
     return {
@@ -153,7 +153,7 @@ async def root():
     }
 
 # Health check endpoint
-@app.get("/health")
+@app.get("/health", operation_id="health_check_api")
 async def health_check():
     """Health check endpoint."""
     return {
