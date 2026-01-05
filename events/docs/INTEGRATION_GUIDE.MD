@@ -286,11 +286,10 @@ This flow is used when a user wants to host/create a new event.
   - `data`: Array of event interest objects, each containing:
     - `id`: Integer, unique interest ID (use this in event_interest_ids when creating events)
     - `name`: String, interest name (e.g., "Music & Concerts", "Sports & Fitness")
-    - `description`: String, description of the interest category
 
 **What to Do Next:**
 - Display list of event interests as selectable options
-- Show interest name and description
+- Show interest name
 - Allow user to select multiple interests (for event creation)
 - Store interest IDs to use when creating events
 - Show interests as chips/tags in the UI

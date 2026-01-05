@@ -274,7 +274,7 @@ def send_notification(
 # User Request Endpoints
 # ============================================================================
 
-@router.get("/my-requests", response_model=List[RequestStatusResponse])
+@router.get("/my-requests", response_model=List[RequestStatusResponse], operation_id="get_my_event_requests")
 async def get_my_requests(
     status_filter: Optional[str] = Query(None, pattern="^(pending|accepted|declined|cancelled)$"),
     user: User = Depends(get_current_user),
@@ -321,7 +321,7 @@ async def get_my_requests(
     ]
 
 
-@router.get("/{event_id}/my-request", response_model=RequestStatusResponse)
+@router.get("/{event_id}/my-request", response_model=RequestStatusResponse, operation_id="get_my_event_request_for_event")
 async def get_my_request_for_event(
     event_id: int,
     user: User = Depends(get_current_user),
@@ -373,7 +373,7 @@ async def get_my_request_for_event(
 # Host Request Management Endpoints
 # ============================================================================
 
-@router.get("/{event_id}/requests/{request_id}/profile", response_model=UserProfileSummaryResponse)
+@router.get("/{event_id}/requests/{request_id}/profile", response_model=UserProfileSummaryResponse, operation_id="get_event_requester_profile")
 async def get_requester_profile(
     event_id: int,
     request_id: int,
@@ -447,7 +447,7 @@ async def get_requester_profile(
     return UserProfileSummaryResponse(**profile_data)
 
 
-@router.put("/{event_id}/requests/{request_id}/accept", response_model=RequestStatusResponse)
+@router.put("/{event_id}/requests/{request_id}/accept", response_model=RequestStatusResponse, operation_id="accept_event_request_by_id")
 async def accept_event_request(
     event_id: int,
     request_id: int,
@@ -547,7 +547,7 @@ async def accept_event_request(
     )
 
 
-@router.put("/{event_id}/requests/{request_id}/decline", response_model=RequestStatusResponse)
+@router.put("/{event_id}/requests/{request_id}/decline", response_model=RequestStatusResponse, operation_id="decline_event_request_by_id")
 async def decline_event_request(
     event_id: int,
     request_id: int,
@@ -626,7 +626,7 @@ async def decline_event_request(
     )
 
 
-@router.post("/{event_id}/requests/bulk-action", response_model=BulkRequestActionResponse)
+@router.post("/{event_id}/requests/bulk-action", response_model=BulkRequestActionResponse, operation_id="bulk_action_event_requests")
 async def bulk_accept_decline_requests(
     event_id: int,
     action_data: BulkRequestActionRequest,
@@ -767,7 +767,7 @@ async def bulk_accept_decline_requests(
 # Attendance Confirmation Endpoints (Free Events)
 # ============================================================================
 
-@router.post("/{event_id}/confirm-attendance", response_model=TicketResponse)
+@router.post("/{event_id}/confirm-attendance", response_model=TicketResponse, operation_id="confirm_event_attendance")
 async def confirm_attendance_free_event(
     event_id: int,
     confirmation: AttendanceConfirmationRequest,
