@@ -986,53 +986,43 @@ Content-Type: application/json
   "data": [
     {
       "id": 1,
-      "name": "Music & Concerts",
-      "description": "Live music, concerts, and musical events"
+      "name": "Music & Concerts"
     },
     {
       "id": 2,
-      "name": "Sports & Fitness",
-      "description": "Sports events, fitness activities, and competitions"
+      "name": "Sports & Fitness"
     },
     {
       "id": 3,
-      "name": "Food & Dining",
-      "description": "Food festivals, cooking classes, and dining experiences"
+      "name": "Food & Dining"
     },
     {
       "id": 4,
-      "name": "Art & Culture",
-      "description": "Art exhibitions, cultural events, and museum visits"
+      "name": "Art & Culture"
     },
     {
       "id": 5,
-      "name": "Technology",
-      "description": "Tech meetups, conferences, and innovation events"
+      "name": "Technology"
     },
     {
       "id": 6,
-      "name": "Travel & Adventure",
-      "description": "Travel experiences, adventure activities, and exploration"
+      "name": "Travel & Adventure"
     },
     {
       "id": 7,
-      "name": "Business & Networking",
-      "description": "Professional networking, business events, and conferences"
+      "name": "Business & Networking"
     },
     {
       "id": 8,
-      "name": "Health & Wellness",
-      "description": "Wellness retreats, health seminars, and mindfulness events"
+      "name": "Health & Wellness"
     },
     {
       "id": 9,
-      "name": "Education & Learning",
-      "description": "Workshops, seminars, and educational events"
+      "name": "Education & Learning"
     },
     {
       "id": 10,
-      "name": "Entertainment",
-      "description": "Movies, shows, gaming, and entertainment events"
+      "name": "Entertainment"
     }
   ]
 }
@@ -1228,7 +1218,7 @@ class PhoneOTP(models.Model):
 class EventInterest(models.Model):
     """Model for event interests/categories"""
     name = models.CharField(max_length=100, unique=True, help_text="Name of the event interest")
-    description = models.TextField(blank=True, help_text="Description of the event interest")
+    slug = models.SlugField(max_length=100, unique=True, blank=True, help_text="URL-friendly slug")
     is_active = models.BooleanField(default=True, help_text="Whether this interest is active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

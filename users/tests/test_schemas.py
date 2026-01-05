@@ -490,7 +490,6 @@ class TestEventInterestResponse(TestCase):
         response = EventInterestResponse(
             id=1,
             name="Music",
-            description="Music events",
             is_active=True,
             created_at="2025-01-01T00:00:00",
             updated_at="2025-01-01T00:00:00"
