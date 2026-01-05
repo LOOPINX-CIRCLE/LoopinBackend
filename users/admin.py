@@ -141,15 +141,15 @@ class UserProfileAdmin(admin.ModelAdmin):
 @admin.register(EventInterest)
 class EventInterestAdmin(admin.ModelAdmin):
     """Admin for Event Interest management"""
-    list_display = ('name', 'description', 'users_count', 'is_active', 'created_at')
+    list_display = ('name', 'users_count', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at', 'updated_at')
-    search_fields = ('name', 'description')
+    search_fields = ('name',)
     readonly_fields = ('created_at', 'updated_at', 'users_count')
     actions = ['activate_interests', 'deactivate_interests']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'description'),
+            'fields': ('name',),
             'description': 'Event interest details'
         }),
         ('Statistics', {
