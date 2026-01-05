@@ -405,6 +405,17 @@ async def api_root():
         "docs": "/api/docs" if IS_DEVELOPMENT else None,
     }
 
+# API health check endpoint (for Docker health checks and monitoring)
+@app.get("/api/health", operation_id="api_health_check")
+@app.get("/api/health/", operation_id="api_health_check_slash")
+async def api_health_check():
+    """API health check endpoint for Docker and monitoring."""
+    return {
+        "status": "healthy",
+        "service": "loopin-backend",
+        "version": "2.0.0"
+    }
+
 # Root endpoint with comprehensive information
 @app.get("/", operation_id="root_asgi")
 async def root(request: Request):
