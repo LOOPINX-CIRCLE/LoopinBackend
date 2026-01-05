@@ -149,11 +149,16 @@ class PlatformFeeConfigAdmin(admin.ModelAdmin):
     
     def has_add_permission(self, request):
         """Prevent adding multiple configurations (singleton pattern)"""
-        count = PlatformFeeConfig.objects.count()
-        if count >= 1:
-            return False
-        # Only superusers can add (if no config exists)
-        return request.user.is_superuser and super().has_add_permission(request)
+        try:
+            count = PlatformFeeConfig.objects.count()
+            if count >= 1:
+                return False
+            # Only superusers can add (if no config exists)
+            return request.user.is_superuser and super().has_add_permission(request)
+        except Exception:
+            # Handle case where table doesn't exist yet (before migrations)
+            # Allow add permission during initial setup
+            return request.user.is_superuser and super().has_add_permission(request)
     
     def has_change_permission(self, request, obj=None):
         """Only superusers can modify platform fee configuration"""
