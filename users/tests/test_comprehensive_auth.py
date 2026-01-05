@@ -119,7 +119,6 @@ class EventInterestModelTests(TestCase):
         """Test creating event interest"""
         interest = EventInterest.objects.create(
             name="Music",
-            description="Music events",
             is_active=True
         )
         self.assertEqual(str(interest), "Music")
@@ -810,8 +809,8 @@ class GetEventInterestsAPITests(TestCase):
     
     def test_get_event_interests_success(self):
         """Test successful retrieval of event interests"""
-        EventInterest.objects.create(name="Music", description="Music events", is_active=True)
-        EventInterest.objects.create(name="Sports", description="Sports events", is_active=True)
+        EventInterest.objects.create(name="Music", is_active=True)
+        EventInterest.objects.create(name="Sports", is_active=True)
         EventInterest.objects.create(name="Inactive", is_active=False)
         
         response = client.get("/auth/event-interests")
