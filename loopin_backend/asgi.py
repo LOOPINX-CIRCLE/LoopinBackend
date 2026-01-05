@@ -270,12 +270,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Include all routers from fastapi_app into main app
-# This ensures all endpoints appear in the OpenAPI spec
-for route in fastapi_app.routes:
-    app.routes.append(route)
-
-# Also mount the app for proper path handling
+# Mount the fastapi_app at /api for proper path handling
+# Note: We only mount, not append routes, to avoid duplicate operation IDs in OpenAPI spec
 app.mount("/api", fastapi_app)
 logger.info("✅ FastAPI application mounted at /api")
 logger.info(f"✅ Included {len(fastapi_app.routes)} routes from fastapi_app into main app")
@@ -306,7 +302,7 @@ else:
 
 
 # Root endpoint with comprehensive information
-@app.get("/")
+@app.get("/", operation_id="root_asgi")
 async def root(request: Request):
     """
     Root endpoint providing information about available services.
@@ -331,7 +327,7 @@ async def root(request: Request):
 
 
 # Health check endpoint
-@app.get("/health")
+@app.get("/health", operation_id="health_check_asgi")
 @app.get("/health/")
 async def health_check():
     """
