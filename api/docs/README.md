@@ -23,11 +23,13 @@ The API module provides FastAPI-based endpoints for mobile applications, offerin
 - **Purpose**: Phone-based authentication with OTP
 - **Endpoints**: Signup, OTP verification, profile completion
 - **Status**: Primary authentication method
+- **File Uploads**: Profile completion accepts `multipart/form-data` with image files (uploaded to Supabase Storage)
 
 ### Events Router (`api/routers/events.py`)
 - **Purpose**: Event management and discovery
 - **Endpoints**: List, create, update, delete events; venue management
 - **Features**: Filtering, pagination, search, location-based queries
+- **File Uploads**: Event creation accepts `multipart/form-data` with cover image files (uploaded to Supabase Storage)
 
 ### Host Leads Router (`api/routers/hosts.py`)
 - **Purpose**: Host lead submission and management
@@ -95,11 +97,15 @@ For detailed SDK generation and integration instructions, see the **[SDK Integra
 1. **Send OTP**: `POST /api/auth/signup` with phone number
 2. **Verify OTP**: `POST /api/auth/verify-otp` with phone number and OTP code
 3. **Complete Profile**: `POST /api/auth/complete-profile` (if `needs_profile_completion: true`)
+   - Accepts `multipart/form-data` with actual image files
+   - Images uploaded to Supabase Storage `user-profiles` bucket
 
 ### Event Discovery
 1. **List Events**: `GET /api/events` with filters (status, location, interests, etc.)
 2. **Get Event Details**: `GET /api/events/{id}`
 3. **Create Event**: `POST /api/events` (authenticated hosts only)
+   - Accepts `multipart/form-data` with optional cover image files
+   - Images uploaded to Supabase Storage `event-images` bucket
 
 ### Location-Based Queries
 - Filter events by venue coordinates

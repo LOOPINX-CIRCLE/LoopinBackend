@@ -53,11 +53,9 @@ graph TD
     CreateEvent --> VenueDecision{Venue Option?}
     
     VenueDecision -->|Existing| VenueID[Use venue_id]
-    VenueDecision -->|New| VenueCreate[Auto-create venue]
     VenueDecision -->|Custom| VenueText[Use venue_text]
     
     VenueID --> Validate[Validate All Fields]
-    VenueCreate --> Validate
     VenueText --> Validate
     
     Validate --> CalcDuration[Calculate end_time<br/>from duration_hours]
@@ -146,22 +144,13 @@ flowchart LR
     subgraph "Event Creation"
         G --> H{User Choice?}
         H -->|Select Existing| I[Use venue_id in EventCreate]
-        H -->|Not in List| J[Provide venue_create details]
         H -->|Custom Location| K[Provide venue_text]
         
         I --> L[POST /api/events<br/>with venue_id]
-        J --> M[POST /api/events<br/>with venue_create]
         K --> N[POST /api/events<br/>with venue_text]
     end
     
-    subgraph "Venue Reference Creation"
-        M --> O[Auto-create Venue Record<br/>Reference Data Only]
-        O --> P[Link to Event via FK]
-        P --> Q[Venue Available for<br/>Other Events Simultaneously]
-    end
-    
     L --> R[Event Created ✓<br/>No Booking Conflicts]
-    P --> R
     N --> R
     
     style A fill:#e3f2fd
@@ -311,11 +300,15 @@ sequenceDiagram
 **POST** `/api/events`
 - Create new event with all ERD fields
 - **Auth**: Required (JWT)
+- **Content-Type**: `multipart/form-data` (for file uploads)
 - **Venue Options**:
-  - `venue_id`: Use existing venue
-  - `venue_create`: Auto-create venue inline
-  - `venue_text`: Custom venue text
+  - `venue_id`: Use existing venue (Form field: integer or null)
+  - `venue_text`: Custom venue text (Form field: string or null)
 - **Duration**: Uses `duration_hours` (float) - automatically calculates end_time
+- **Cover Images**: Optional file uploads (max 3 images, jpg/jpeg/png/webp, 5MB each)
+  - Files are uploaded to Supabase Storage `event-images` bucket
+  - Public URLs are automatically generated and stored
+- **Event Interests**: JSON string array (e.g., `"[1,2,3]"`)
 - **Returns**: EventResponse with all relationships
 
 **GET** `/api/events`
@@ -392,14 +385,15 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant Redis
     
-    Client->>FastAPI: POST /api/events<br/>(JWT + EventCreate)
+    Client->>FastAPI: POST /api/events<br/>(JWT + multipart/form-data)
     
     FastAPI->>FastAPI: Verify JWT Token
-    FastAPI->>Pydantic: Validate EventCreate Schema
+    FastAPI->>FastAPI: Parse Form Data
     
-    Pydantic->>Pydantic: Validate duration_hours > 0
-    Pydantic->>Pydantic: Validate only ONE venue option
-    Pydantic->>Pydantic: Validate cover_images count
+    FastAPI->>FastAPI: Validate duration_hours > 0
+    FastAPI->>FastAPI: Validate venue options (venue_id OR venue_text)
+    FastAPI->>FastAPI: Validate cover_images count (max 3)
+    FastAPI->>FastAPI: Upload cover images to Supabase Storage
     
     alt Validation Fails
         Pydantic-->>Client: 422 ValidationError
@@ -409,14 +403,11 @@ sequenceDiagram
     
     FastAPI->>FastAPI: Calculate end_time<br/>start + duration_hours
     
-    alt Venue Auto-Creation
-        FastAPI->>Business: create_venue(venue_create)
-        Business->>DB: INSERT INTO venues
-        DB-->>Business: Venue created (ID)
-        Business-->>FastAPI: Venue Object
-    else Existing Venue
+    alt Existing Venue
         FastAPI->>DB: Verify venue_id exists
         DB-->>FastAPI: Venue found ✓
+    else Custom Venue Text
+        FastAPI->>FastAPI: Use venue_text (no DB record)
     end
     
     FastAPI->>Business: create_event_with_relationships()
@@ -484,11 +475,9 @@ flowchart TD
     CalcEnd --> VenueCheck{Venue Option?}
     
     VenueCheck -->|venue_id| VerifyVenue[Verify Venue Exists]
-    VenueCheck -->|venue_create| CreateVenue[Auto-Create Venue]
     VenueCheck -->|venue_text| SetText[Set venue_text]
     
     VerifyVenue --> Begin[Begin Atomic Transaction]
-    CreateVenue --> Begin
     SetText --> Begin
     
     Begin --> CreateEvent[INSERT INTO events]
@@ -515,7 +504,6 @@ flowchart TD
 graph LR
     subgraph "Venue Options (Mutually Exclusive)"
         A[venue_id] --> B[Use Existing Reference]
-        C[venue_create] --> D[Create New Reference]
         E[venue_text] --> F[Custom Text Only]
     end
     
@@ -815,6 +803,37 @@ All CRUD operations tested via curl:
 
 ### Create Event
 
+**Note**: This endpoint accepts `multipart/form-data` with actual image files for cover images.
+
+```bash
+curl -X POST http://localhost:8000/api/events \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "title=Workshop" \
+  -F "description=Learn something" \
+  -F "start_time=2025-12-25T18:00:00Z" \
+  -F "duration_hours=3.0" \
+  -F "event_interest_ids=[1,2]" \
+  -F "venue_id=1" \
+  -F "max_capacity=100" \
+  -F "is_paid=false" \
+  -F "ticket_price=0.0" \
+  -F "status=published" \
+  -F "is_public=true" \
+  -F "cover_images=@/path/to/image1.jpg" \
+  -F "cover_images=@/path/to/image2.jpg"
+```
+
+**Form Fields:**
+- `title` (required): Event title
+- `start_time` (required): ISO format datetime string (e.g., "2025-12-25T18:00:00Z")
+- `duration_hours` (required): Event duration in hours (float)
+- `event_interest_ids` (required): JSON string array (e.g., `"[1,2,3]"`)
+- `venue_id` (optional): Existing venue ID (integer or null)
+- `venue_text` (optional): Custom venue text (string or null)
+- `cover_images` (optional): Image files (max 3, jpg/jpeg/png/webp, 5MB each)
+- Other fields: `description`, `max_capacity`, `is_paid`, `ticket_price`, `status`, `is_public`, etc.
+
+**Legacy JSON Example (deprecated - use multipart/form-data):**
 ```bash
 curl -X POST http://localhost:8000/api/events \
   -H "Content-Type: application/json" \
@@ -823,10 +842,7 @@ curl -X POST http://localhost:8000/api/events \
     "title": "Workshop",
     "description": "Learn something",
     "event_interest_ids": [1, 2],
-    "venue_create": {
-      "name": "New Venue",
-      "address": "123 Main St",
-      "city": "Mumbai",
+    "venue_id": 1,
       "venue_type": "indoor",
       "capacity": 50
     },
@@ -886,11 +902,10 @@ curl -X DELETE http://localhost:8000/api/events/1 \
 - Currently allows analytics on when interests are added
 - Can refactor to ManyToManyField later without DB changes
 
-### Why three venue options?
-- Existing venue: reuse and standardization
-- Auto-create: convenience for new venues
-- Custom text: flexibility for temporary locations
-- Validator ensures only one option used
+### Why two venue options?
+- Existing venue (`venue_id`): reuse and standardization
+- Custom text (`venue_text`): flexibility for temporary locations
+- Validator ensures only one option used (or neither for venue-less events)
 
 ---
 
