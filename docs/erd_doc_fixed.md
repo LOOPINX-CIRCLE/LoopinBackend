@@ -39,8 +39,8 @@ erDiagram
     
     %% Users Module Relationships
     AUTH_USER ||--o| USER_PROFILE : "has profile (optional, 1-to-1)"
-    AUTH_USER ||--o{ USER_PHONE_OTP : "has OTP records"
     USER_PROFILE }o--o{ EVENT_INTEREST : "has interests (M-to-M)"
+    USER_PROFILE ||--o{ USER_PHONE_OTP : "uses for authentication (by phone number)"
     
     %% Events Module Relationships
     USER_PROFILE ||--o{ EVENT : "hosts events"
@@ -78,8 +78,8 @@ erDiagram
     EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
     
     %% Notification & Audit Relationships
-    AUTH_USER ||--o{ NOTIFICATION : "receives notifications"
-    AUTH_USER ||--o{ NOTIFICATION : "sends notifications"
+    USER_PROFILE ||--o{ NOTIFICATION : "receives notifications"
+    USER_PROFILE ||--o{ NOTIFICATION : "sends notifications"
     AUTH_USER ||--o{ AUDIT_LOG : "generates logs"
     AUTH_USER ||--o{ AUDIT_LOG_SUMMARY : "has summaries"
 
@@ -124,7 +124,7 @@ erDiagram
 
     USER_PHONE_OTP {
         BIGINT id PK "Primary key"
-        STRING phone_number "Phone for OTP"
+        STRING phone_number "Phone for OTP (links to USER_PROFILE.phone_number, used by normal users)"
         STRING otp_code "4-digit OTP"
         STRING otp_type "signup|login|password_reset|phone_verification|transaction"
         STRING status "pending|verified|expired|failed"
@@ -389,8 +389,8 @@ erDiagram
 
     NOTIFICATION {
         BIGINT id PK "Primary key"
-        BIGINT recipient_id FK "Receiving user"
-        BIGINT sender_id FK "Sending user (nullable)"
+        BIGINT recipient_id FK "Receiving user (USER_PROFILE, normal user)"
+        BIGINT sender_id FK "Sending user (USER_PROFILE, normal user, nullable)"
         UUID uuid "Public unique identifier"
         STRING type "event_request|event_invite|event_update|event_cancelled|payment_success|payment_failed|reminder|system|promotional"
         STRING title "Notification title (max 200)"
@@ -548,12 +548,13 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 
 **Relationships:**
 - 1-to-1 → `USER_PROFILE` (optional - only created for customers, not admins)
-- 1-to-many → `USER_PHONE_OTP` (authentication records)
 - 1-to-many → `PLATFORM_FEE_CONFIG.updated_by` (admin configuration updates)
 - 1-to-many → `AUDIT_LOG.actor_user_id` (admin actions logged)
 
 **⚠️ AUTH_USER does NOT directly relate to customer actions:**
 - Events, payments, attendance, tickets → All belong to `USER_PROFILE`
+- Notifications → Belong to `USER_PROFILE` (normal users receive/send notifications)
+- Phone OTP → Used by `USER_PROFILE` (normal users authenticate via phone)
 - Admin actions are logged via `AUDIT_LOG`, not direct relationships
 
 **Business Logic:**
@@ -591,6 +592,9 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - ✅ `EVENT_REQUEST.requester_id` → `USER_PROFILE` (customers request to join)
 - ✅ `BANK_ACCOUNT.host_id` → `USER_PROFILE` (hosts receive payouts)
 - ✅ `CAPACITY_RESERVATION.user_id` → `USER_PROFILE` (customers reserve seats)
+- ✅ `NOTIFICATION.recipient` → `USER_PROFILE` (normal users receive notifications)
+- ✅ `NOTIFICATION.sender` → `USER_PROFILE` (normal users send notifications)
+- ✅ `USER_PHONE_OTP` → Used by normal users (phone-based authentication)
 
 **Never use AUTH_USER for these actions** — enforce at service boundaries.
 
@@ -671,7 +675,8 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Horizontal filter for event interests selection
 
 **Business Rules - Identity Separation:**
-- All customer actions (payments, events, attendance) MUST use `USER_PROFILE`
+- All customer actions (payments, events, attendance, notifications) MUST use `USER_PROFILE`
+- All customer authentication (phone OTP) is used by `USER_PROFILE` (normal users)
 - `AUTH_USER` is ONLY for authentication and admin operations
 - Admin actions are logged via `AUDIT_LOG` with `actor_user_id` → `AUTH_USER`
 - Customer data objects link to `USER_PROFILE`, never directly to `AUTH_USER`
@@ -684,7 +689,15 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 ---
 
 ### **1.3 USER_PHONE_OTP** 📱
-**Purpose:** Secure phone-based authentication
+**Purpose:** Secure phone-based authentication for **normal users (customers)**
+
+**⚠️ IMPORTANT:** This is used by `USER_PROFILE` (normal users), NOT admin users.
+
+**Usage:**
+- Normal users (customers) use phone OTP for signup and login
+- Phone number links to `USER_PROFILE.phone_number`
+- No direct ForeignKey relationship - linked via phone number
+- Admin users (`AUTH_USER` with `is_staff=True`) typically don't use phone OTP
 
 **OTP Configuration:**
 - Length: **4 digits**
@@ -692,11 +705,11 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - Max attempts: **3**
 
 **OTP Types:**
-- `signup` - New user registration
-- `login` - Existing user authentication
-- `password_reset` - Password recovery
-- `phone_verification` - Verify phone number
-- `transaction` - Secure transactions
+- `signup` - New user registration (normal users)
+- `login` - Existing user authentication (normal users)
+- `password_reset` - Password recovery (normal users)
+- `phone_verification` - Verify phone number (normal users)
+- `transaction` - Secure transactions (normal users)
 
 **Status Flow:**
 ```
@@ -1209,7 +1222,13 @@ rejected/cancelled
 ## **5. NOTIFICATION MODULE** 🔔
 
 ### **5.1 NOTIFICATION** 📬
-**Purpose:** In-app user notifications
+**Purpose:** In-app user notifications for **normal users (customers)**
+
+**⚠️ IMPORTANT:** Notifications are linked to `USER_PROFILE` (normal users), NOT admin users.
+
+**Relationships:**
+- `recipient` → `USER_PROFILE` (normal user receiving notification)
+- `sender` → `USER_PROFILE` (normal user sending notification, optional)
 
 **Notification Types:**
 - `event_request` - Request received/approved
@@ -1232,6 +1251,7 @@ rejected/cancelled
 - 30-day retention
 - Batch processing for campaigns
 - Read status tracking
+- All notifications are for normal users (`USER_PROFILE`), not admin users
 
 ---
 
