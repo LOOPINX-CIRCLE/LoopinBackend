@@ -2,7 +2,7 @@
 FastAPI router for user authentication with phone number and OTP
 """
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Form, File, UploadFile
 from fastapi.security import HTTPBearer
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -13,6 +13,9 @@ import jwt
 from datetime import datetime, timedelta
 import logging
 import random
+from typing import List, Optional
+from datetime import datetime, date
+import re
 
 from .models import UserProfile, PhoneOTP, EventInterest
 from .schemas import (
@@ -25,6 +28,8 @@ from .schemas import (
     EventInterestResponse
 )
 from .services import twilio_service
+from core.services.storage import get_storage_service
+from core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -373,22 +378,37 @@ async def verify_signup_otp(request: OTPVerificationRequest):
 
 
 @router.post("/complete-profile", response_model=AuthResponse)
-async def complete_user_profile(request: CompleteProfileRequest, token: str = Depends(security)):
+async def complete_user_profile(
+    # Form fields
+    name: str = Form(...),
+    birth_date: str = Form(...),
+    gender: str = Form(...),
+    event_interests: str = Form(...),  # JSON string of list
+    phone_number: str = Form(...),
+    bio: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    # File uploads
+    profile_pictures: List[UploadFile] = File(...),
+    # Authentication
+    token: str = Depends(security)
+):
     """
     Complete User Profile: Add additional profile information after OTP verification
     
     This endpoint handles profile completion for users who have verified their phone:
     - Requires valid JWT token from /verify-otp endpoint
+    - Accepts multipart/form-data with actual image files
+    - Uploads profile pictures to Supabase Storage (user-profiles bucket)
     - Validates all profile data (name, age, gender, interests, pictures)
     - Updates user profile with complete information
-    - Returns success with profile completion status
     
-    Required fields:
+    Required fields (multipart/form-data):
     - name (2-100 characters, letters only)
     - birth_date (YYYY-MM-DD, must be 16+)
     - gender (male/female/other)
-    - event_interests (1-5 interest IDs)
-    - profile_pictures (1-6 valid URLs)
+    - event_interests (JSON string array of 1-5 interest IDs, e.g. "[1,2,3]")
+    - phone_number (must match authenticated user)
+    - profile_pictures (1-6 image files: jpg, jpeg, png, webp, max 5MB each)
     
     Optional fields:
     - bio (max 500 characters)
@@ -399,9 +419,9 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
         try:
             payload = verify_jwt_token(token.credentials)
             user_id = payload.get('user_id')
-            phone_number = payload.get('phone_number')
+            token_phone = payload.get('phone_number')
             
-            if not user_id or not phone_number:
+            if not user_id or not token_phone:
                 return AuthResponse(
                     success=False,
                     message="Invalid authentication token. Please login again."
@@ -418,35 +438,95 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
                 message="Authentication token is invalid or expired. Please login again."
             )
         
-        # Validate required fields from request
-        if not request.name:
+        # Validate phone number matches token
+        if phone_number != token_phone:
             return AuthResponse(
                 success=False,
-                message="Name is required"
+                message="Phone number does not match authenticated user."
             )
         
-        if not request.birth_date:
+        # Validate name
+        if not name or not name.strip():
             return AuthResponse(
                 success=False,
-                message="Birth date is required"
+                message="Name cannot be empty"
             )
-        
-        if not request.gender:
+        name_trimmed = name.strip()
+        if len(name_trimmed) < 2:
             return AuthResponse(
                 success=False,
-                message="Gender is required"
+                message="Name must be at least 2 characters long"
             )
-        
-        if not request.event_interests or len(request.event_interests) == 0:
+        # Check for valid characters (letters, spaces, hyphens, apostrophes)
+        if not re.match(r"^[a-zA-Z\s\-\']+$", name_trimmed):
             return AuthResponse(
                 success=False,
-                message="At least one event interest is required"
+                message="Name contains invalid characters. Only letters, spaces, hyphens, and apostrophes are allowed"
             )
         
-        if not request.profile_pictures or len(request.profile_pictures) == 0:
+        # Validate birth_date format and age
+        try:
+            birth_date_obj = datetime.strptime(birth_date, '%Y-%m-%d').date()
+            today = date.today()
+            age = today.year - birth_date_obj.year - ((today.month, today.day) < (birth_date_obj.month, birth_date_obj.day))
+            if age < 16:
+                return AuthResponse(
+                    success=False,
+                    message="User must be 16 years or older"
+                )
+        except ValueError as e:
+            if 'time data' in str(e):
+                return AuthResponse(
+                    success=False,
+                    message="Invalid date format. Use YYYY-MM-DD"
+                )
+            return AuthResponse(
+                success=False,
+                message=f"Invalid birth date: {str(e)}"
+            )
+        
+        # Validate gender
+        valid_genders = ['male', 'female', 'other']
+        gender_lower = gender.lower()
+        if gender_lower not in valid_genders:
+            return AuthResponse(
+                success=False,
+                message=f"Gender must be one of: {', '.join(valid_genders)}"
+            )
+        
+        # Validate profile pictures count
+        if not profile_pictures or len(profile_pictures) == 0:
             return AuthResponse(
                 success=False,
                 message="At least one profile picture is required"
+            )
+        
+        if len(profile_pictures) > 6:
+            return AuthResponse(
+                success=False,
+                message="Maximum 6 profile pictures allowed"
+            )
+        
+        # Parse event interests from JSON string
+        import json
+        try:
+            event_interest_ids = json.loads(event_interests)
+            if not isinstance(event_interest_ids, list):
+                raise ValueError("event_interests must be a JSON array")
+            if len(event_interest_ids) == 0:
+                return AuthResponse(
+                    success=False,
+                    message="At least one event interest is required"
+                )
+            if len(event_interest_ids) > 5:
+                return AuthResponse(
+                    success=False,
+                    message="Maximum 5 event interests allowed"
+                )
+        except (json.JSONDecodeError, ValueError) as e:
+            return AuthResponse(
+                success=False,
+                message=f"Invalid event_interests format: {str(e)}. Expected JSON array."
             )
         
         # Get user and profile
@@ -472,7 +552,7 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
         # Validate event interests exist and are active
         try:
             event_interests = await sync_to_async(lambda: list(EventInterest.objects.filter(
-                id__in=request.event_interests, 
+                id__in=event_interest_ids, 
                 is_active=True
             )))()
         except Exception as interest_error:
@@ -483,21 +563,51 @@ async def complete_user_profile(request: CompleteProfileRequest, token: str = De
             )
         
         # Check if all requested interests were found and are active
-        if len(event_interests) != len(request.event_interests):
-            missing_count = len(request.event_interests) - len(event_interests)
+        if len(event_interests) != len(event_interest_ids):
+            missing_count = len(event_interest_ids) - len(event_interests)
             return AuthResponse(
                 success=False,
                 message=f"One or more selected event interests ({missing_count}) are invalid or inactive. Please select from available interests."
             )
         
+        # Upload profile pictures to Supabase Storage
+        try:
+            storage_service = get_storage_service()
+            uploaded_urls = await storage_service.upload_multiple_files(
+                files=profile_pictures,
+                bucket="user-profiles",
+                user_id=profile.id,  # Use UserProfile.id (normal user ID, not admin User.id)
+                folder=None
+            )
+            
+            if not uploaded_urls or len(uploaded_urls) == 0:
+                return AuthResponse(
+                    success=False,
+                    message="Failed to upload profile pictures. Please try again."
+                )
+            
+            logger.info(f"Uploaded {len(uploaded_urls)} profile pictures for user {user_id}")
+            
+        except ValidationError as ve:
+            return AuthResponse(
+                success=False,
+                message=ve.message
+            )
+        except Exception as upload_error:
+            logger.error(f"Error uploading profile pictures: {upload_error}", exc_info=True)
+            return AuthResponse(
+                success=False,
+                message="An error occurred while uploading profile pictures. Please check file formats and sizes."
+            )
+        
         # Update profile information
         try:
-            profile.name = request.name.strip()
-            profile.birth_date = request.birth_date
-            profile.gender = request.gender.lower()
-            profile.profile_pictures = request.profile_pictures
-            profile.bio = request.bio.strip() if request.bio else ""
-            profile.location = request.location.strip() if request.location else ""
+            profile.name = name_trimmed  # Already validated and trimmed above
+            profile.birth_date = birth_date_obj  # Already validated and parsed above
+            profile.gender = gender_lower  # Already validated above
+            profile.profile_pictures = uploaded_urls  # Use uploaded URLs
+            profile.bio = bio.strip() if bio else ""
+            profile.location = location.strip() if location else ""
             
             # Save profile first
             await sync_to_async(lambda: profile.save())()
