@@ -6,10 +6,14 @@ The Notifications module manages user notifications, messaging, and communicatio
 ## Models
 
 ### Notification
-- **Purpose**: User notification management with read status tracking
-- **Key Fields**: recipient, sender, type, title, message, reference_type, reference_id
+- **Purpose**: User notification management with read status tracking for **normal users (customers)**
+- **Key Fields**: recipient (USER_PROFILE), sender (USER_PROFILE), type, title, message, reference_type, reference_id
+- **Relationships**: 
+  - `recipient` → `ForeignKey('users.UserProfile')` - Normal user receiving notification
+  - `sender` → `ForeignKey('users.UserProfile')` - Normal user sending notification (optional)
 - **Types**: event_request, event_invite, payment_update, system_alert
 - **Status**: read, unread, archived
+- **Note**: Notifications are for normal users (`USER_PROFILE`), not admin users
 
 ## Notification Types
 

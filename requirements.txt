@@ -29,4 +29,7 @@ email-validator==2.3.0
 
 # Twilio for SMS OTP
 twilio==9.3.2
-httpx==0.28.1
+httpx==0.27.0
+
+# Supabase Storage
+supabase==2.10.0

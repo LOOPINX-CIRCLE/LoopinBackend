@@ -12,9 +12,11 @@ The Users module handles user authentication, profile management, and phone-base
 - **Features**: Profile picture management (1-6 images), location tracking
 
 ### PhoneOTP
-- **Purpose**: OTP verification for phone-based authentication
-- **Key Fields**: phone_number, otp_hash, otp_salt, is_verified, attempts, expires_at
-- **Security**: Hashed OTP storage, attempt limiting, expiration handling
+- **Purpose**: OTP verification for phone-based authentication for **normal users (customers)**
+- **Usage**: Used by USER_PROFILE (normal users) via phone number for authentication
+- **Key Fields**: phone_number (links to USER_PROFILE.phone_number), otp_code, otp_type, is_verified, attempts, expires_at
+- **Security**: Attempt limiting (max 3), expiration handling (10 minutes), secure OTP generation
+- **Note**: Admin users (AUTH_USER with is_staff=True) typically don't use phone OTP
 
 ### EventInterest
 - **Purpose**: Dynamic event interest management system
