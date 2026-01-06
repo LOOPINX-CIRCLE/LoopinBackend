@@ -189,7 +189,12 @@ class EventInterestAdmin(admin.ModelAdmin):
 
 @admin.register(PhoneOTP)
 class PhoneOTPAdmin(admin.ModelAdmin):
-    """Admin for Phone OTP Lead Management"""
+    """
+    Admin for Phone OTP Management (Normal Users/Customers).
+    
+    Phone OTP is used by USER_PROFILE (normal users/customers) for authentication.
+    Phone number links to USER_PROFILE.phone_number.
+    """
     list_display = ('phone_number', 'otp_code', 'verification_status', 'attempts', 'created_at', 'expires_at')
     list_filter = ('is_verified', 'created_at', 'expires_at')
     search_fields = ('phone_number',)
@@ -197,13 +202,13 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     actions = ['mark_as_verified', 'resend_otp']
     
     fieldsets = (
-        ('Lead Information', {
+        ('Normal User Authentication', {
             'fields': ('phone_number', 'otp_code'),
-            'description': 'Phone number and OTP details'
+            'description': 'Phone number (links to USER_PROFILE.phone_number) and OTP details for normal user authentication'
         }),
         ('Verification Status', {
             'fields': ('is_verified', 'attempts'),
-            'description': 'Lead verification and attempt tracking'
+            'description': 'OTP verification status and attempt tracking for normal users'
         }),
         ('Timestamps', {
             'fields': ('created_at', 'expires_at'),
