@@ -254,7 +254,7 @@ sequenceDiagram
   - Venue: venue (FK) or venue_text
   - Capacity & Pricing: max_capacity, going_count, requests_count, is_paid, ticket_price, gst_number
   - Restrictions: allowed_genders, allow_plus_one
-  - Media: cover_images (1-3 URLs)
+  - Media: cover_images (1-3 image URLs stored after upload to Supabase Storage)
   - Status: status, is_public, is_active
 - **Status Options**: draft, published, cancelled, completed, postponed
 - **Gender Options**: all, male, female, non_binary
