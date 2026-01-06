@@ -809,52 +809,66 @@ graph TD
 
 **Endpoint:** `POST /api/auth/complete-profile`
 
-**Description:** Completes user profile with name, birth date, gender, interests, and pictures. Requires JWT token from `/verify-otp`.
+**Description:** Completes user profile with name, birth date, gender, interests, and pictures. Requires JWT token from `/verify-otp`. Accepts actual image files (multipart/form-data) which are uploaded to Supabase Storage.
 
 **Headers:**
 ```
 Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
+Content-Type: multipart/form-data
 ```
 
-**Request:**
-```json
-{
-  "phone_number": "+1234567890",
-  "name": "John Doe",
-  "birth_date": "1995-01-15",
-  "gender": "male",
-  "event_interests": [1, 3, 5],
-  "profile_pictures": [
-    "https://example.com/pic1.jpg",
-    "https://example.com/pic2.jpg"
-  ],
-  "bio": "Love music and traveling",
-  "location": "New York, USA"
-}
+**Request (multipart/form-data):**
+```
+name: "John Doe"
+birth_date: "1995-01-15"
+gender: "male"
+event_interests: "[1,3,5]"  (JSON string array)
+phone_number: "+1234567890"
+bio: "Love music and traveling"  (optional)
+location: "New York, USA"  (optional)
+profile_pictures: [file1.jpg, file2.jpg]  (actual image files)
 ```
 
 **Field Requirements:**
 
-| Field | Required | Validation | Example |
-|-------|----------|------------|---------|
-| `phone_number` | ✅ | Valid phone format | `"+1234567890"` |
-| `name` | ✅ | 2-100 chars, letters/spaces/hyphens | `"John Doe"` |
-| `birth_date` | ✅ | YYYY-MM-DD, must be 16+ | `"2007-01-15"` |
-| `gender` | ✅ | male/female/other | `"male"` |
-| `event_interests` | ✅ | Array of 1-5 valid IDs | `[1, 2, 3]` |
-| `profile_pictures` | ✅ | Array of 1-6 valid URLs | `["https://..."]` |
-| `bio` | ❌ | Max 500 characters | `"Backend dev"` |
-| `location` | ❌ | Max 100 characters | `"New York"` |
+| Field | Required | Type | Validation | Example |
+|-------|----------|------|------------|---------|
+| `phone_number` | ✅ | Form field | Valid phone format, must match authenticated user | `"+1234567890"` |
+| `name` | ✅ | Form field | 2-100 chars, letters/spaces/hyphens | `"John Doe"` |
+| `birth_date` | ✅ | Form field | YYYY-MM-DD, must be 16+ | `"2007-01-15"` |
+| `gender` | ✅ | Form field | male/female/other | `"male"` |
+| `event_interests` | ✅ | Form field (JSON string) | JSON array of 1-5 valid IDs | `"[1,2,3]"` |
+| `profile_pictures` | ✅ | File upload | 1-6 image files (jpg/jpeg/png/webp, max 5MB each) | `[file1.jpg, file2.jpg]` |
+| `bio` | ❌ | Form field | Max 500 characters | `"Backend dev"` |
+| `location` | ❌ | Form field | Max 100 characters | `"New York"` |
 
 **Validation Details:**
 - **Name**: Must contain only letters, spaces, hyphens, apostrophes
-- **Age**: Calculated from birth_date, must be 18 or older
+- **Age**: Calculated from birth_date, must be 16 or older
 - **Gender**: Case-insensitive, converted to lowercase
-- **Event Interests**: Must be active interests from database
-- **Picture URLs**: Must be valid HTTP/HTTPS URLs
+- **Event Interests**: JSON string array (e.g., `"[1,2,3]"`), must be 1-5 active interest IDs from database
+- **Profile Pictures**: Actual image files (not URLs), uploaded to Supabase Storage `user-profiles` bucket
+  - Allowed formats: jpg, jpeg, png, webp
+  - Max file size: 5MB per file
+  - Min files: 1, Max files: 6
+  - Files are automatically uploaded and public URLs are stored
 - **Bio**: Optional, truncated if > 500 chars
 - **Location**: Optional, truncated if > 100 chars
+
+**Example cURL Request:**
+```bash
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "name=John Doe" \
+  -F "birth_date=1995-01-15" \
+  -F "gender=male" \
+  -F "event_interests=[1,3,5]" \
+  -F "phone_number=+1234567890" \
+  -F "bio=Love music and traveling" \
+  -F "location=New York, USA" \
+  -F "profile_pictures=@/path/to/image1.jpg" \
+  -F "profile_pictures=@/path/to/image2.jpg"
+```
 
 **Success Response:**
 ```json
@@ -953,6 +967,24 @@ Content-Type: application/json
 {
   "success": false,
   "message": "Maximum 6 profile pictures allowed"
+}
+
+// Invalid file format
+{
+  "success": false,
+  "message": "Invalid file type. Allowed: jpg, jpeg, png, webp"
+}
+
+// File too large
+{
+  "success": false,
+  "message": "File size exceeds 5MB limit"
+}
+
+// Upload failed
+{
+  "success": false,
+  "message": "An error occurred while uploading profile pictures. Please check file formats and sizes."
 }
 
 // Invalid picture URL
@@ -1754,33 +1786,19 @@ This section provides a comprehensive guide for integrating the Loopin Backend a
 
 **Request Details:**
 - **Method:** POST
-- **Content-Type:** application/json
+- **Content-Type:** multipart/form-data
 - **Authentication:** **REQUIRED** - Bearer token from Step 2
 - **Headers:** 
   - `Authorization: Bearer <JWT_TOKEN>`
-  - `Content-Type: application/json`
+  - `Content-Type: multipart/form-data` (set automatically by client)
 
-**Request Payload:**
-```json
-{
-  "phone_number": "+1234567890",
-  "name": "John Doe",
-  "birth_date": "2007-01-15",
-  "gender": "male",
-  "event_interests": [1, 3, 5, 7],
-  "profile_pictures": [
-    "https://example.com/pic1.jpg",
-    "https://example.com/pic2.jpg"
-  ],
-  "bio": "Love music and traveling. Always up for new adventures!",
-  "location": "New York, USA"
-}
-```
+**Request Format:**
+This endpoint accepts `multipart/form-data` with actual image files. Images are uploaded to Supabase Storage automatically.
 
-**Payload Fields Explained:**
+**Form Fields:**
 
 **Required Fields:**
-- `phone_number` (string): Same phone number from previous steps
+- `phone_number` (string): Same phone number from previous steps (must match authenticated user)
 - `name` (string): User's full name
   - Minimum: 2 characters
   - Maximum: 100 characters
@@ -1798,31 +1816,71 @@ This section provides a comprehensive guide for integrating the Loopin Backend a
   - Case-insensitive (backend converts to lowercase)
   - Display as dropdown or radio buttons
   
-- `event_interests` (array of integers): Selected event interest IDs
+- `event_interests` (string): JSON string array of selected event interest IDs
+  - Format: JSON string (e.g., `"[1,3,5]"`)
   - Minimum: 1 interest
   - Maximum: 5 interests
   - Must be valid IDs from Step 3 (event-interests endpoint)
   - Backend validates each ID exists and is active
-  - Example: `[1, 3, 5]` means Music, Food, Technology
+  - Example: `"[1, 3, 5]"` means Music, Food, Technology
   
-- `profile_pictures` (array of strings): URLs of user's profile pictures
+- `profile_pictures` (file[]): Actual image files (not URLs)
   - Minimum: 1 picture
   - Maximum: 6 pictures
-  - Must be valid HTTP/HTTPS URLs
-  - Should be uploaded to your image storage (S3, Cloudinary, etc.) before this step
-  - Backend validates URL format
-  - Examples: `["https://cdn.example.com/user123/pic1.jpg"]`
+  - Allowed formats: jpg, jpeg, png, webp
+  - Max file size: 5MB per file
+  - Files are uploaded to Supabase Storage `user-profiles` bucket
+  - Public URLs are automatically generated and stored
+  - Example: Upload `image1.jpg`, `image2.png` from device
 
 **Optional Fields:**
 - `bio` (string): User's biography or description
   - Maximum: 500 characters
-  - Can be empty string or null
+  - Can be empty string or omitted
   - Display as multiline text field
   
 - `location` (string): User's location or city
   - Maximum: 100 characters
-  - Can be empty string or null
+  - Can be empty string or omitted
   - Example: "New York, USA" or "Mumbai, India"
+
+**Example Request (cURL):**
+```bash
+curl -X POST "http://localhost:8000/api/auth/complete-profile" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "name=John Doe" \
+  -F "birth_date=2007-01-15" \
+  -F "gender=male" \
+  -F "event_interests=[1,3,5,7]" \
+  -F "phone_number=+1234567890" \
+  -F "bio=Love music and traveling. Always up for new adventures!" \
+  -F "location=New York, USA" \
+  -F "profile_pictures=@/path/to/image1.jpg" \
+  -F "profile_pictures=@/path/to/image2.jpg"
+```
+
+**Example Request (JavaScript/Fetch):**
+```javascript
+const formData = new FormData();
+formData.append('name', 'John Doe');
+formData.append('birth_date', '2007-01-15');
+formData.append('gender', 'male');
+formData.append('event_interests', '[1,3,5,7]');  // JSON string
+formData.append('phone_number', '+1234567890');
+formData.append('bio', 'Love music and traveling');
+formData.append('location', 'New York, USA');
+formData.append('profile_pictures', file1);  // File object
+formData.append('profile_pictures', file2);  // File object
+
+fetch('http://localhost:8000/api/auth/complete-profile', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_JWT_TOKEN'
+    // Don't set Content-Type - browser sets it automatically with boundary
+  },
+  body: formData
+});
+```
 
 **Success Response (HTTP 200):**
 ```json
