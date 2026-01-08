@@ -871,6 +871,32 @@ async def confirm_attendance_free_event(
         
         logger.info(f"Attendance confirmed for user {user_profile.id} at event {event_id}, ticket: {ticket_secret}, paid: {is_paid}")
         
+        # Send push notification for ticket confirmation (non-blocking, best-effort)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationMessages
+            dispatcher = get_push_dispatcher()
+            messages = NotificationMessages()
+            
+            # Use appropriate notification type and message
+            dispatcher.send_notification(
+                recipient=user_profile,
+                notification_type='ticket_confirmed',
+                title="Ticket Confirmed",
+                message=f"Your ticket for '{event.title}' has been confirmed! Check your tickets.",
+                data={
+                    'type': 'ticket_confirmed',
+                    'event_id': event.id,
+                    'ticket_id': attendance_record.id,
+                    'route': 'ticket_detail',
+                },
+                reference_type='AttendanceRecord',
+                reference_id=attendance_record.id,
+            )
+        except Exception as e:
+            # Never block attendance confirmation on notification failure
+            logger.error(f"Failed to send ticket confirmation push notification: {str(e)}")
+        
         return attendance_record
     
     attendance = await confirm_attendance()
@@ -1228,19 +1254,31 @@ async def respond_to_invitation(
             event.going_count = EventAttendee.objects.filter(event=event, status='going').count()
             event.save(update_fields=['going_count'])
             
-            # Notify host
+            # Notify host via push notification (non-blocking, best-effort)
             user_display_name = user_profile.name or user_profile.phone_number or user.username
             
-            send_notification(
-                recipient=event.host,
-                notification_type='event_invite',
-                title=f"Invitation Accepted: {event.title}",
-                message=f"{user_display_name} has accepted your invitation to '{event.title}'",
-                data={},
-                sender=user_profile,
-                reference_type="EventInvite",
-                reference_id=invite.id
-            )
+            try:
+                from notifications.services.dispatcher import get_push_dispatcher
+                dispatcher = get_push_dispatcher()
+                
+                dispatcher.send_notification(
+                    recipient=event.host,
+                    notification_type='event_invite',
+                    title=f"Invitation Accepted: {event.title}",
+                    message=f"{user_display_name} has accepted your invitation to '{event.title}'",
+                    data={
+                        'type': 'invite_accepted',
+                        'event_id': event.id,
+                        'invite_id': invite.id,
+                        'route': 'event_detail',
+                    },
+                    sender=user_profile,
+                    reference_type="EventInvite",
+                    reference_id=invite.id
+                )
+            except Exception as e:
+                # Never block invite acceptance on notification failure
+                logger.error(f"Failed to send invite acceptance push notification: {str(e)}")
             
             logger.info(f"Invitation {invite_id} accepted by user {user.id}")
             
