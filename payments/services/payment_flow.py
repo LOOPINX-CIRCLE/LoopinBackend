@@ -352,6 +352,31 @@ class PaymentFlowService:
                 f"provider_payment_id: {provider_payment_id}"
             )
             
+            # Send booking success notification (non-blocking, best-effort)
+            try:
+                from notifications.services.dispatcher import get_push_dispatcher
+                from notifications.services.messages import NotificationMessages
+                dispatcher = get_push_dispatcher()
+                messages = NotificationMessages()
+                
+                dispatcher.send_notification(
+                    recipient=order.user,
+                    notification_type='booking_success',
+                    title=messages.booking_success_title(order.event.title),
+                    message=messages.booking_success_body(order.event.title),
+                    data={
+                        'type': 'booking_success',
+                        'event_id': order.event.id,
+                        'payment_order_id': order.id,
+                        'route': 'ticket_detail',
+                    },
+                    reference_type='PaymentOrder',
+                    reference_id=order.id,
+                )
+            except Exception as e:
+                # Never block payment flow on notification failure
+                logger.error(f"Failed to send booking_success push notification: {str(e)}")
+            
             return order
             
         except Exception as e:
@@ -411,6 +436,29 @@ class PaymentFlowService:
             logger.info(
                 f"Payment failed: {order.order_id}, reason: {failure_reason}"
             )
+            
+            # Send push notification (non-blocking, best-effort)
+            try:
+                from notifications.services.dispatcher import get_push_dispatcher
+                dispatcher = get_push_dispatcher()
+                
+                dispatcher.send_notification(
+                    recipient=order.user,
+                    notification_type='payment_failed',
+                    title="Payment Failed",
+                    message=f"Your payment for '{order.event.title}' could not be processed. Please try again.",
+                    data={
+                        'type': 'payment_failed',
+                        'event_id': order.event.id,
+                        'payment_order_id': order.id,
+                        'route': 'payment_retry',
+                    },
+                    reference_type='PaymentOrder',
+                    reference_id=order.id,
+                )
+            except Exception as e:
+                # Never block payment flow on notification failure
+                logger.error(f"Failed to send payment failure push notification: {str(e)}")
             
             return order
             
