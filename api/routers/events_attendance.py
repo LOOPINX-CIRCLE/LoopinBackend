@@ -1262,20 +1262,20 @@ async def respond_to_invitation(
                 dispatcher = get_push_dispatcher()
                 
                 dispatcher.send_notification(
-                    recipient=event.host,
-                    notification_type='event_invite',
-                    title=f"Invitation Accepted: {event.title}",
-                    message=f"{user_display_name} has accepted your invitation to '{event.title}'",
+                recipient=event.host,
+                notification_type='event_invite',
+                title=f"Invitation Accepted: {event.title}",
+                message=f"{user_display_name} has accepted your invitation to '{event.title}'",
                     data={
                         'type': 'invite_accepted',
                         'event_id': event.id,
                         'invite_id': invite.id,
                         'route': 'event_detail',
                     },
-                    sender=user_profile,
-                    reference_type="EventInvite",
-                    reference_id=invite.id
-                )
+                sender=user_profile,
+                reference_type="EventInvite",
+                reference_id=invite.id
+            )
             except Exception as e:
                 # Never block invite acceptance on notification failure
                 logger.error(f"Failed to send invite acceptance push notification: {str(e)}")
