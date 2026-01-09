@@ -470,10 +470,10 @@ async def complete_user_profile(
             today = date.today()
             age = today.year - birth_date_obj.year - ((today.month, today.day) < (birth_date_obj.month, birth_date_obj.day))
             if age < 16:
-            return AuthResponse(
-                success=False,
+                return AuthResponse(
+                    success=False,
                     message="User must be 16 years or older"
-            )
+                )
         except ValueError as e:
             if 'time data' in str(e):
                 return AuthResponse(
