@@ -710,10 +710,10 @@ async def create_event_endpoint(
             code="INVALID_INTEREST_IDS_FORMAT"
         )
     
-    # Get UserProfile for the user (Event.host requires UserProfile)
-    try:
-        user_profile = user.profile
-    except UserProfile.DoesNotExist:
+        # Get UserProfile for the user (Event.host requires UserProfile)
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
         user_profile, _ = await sync_to_async(lambda: UserProfile.objects.get_or_create(user=user))()
     
     # Upload cover images to Supabase Storage if provided
