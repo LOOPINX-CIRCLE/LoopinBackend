@@ -237,28 +237,27 @@ class EventService:
         if old_status != 'published' and new_status == 'published' and event.is_public:
             try:
                 from notifications.services.dispatcher import get_push_dispatcher
-                from notifications.services.messages import NotificationMessages
+                from notifications.services.messages import NotificationTemplate
                 dispatcher = get_push_dispatcher()
-                messages = NotificationMessages()
                 
                 # Find users matching event interests (excluding host)
                 matching_users = EventService._get_users_matching_event_interests(event)
                 
                 for user_profile in matching_users:
                     try:
-                        dispatcher.send_notification(
+                        dispatcher.send_template_notification(
                             recipient=user_profile,
-                            notification_type='event_live',
-                            title=messages.event_live_title(event.title, event.host.username),
-                            message=messages.event_live_body(event.title, event.host.username),
-                            data={
-                                'type': 'event_live',
-                                'event_id': event.id,
-                                'route': 'event_details',
+                            template=NotificationTemplate.EVENT_LIVE,
+                            context={
+                                'event_name': event.title,
+                                'host_name': event.host.name or event.host.username
                             },
                             sender=event.host,
                             reference_type='Event',
                             reference_id=event.id,
+                            additional_data={
+                                'event_id': event.id,
+                            },
                         )
                     except Exception as e:
                         logger.error(f"Failed to send event_live notification to user {user_profile.id}: {str(e)}")
@@ -342,18 +341,18 @@ class EventService:
             
             for attendee in paid_attendees:
                 try:
-                    dispatcher.send_notification(
+                    from notifications.services.messages import NotificationTemplate
+                    dispatcher.send_template_notification(
                         recipient=attendee.user,
-                        notification_type='event_cancelled',
-                        title="Event Cancelled",
-                        message=f"The event '{event.title}' has been cancelled. A refund will be processed if applicable.",
-                        data={
-                            'type': 'event_cancelled',
-                            'event_id': event.id,
-                            'route': 'event_detail',
+                        template=NotificationTemplate.EVENT_CANCELLED,
+                        context={
+                            'event_name': event.title
                         },
                         reference_type='Event',
                         reference_id=event.id,
+                        additional_data={
+                            'event_id': event.id,
+                        },
                     )
                 except Exception as e:
                     logger.error(f"Failed to send cancellation notification to attendee {attendee.user.id}: {str(e)}")
@@ -447,24 +446,23 @@ class EventRequestService:
         # Notify host about new join request (non-blocking, best-effort)
         try:
             from notifications.services.dispatcher import get_push_dispatcher
-            from notifications.services.messages import NotificationMessages
+            from notifications.services.messages import NotificationTemplate
             dispatcher = get_push_dispatcher()
-            messages = NotificationMessages()
             
-            dispatcher.send_notification(
+            dispatcher.send_template_notification(
                 recipient=event.host,
-                notification_type='new_join_request',
-                title=messages.new_join_request_title(requester.username, event.title),
-                message=messages.new_join_request_body(requester.username, event.title),
-                data={
-                    'type': 'new_join_request',
-                    'event_id': event.id,
-                    'request_id': request.id,
-                    'route': 'host_requests',
+                template=NotificationTemplate.NEW_JOIN_REQUEST,
+                context={
+                    'user_name': requester.name or requester.username,
+                    'event_name': event.title
                 },
                 sender=requester,
                 reference_type='EventRequest',
                 reference_id=request.id,
+                additional_data={
+                    'event_id': event.id,
+                    'request_id': request.id,
+                },
             )
         except Exception as e:
             # Never block request creation on notification failure
@@ -546,26 +544,23 @@ class EventRequestService:
         # Notify requester about request approval (non-blocking, best-effort)
         try:
             from notifications.services.dispatcher import get_push_dispatcher
-            from notifications.services.messages import NotificationMessages
+            from notifications.services.messages import NotificationTemplate
             dispatcher = get_push_dispatcher()
-            messages = NotificationMessages()
             
-            # Determine route based on event payment status
-            route = 'event_payment_or_ticket' if event.is_paid else 'event_details'
-            
-            dispatcher.send_notification(
+            dispatcher.send_template_notification(
                 recipient=request.requester,
-                notification_type='request_approved',
-                title=messages.request_approved_title(event.title, event.host.username),
-                message=messages.request_approved_body(event.title, event.host.username),
-                data={
-                    'type': 'request_approved',
-                    'event_id': event.id,
-                    'route': route,
+                template=NotificationTemplate.REQUEST_APPROVED,
+                context={
+                    'event_name': event.title,
+                    'host_name': event.host.name or event.host.username
                 },
                 sender=event.host,
                 reference_type='EventRequest',
                 reference_id=request.id,
+                additional_data={
+                    'event_id': event.id,
+                    'route': 'event_payment_or_ticket' if event.is_paid else 'event_details',
+                },
             )
         except Exception as e:
             # Never block request acceptance on notification failure
@@ -635,26 +630,25 @@ class EventInviteService:
         # Notify invited user about direct invite (non-blocking, best-effort)
         try:
             from notifications.services.dispatcher import get_push_dispatcher
-            from notifications.services.messages import NotificationMessages
+            from notifications.services.messages import NotificationTemplate
             dispatcher = get_push_dispatcher()
-            messages = NotificationMessages()
             
-            host_name = event.host.username if hasattr(event.host, 'username') else 'Host'
+            host_name = event.host.name or event.host.username if hasattr(event.host, 'name') else event.host.username
             
-            dispatcher.send_notification(
+            dispatcher.send_template_notification(
                 recipient=invited_user,
-                notification_type='event_invite',
-                title=messages.invite_received_title(host_name, event.title),
-                message=messages.invite_received_body(host_name, event.title),
-                data={
-                    'type': 'event_invite',
-                    'event_id': event.id,
-                    'invite_id': invite.id,
-                    'route': 'event_details',
+                template=NotificationTemplate.EVENT_INVITE,
+                context={
+                    'host_name': host_name,
+                    'event_name': event.title
                 },
                 sender=event.host,
                 reference_type='EventInvite',
                 reference_id=invite.id,
+                additional_data={
+                    'event_id': event.id,
+                    'invite_id': invite.id,
+                },
             )
         except Exception as e:
             # Never block invite creation on notification failure
