@@ -96,7 +96,7 @@ def safe_import(module_name: str, description: str):
 # Import routers directly to include in main app (instead of mounting)
 # This ensures all routes appear in the OpenAPI schema
 try:
-    from api.routers import users, hosts, events, events_attendance, payouts, payments
+    from api.routers import users, hosts, events, events_attendance, payouts, payments, notifications
     logger.info("✅ API routers imported successfully")
 except Exception as e:
     logger.critical(f"❌ Failed to import API routers: {e}", exc_info=True)
@@ -355,6 +355,12 @@ try:
     logger.info("✅ Payments router included")
 except Exception as e:
     logger.error(f"❌ Failed to include payments router: {e}")
+
+try:
+    app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+    logger.info("✅ Notifications router included")
+except Exception as e:
+    logger.error(f"❌ Failed to include notifications router: {e}")
 
 # Import phone auth router after Django is set up
 with safe_import('users.auth_router', 'Phone Authentication router') as auth_router_module:
