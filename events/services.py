@@ -214,6 +214,9 @@ class EventService:
         """
         Update event status.
         
+        Triggers notifications when event goes live (published):
+        - Notifies users matching event interests (excludes host)
+        
         Args:
             event: Event instance
             new_status: New status
@@ -221,14 +224,91 @@ class EventService:
         Returns:
             Updated event instance
         """
+        old_status = event.status
         if new_status not in [choice[0] for choice in Event._meta.get_field('status').choices]:
             raise ValueError(f"Invalid status: {new_status}")
         
         event.status = new_status
         event.save(update_fields=['status', 'updated_at'])
         
-        logger.info(f"Event {event.id} status updated to {new_status}")
+        logger.info(f"Event {event.id} status updated from {old_status} to {new_status}")
+        
+        # Trigger "Event Goes Live" notification when status changes to 'published'
+        if old_status != 'published' and new_status == 'published' and event.is_public:
+            try:
+                from notifications.services.dispatcher import get_push_dispatcher
+                from notifications.services.messages import NotificationMessages
+                dispatcher = get_push_dispatcher()
+                messages = NotificationMessages()
+                
+                # Find users matching event interests (excluding host)
+                matching_users = EventService._get_users_matching_event_interests(event)
+                
+                for user_profile in matching_users:
+                    try:
+                        dispatcher.send_notification(
+                            recipient=user_profile,
+                            notification_type='event_live',
+                            title=messages.event_live_title(event.title, event.host.username),
+                            message=messages.event_live_body(event.title, event.host.username),
+                            data={
+                                'type': 'event_live',
+                                'event_id': event.id,
+                                'route': 'event_details',
+                            },
+                            sender=event.host,
+                            reference_type='Event',
+                            reference_id=event.id,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send event_live notification to user {user_profile.id}: {str(e)}")
+                        
+            except Exception as e:
+                # Never block status update on notification failure
+                logger.error(f"Failed to send event_live push notifications: {str(e)}")
+        
         return event
+    
+    @staticmethod
+    def _get_users_matching_event_interests(event):
+        """
+        Get USER_PROFILEs matching event interests for discovery notifications.
+        
+        Rules:
+        - Event must be public
+        - Users must have matching event interests
+        - Exclude event host
+        - Return active users only
+        
+        Args:
+            event: Event instance
+            
+        Returns:
+            QuerySet of UserProfile instances
+        """
+        from users.models import UserProfile
+        
+        if not event.is_public:
+            return UserProfile.objects.none()
+        
+        # Get event interest IDs
+        event_interest_ids = list(
+            event.interest_maps.values_list('event_interest_id', flat=True)
+        )
+        
+        if not event_interest_ids:
+            # No interests specified, return empty (or all users? - keeping it empty for now)
+            return UserProfile.objects.none()
+        
+        # Find users with matching interests (excluding host)
+        matching_users = UserProfile.objects.filter(
+            event_interests__id__in=event_interest_ids,
+            is_active=True,
+        ).exclude(
+            id=event.host.id
+        ).distinct()
+        
+        return matching_users
     
     @staticmethod
     def cancel_event(event):
@@ -246,6 +326,42 @@ class EventService:
         event.save(update_fields=['status', 'is_active', 'updated_at'])
         
         logger.info(f"Event {event.id} cancelled")
+        
+        # Send push notifications to all paid attendees (non-blocking, best-effort)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from events.models import EventAttendee
+            dispatcher = get_push_dispatcher()
+            
+            # Get all paid attendees
+            paid_attendees = EventAttendee.objects.filter(
+                event=event,
+                status='going',
+                is_paid=True,
+            ).select_related('user')
+            
+            for attendee in paid_attendees:
+                try:
+                    dispatcher.send_notification(
+                        recipient=attendee.user,
+                        notification_type='event_cancelled',
+                        title="Event Cancelled",
+                        message=f"The event '{event.title}' has been cancelled. A refund will be processed if applicable.",
+                        data={
+                            'type': 'event_cancelled',
+                            'event_id': event.id,
+                            'route': 'event_detail',
+                        },
+                        reference_type='Event',
+                        reference_id=event.id,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send cancellation notification to attendee {attendee.user.id}: {str(e)}")
+                    
+        except Exception as e:
+            # Never block event cancellation on notification failure
+            logger.error(f"Failed to send event cancellation push notifications: {str(e)}")
+        
         return event
 
 
@@ -327,6 +443,33 @@ class EventRequestService:
         )
         
         logger.info(f"Event request created: {request.id} for event {event.id}")
+        
+        # Notify host about new join request (non-blocking, best-effort)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationMessages
+            dispatcher = get_push_dispatcher()
+            messages = NotificationMessages()
+            
+            dispatcher.send_notification(
+                recipient=event.host,
+                notification_type='new_join_request',
+                title=messages.new_join_request_title(requester.username, event.title),
+                message=messages.new_join_request_body(requester.username, event.title),
+                data={
+                    'type': 'new_join_request',
+                    'event_id': event.id,
+                    'request_id': request.id,
+                    'route': 'host_requests',
+                },
+                sender=requester,
+                reference_type='EventRequest',
+                reference_id=request.id,
+            )
+        except Exception as e:
+            # Never block request creation on notification failure
+            logger.error(f"Failed to send new_join_request notification to host: {str(e)}")
+        
         return request
     
     @staticmethod
@@ -400,6 +543,34 @@ class EventRequestService:
             # Payment flow handles attendee creation in PaymentFlowService.finalize_payment_success()
             logger.info(f"Event request {request.id} accepted, payment required before attendee creation")
         
+        # Notify requester about request approval (non-blocking, best-effort)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationMessages
+            dispatcher = get_push_dispatcher()
+            messages = NotificationMessages()
+            
+            # Determine route based on event payment status
+            route = 'event_payment_or_ticket' if event.is_paid else 'event_details'
+            
+            dispatcher.send_notification(
+                recipient=request.requester,
+                notification_type='request_approved',
+                title=messages.request_approved_title(event.title, event.host.username),
+                message=messages.request_approved_body(event.title, event.host.username),
+                data={
+                    'type': 'request_approved',
+                    'event_id': event.id,
+                    'route': route,
+                },
+                sender=event.host,
+                reference_type='EventRequest',
+                reference_id=request.id,
+            )
+        except Exception as e:
+            # Never block request acceptance on notification failure
+            logger.error(f"Failed to send request_approved notification: {str(e)}")
+        
         return request, attendee
     
     @staticmethod
@@ -460,6 +631,35 @@ class EventInviteService:
         )
         
         logger.info(f"Event invite created: {invite.id} for user {invited_user.id}")
+        
+        # Notify invited user about direct invite (non-blocking, best-effort)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationMessages
+            dispatcher = get_push_dispatcher()
+            messages = NotificationMessages()
+            
+            host_name = event.host.username if hasattr(event.host, 'username') else 'Host'
+            
+            dispatcher.send_notification(
+                recipient=invited_user,
+                notification_type='event_invite',
+                title=messages.invite_received_title(host_name, event.title),
+                message=messages.invite_received_body(host_name, event.title),
+                data={
+                    'type': 'event_invite',
+                    'event_id': event.id,
+                    'invite_id': invite.id,
+                    'route': 'event_details',
+                },
+                sender=event.host,
+                reference_type='EventInvite',
+                reference_id=invite.id,
+            )
+        except Exception as e:
+            # Never block invite creation on notification failure
+            logger.error(f"Failed to send event_invite notification: {str(e)}")
+        
         return invite
     
     @staticmethod

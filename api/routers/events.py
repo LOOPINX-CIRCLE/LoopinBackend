@@ -383,7 +383,57 @@ def update_event_with_relationships(
         for field, value in update_data.items():
             setattr(event, field, value)
         
+        # Track if critical fields changed (time/venue changes require notifications)
+        old_start_time = event.start_time
+        old_venue = event.venue_id
+        
         event.save()
+        
+        # Send push notifications if event details changed (time or venue)
+        # Only notify if event is published and has attendees
+        if event.status == 'published':
+            start_time_changed = 'start_time' in update_data and update_data['start_time'] != old_start_time
+            venue_changed = 'venue_id' in update_data and update_data['venue_id'] != old_venue
+            
+            if start_time_changed or venue_changed:
+                try:
+                    from notifications.services.dispatcher import get_push_dispatcher
+                    from events.models import EventAttendee
+                    dispatcher = get_push_dispatcher()
+                    
+                    # Get all attendees (going status)
+                    attendees = EventAttendee.objects.filter(
+                        event=event,
+                        status='going',
+                    ).select_related('user')
+                    
+                    for attendee in attendees:
+                        try:
+                            change_message = []
+                            if start_time_changed:
+                                change_message.append("time")
+                            if venue_changed:
+                                change_message.append("venue")
+                            
+                            dispatcher.send_notification(
+                                recipient=attendee.user,
+                                notification_type='event_update',
+                                title="Event Updated",
+                                message=f"The event '{event.title}' has been updated ({', '.join(change_message)} changed).",
+                                data={
+                                    'type': 'event_update',
+                                    'event_id': event.id,
+                                    'route': 'event_detail',
+                                },
+                                reference_type='Event',
+                                reference_id=event.id,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send event update notification to attendee {attendee.user.id}: {str(e)}")
+                            
+                except Exception as e:
+                    # Never block event update on notification failure
+                    logger.error(f"Failed to send event update push notifications: {str(e)}")
         
         # Update event interests if provided
         if event_interest_ids is not None:
@@ -660,10 +710,10 @@ async def create_event_endpoint(
             code="INVALID_INTEREST_IDS_FORMAT"
         )
     
-    # Get UserProfile for the user (Event.host requires UserProfile)
-    try:
-        user_profile = user.profile
-    except UserProfile.DoesNotExist:
+        # Get UserProfile for the user (Event.host requires UserProfile)
+        try:
+            user_profile = user.profile
+        except UserProfile.DoesNotExist:
         user_profile, _ = await sync_to_async(lambda: UserProfile.objects.get_or_create(user=user))()
     
     # Upload cover images to Supabase Storage if provided

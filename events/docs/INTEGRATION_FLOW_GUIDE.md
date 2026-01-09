@@ -972,8 +972,8 @@ This flow explains how a host creates and manages events. Only users who create 
   - `duration_hours`: double (required, must be > 0)
   - `event_interest_ids`: string (required, JSON string array, e.g., `"[1,2,3]"`)
   - Venue option (choose exactly ONE):
-    - `venue_id`: int (optional, if using existing venue)
-    - `venue_text`: string (optional, if custom venue text)
+  - `venue_id`: int (optional, if using existing venue)
+  - `venue_text`: string (optional, if custom venue text)
   - `status`: string (default: "draft", options from Swagger)
   - `is_public`: bool (optional, default: true)
   - `max_capacity`: int (optional, default: 0 = unlimited)

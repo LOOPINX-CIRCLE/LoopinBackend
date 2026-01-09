@@ -83,33 +83,78 @@ def payment_status_notification(sender, instance, **kwargs):
     try:
         from notifications.models import Notification
         
+        # Use push dispatcher for notifications (handles both push and Notification record)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            dispatcher = get_push_dispatcher()
+            
+            if instance.status == 'completed':
+                dispatcher.send_notification(
+                    recipient=instance.user,
+                    notification_type='payment_success',
+                    title="Payment Successful",
+                    message=f"Your payment for event '{instance.event.title}' has been processed successfully.",
+                    data={
+                        'type': 'payment_success',
+                        'event_id': instance.event.id,
+                        'payment_order_id': instance.id,
+                        'route': 'event_detail',
+                    },
+                    reference_type='PaymentOrder',
+                    reference_id=instance.id,
+                )
+                
+            elif instance.status == 'failed':
+                dispatcher.send_notification(
+                    recipient=instance.user,
+                    notification_type='payment_failed',
+                    title="Payment Failed",
+                    message=f"Your payment for event '{instance.event.title}' could not be processed. Please try again.",
+                    data={
+                        'type': 'payment_failed',
+                        'event_id': instance.event.id,
+                        'payment_order_id': instance.id,
+                        'route': 'payment_retry',
+                    },
+                    reference_type='PaymentOrder',
+                    reference_id=instance.id,
+                )
+            
+            logger.info(f"Payment status notification sent to user {instance.user.id}")
+        except Exception as e:
+            # Fallback to direct Notification creation if dispatcher fails
+            logger.warning(f"Push dispatcher failed, falling back to direct notification: {str(e)}")
+            try:
         if instance.status == 'completed':
             Notification.objects.create(
                 recipient=instance.user,
                 title="Payment Successful",
                 message=f"Your payment for event '{instance.event.title}' has been processed successfully.",
-                notification_type="payment_success",
-                data={
+                        type="payment_success",
+                        metadata={
                     'payment_id': instance.id,
                     'event_id': instance.event.id,
                     'amount': str(instance.amount),
-                }
+                        },
+                        reference_type='PaymentOrder',
+                        reference_id=instance.id,
             )
-            
         elif instance.status == 'failed':
             Notification.objects.create(
                 recipient=instance.user,
                 title="Payment Failed",
                 message=f"Your payment for event '{instance.event.title}' could not be processed. Please try again.",
-                notification_type="payment_failed",
-                data={
+                        type="payment_failed",
+                        metadata={
                     'payment_id': instance.id,
                     'event_id': instance.event.id,
                     'amount': str(instance.amount),
-                }
+                        },
+                        reference_type='PaymentOrder',
+                        reference_id=instance.id,
             )
-        
-        logger.info(f"Payment status notification sent to user {instance.user.id}")
+            except Exception as fallback_error:
+                logger.error(f"Failed to create fallback notification: {str(fallback_error)}")
         
     except Exception as e:
         logger.error(f"Failed to send payment status notification: {str(e)}")

@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from django.conf import settings
 
-from api.routers import users, hosts, events, events_attendance, payouts, payments
+from api.routers import users, hosts, events, events_attendance, payouts, payments, notifications
 from core.exceptions import (
     LoopinBaseException,
     ValidationError,
@@ -136,6 +136,12 @@ try:
     print("✅ Payments router loaded successfully (prefix: /payments)")
 except Exception as e:
     print(f"❌ Failed to load payments router: {e}")
+
+try:
+    app.include_router(notifications.router)
+    print("✅ Notifications router loaded successfully (prefix: /notifications)")
+except Exception as e:
+    print(f"❌ Failed to load notifications router: {e}")
 
 # Log router summary after all routers are loaded
 print("=" * 60)
