@@ -78,6 +78,7 @@ erDiagram
     EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
     
     %% Notification & Audit Relationships
+    USER_PROFILE ||--o{ USER_DEVICE : "has devices"
     USER_PROFILE ||--o{ NOTIFICATION : "receives notifications"
     USER_PROFILE ||--o{ NOTIFICATION : "sends notifications"
     AUTH_USER ||--o{ AUDIT_LOG : "generates logs"
@@ -131,6 +132,17 @@ erDiagram
         BOOLEAN is_verified "OTP verified flag"
         INT attempts "Verification attempts"
         DATETIME expires_at "OTP expiration"
+        DATETIME created_at "Creation time"
+        DATETIME updated_at "Last update"
+    }
+
+    USER_DEVICE {
+        BIGINT id PK "Primary key"
+        BIGINT user_profile_id FK "User profile (USER_PROFILE)"
+        STRING onesignal_player_id "OneSignal player ID (unique, indexed)"
+        STRING platform "ios|android"
+        BOOLEAN is_active "Device active status (indexed)"
+        DATETIME last_seen_at "Last seen timestamp (nullable)"
         DATETIME created_at "Creation time"
         DATETIME updated_at "Last update"
     }
@@ -462,7 +474,7 @@ erDiagram
     class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION,HOST_PAYOUT_REQUEST eventTables
     class ATTENDANCE_RECORD,TICKET_SECRET attendanceTables
     class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
-    class NOTIFICATION notificationTables
+    class USER_DEVICE,NOTIFICATION notificationTables
     class AUDIT_LOG,AUDIT_LOG_SUMMARY auditTables
     class PLATFORM_FEE_CONFIG coreTables
 ```
@@ -481,7 +493,8 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Configurable platform fee system** with admin-controlled fee percentage
 - **Automatic waitlist promotion** with 3.5-4 hour randomized window
 - **Complete audit trail** for security and compliance
-- **Flexible notification system** for user engagement
+- **Push notification system** with device registration and OneSignal integration
+- **Flexible in-app notification system** for user engagement
 
 **Database:** PostgreSQL 15+  
 **ORM:** Django ORM  
@@ -592,6 +605,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - ✅ `EVENT_REQUEST.requester_id` → `USER_PROFILE` (customers request to join)
 - ✅ `BANK_ACCOUNT.host_id` → `USER_PROFILE` (hosts receive payouts)
 - ✅ `CAPACITY_RESERVATION.user_id` → `USER_PROFILE` (customers reserve seats)
+- ✅ `USER_DEVICE.user_profile` → `USER_PROFILE` (customers register devices for push)
 - ✅ `NOTIFICATION.recipient` → `USER_PROFILE` (normal users receive notifications)
 - ✅ `NOTIFICATION.sender` → `USER_PROFILE` (normal users send notifications)
 - ✅ `USER_PHONE_OTP` → Used by normal users (phone-based authentication)
@@ -724,7 +738,54 @@ pending → verified (success) OR failed|expired (failure)
 
 ---
 
-### **1.4 EVENT_INTEREST** 🎨
+### **1.4 USER_DEVICE** 📱
+**Purpose:** Map user profiles to OneSignal player IDs for push notifications
+
+**Key Features:**
+- One user profile can have multiple devices (iOS, Android)
+- Tracks OneSignal player IDs for push notification delivery
+- Supports device deactivation (soft-delete pattern) when player IDs become invalid
+- Last seen tracking for device activity monitoring
+
+**Fields:**
+- `user_profile` - Foreign key to USER_PROFILE (the device owner)
+- `onesignal_player_id` - OneSignal player ID (unique, indexed, max 255 chars)
+- `platform` - Device platform: `ios` or `android`
+- `is_active` - Whether device is active (indexed, default: true)
+  - Set to false when OneSignal returns invalid player ID
+  - Allows soft-delete pattern (devices preserved for audit)
+- `last_seen_at` - Last time device was used (nullable, indexed)
+- `created_at` / `updated_at` - Timestamps (inherited from TimeStampedModel)
+
+**Indexes:**
+- `user_profile` + `is_active` (composite index for querying active devices per user)
+- `onesignal_player_id` (unique index for fast lookup)
+- `is_active` + `last_seen_at` (composite index for cleanup queries)
+
+**Unique Constraints:**
+- `(user_profile, onesignal_player_id)` - Prevents duplicate device registrations
+
+**Business Logic:**
+- Devices are registered via `/api/notifications/devices/register` endpoint
+- OneSignal player IDs may rotate - old devices are deactivated, not deleted
+- Only USER_PROFILE (normal users) can register devices (AUTH_USER blocked)
+- Invalid player IDs detected via OneSignal API response trigger automatic deactivation
+- `deactivate()` and `reactivate()` helper methods for device lifecycle management
+
+**Use Cases:**
+- Mobile apps register devices on app launch
+- Push notifications sent to all active devices per user
+- Device rotation handled gracefully (old devices deactivated, new ones registered)
+- Device activity monitoring via last_seen_at timestamp
+
+**Security:**
+- Only USER_PROFILE (customers) can register devices
+- Admin users (AUTH_USER) are blocked from device registration
+- Device deactivation preserves audit trail
+
+---
+
+### **1.5 EVENT_INTEREST** 🎨
 **Purpose:** Event categorization and personalization
 
 **Features:**
@@ -1221,7 +1282,20 @@ rejected/cancelled
 
 ## **5. NOTIFICATION MODULE** 🔔
 
-### **5.1 NOTIFICATION** 📬
+### **5.1 USER_DEVICE** 📱
+**Purpose:** Device registration for push notifications
+
+**See Section 1.4 USER_DEVICE for complete documentation.**
+
+**Key Points:**
+- Maps USER_PROFILE to OneSignal player IDs
+- Supports multiple devices per user (iOS, Android)
+- Enables push notification delivery via OneSignal
+- Devices deactivated (soft-delete) when player IDs become invalid
+
+---
+
+### **5.2 NOTIFICATION** 📬
 **Purpose:** In-app user notifications for **normal users (customers)**
 
 **⚠️ IMPORTANT:** Notifications are linked to `USER_PROFILE` (normal users), NOT admin users.
@@ -1248,10 +1322,20 @@ rejected/cancelled
 - UUID for API access
 
 **Business Logic:**
+- Push notifications sent via OneSignal using USER_DEVICE player IDs
+- Notification records persisted regardless of push success (audit trail)
+- In-app notifications available even if push delivery fails
 - 30-day retention
 - Batch processing for campaigns
 - Read status tracking
 - All notifications are for normal users (`USER_PROFILE`), not admin users
+
+**Push Notification Flow:**
+1. Notification created → `NOTIFICATION` record saved (always)
+2. `USER_DEVICE` queried for active devices per recipient
+3. Push sent via OneSignal to all active devices
+4. Invalid player IDs trigger device deactivation
+5. Notification record persisted for in-app inbox regardless of push result
 
 ---
 
@@ -1381,6 +1465,7 @@ final_price = PlatformFeeConfig.calculate_final_price(
 | **1-to-1** | `ATTENDANCE_RECORD` ↔ `TICKET_SECRET` | One secret per attendance |
 | **1-to-Many** | `USER_PROFILE` → `ATTENDANCE_RECORD` | User profile has many attendance records |
 | **1-to-Many** | `AUTH_USER` → `PLATFORM_FEE_CONFIG` | Admin updates platform fee config |
+| **1-to-Many** | `USER_PROFILE` → `USER_DEVICE` | User profile has many devices |
 | **1-to-Many** | `USER_PROFILE` → `EVENT` | Host creates many events |
 | **1-to-Many** | `VENUE` → `EVENT` | Venue hosts many events |
 | **1-to-Many** | `EVENT` → `EVENT_REQUEST/INVITE/ATTENDEE` | Event has many interactions |
@@ -1561,6 +1646,18 @@ final_price = PlatformFeeConfig.calculate_final_price(
 - Host ownership validation
 - Duplicate request prevention
 - Immutable financial snapshots for audit trail
+
+### **Notifications** (`/api/notifications/`)
+- **Device Registration:**
+  - `POST /devices/register` - Register device for push notifications
+  - `DELETE /devices/{player_id}` - Deactivate device
+
+**Features:**
+- Register devices with OneSignal player IDs
+- Support for iOS and Android platforms
+- Multiple devices per user supported
+- Automatic device deactivation on invalid player IDs
+- Only USER_PROFILE (customers) can register devices (AUTH_USER blocked)
 
 ---
 
