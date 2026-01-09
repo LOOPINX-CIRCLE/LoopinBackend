@@ -1,6 +1,5 @@
 """
 Event Attendance, Requests, Invitations, and Ticket Management API Router
-CTO-Level Production Implementation
 
 This module provides comprehensive endpoints for:
 - User event requests (create, check status)
@@ -516,17 +515,25 @@ async def accept_event_request(
         event.going_count = EventAttendee.objects.filter(event=event, status='going').count()
         event.save(update_fields=['requests_count', 'going_count'])
         
-        # Send notification
-        send_notification(
-            recipient=request.requester,
-            notification_type='event_request',
-            title=f"Request Accepted: {event.title}",
-            message=f"Your request to attend '{event.title}' has been accepted! Please confirm your attendance.",
-            data={"action": "accepted"},
-            sender=event.host,
-            reference_type="EventRequest",
-            reference_id=request.id
-        )
+        # Send notification using template
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
+            dispatcher.send_template_notification(
+                recipient=request.requester,
+                template=NotificationTemplate.REQUEST_APPROVED,
+                context={
+                    'event_name': event.title,
+                    'host_name': event.host.name or event.host.username
+                },
+                sender=event.host,
+                reference_type="EventRequest",
+                reference_id=request.id,
+                additional_data={"action": "accepted"},
+            )
+        except Exception as e:
+            logger.error(f"Failed to send request accepted notification: {str(e)}")
         
         logger.info(f"Event request {request_id} accepted by host {user.id}")
         return request
@@ -595,17 +602,24 @@ async def decline_event_request(
         event.requests_count = EventRequest.objects.filter(event=event, status='pending').count()
         event.save(update_fields=['requests_count'])
         
-        # Send notification
-        send_notification(
-            recipient=request.requester,
-            notification_type='event_request',
-            title=f"Request Declined: {event.title}",
-            message=f"Your request to attend '{event.title}' has been declined.",
-            data={"action": "declined"},
-            sender=event.host,
-            reference_type="EventRequest",
-            reference_id=request.id
-        )
+        # Send notification using template
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
+            dispatcher.send_template_notification(
+                recipient=request.requester,
+                template=NotificationTemplate.REQUEST_DECLINED,
+                context={
+                    'event_name': event.title
+                },
+                sender=event.host,
+                reference_type="EventRequest",
+                reference_id=request.id,
+                additional_data={"action": "declined"},
+            )
+        except Exception as e:
+            logger.error(f"Failed to send request declined notification: {str(e)}")
         
         logger.info(f"Event request {request_id} declined by host {user.id}")
         return request
@@ -697,17 +711,25 @@ async def bulk_accept_decline_requests(
                         request.host_message = action_data.host_message
                     request.save(update_fields=['status', 'host_message', 'updated_at'])
                     
-                    # Send notification
-                    send_notification(
-                        recipient=request.requester,
-                        notification_type='event_request',
-                        title=f"Request Accepted: {event.title}",
-                        message=f"Your request to attend '{event.title}' has been accepted!",
-                        data={"action": "accepted"},
-                        sender=event.host,
-                        reference_type="EventRequest",
-                        reference_id=request.id
-                    )
+                    # Send notification using template
+                    try:
+                        from notifications.services.dispatcher import get_push_dispatcher
+                        from notifications.services.messages import NotificationTemplate
+                        dispatcher = get_push_dispatcher()
+                        dispatcher.send_template_notification(
+                            recipient=request.requester,
+                            template=NotificationTemplate.REQUEST_APPROVED,
+                            context={
+                                'event_name': event.title,
+                                'host_name': event.host.name or event.host.username
+                            },
+                            sender=event.host,
+                            reference_type="EventRequest",
+                            reference_id=request.id,
+                            additional_data={"action": "accepted"},
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send request accepted notification: {str(e)}")
                     
                     accepted_count += 1
                 except Exception as e:
@@ -722,17 +744,24 @@ async def bulk_accept_decline_requests(
                         request.host_message = action_data.host_message
                     request.save(update_fields=['status', 'host_message', 'updated_at'])
                     
-                    # Send notification
-                    send_notification(
-                        recipient=request.requester,
-                        notification_type='event_request',
-                        title=f"Request Declined: {event.title}",
-                        message=f"Your request to attend '{event.title}' has been declined.",
-                        data={"action": "declined"},
-                        sender=event.host,
-                        reference_type="EventRequest",
-                        reference_id=request.id
-                    )
+                    # Send notification using template
+                    try:
+                        from notifications.services.dispatcher import get_push_dispatcher
+                        from notifications.services.messages import NotificationTemplate
+                        dispatcher = get_push_dispatcher()
+                        dispatcher.send_template_notification(
+                            recipient=request.requester,
+                            template=NotificationTemplate.REQUEST_DECLINED,
+                            context={
+                                'event_name': event.title
+                            },
+                            sender=event.host,
+                            reference_type="EventRequest",
+                            reference_id=request.id,
+                            additional_data={"action": "declined"},
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send request declined notification: {str(e)}")
                     
                     declined_count += 1
                 except Exception as e:
@@ -879,19 +908,19 @@ async def confirm_attendance_free_event(
             messages = NotificationMessages()
             
             # Use appropriate notification type and message
-            dispatcher.send_notification(
+            from notifications.services.messages import NotificationTemplate
+            dispatcher.send_template_notification(
                 recipient=user_profile,
-                notification_type='ticket_confirmed',
-                title="Ticket Confirmed",
-                message=f"Your ticket for '{event.title}' has been confirmed! Check your tickets.",
-                data={
-                    'type': 'ticket_confirmed',
-                    'event_id': event.id,
-                    'ticket_id': attendance_record.id,
-                    'route': 'ticket_detail',
+                template=NotificationTemplate.TICKET_CONFIRMED,
+                context={
+                    'event_name': event.title
                 },
                 reference_type='AttendanceRecord',
                 reference_id=attendance_record.id,
+                additional_data={
+                    'event_id': event.id,
+                    'ticket_id': attendance_record.id,
+                },
             )
         except Exception as e:
             # Never block attendance confirmation on notification failure
@@ -996,16 +1025,23 @@ async def invite_users_to_event(
                     expires_at=invite_data.expires_at,
                 )
                 
-                send_notification(
-                    recipient=invited_user_profile,
-                    notification_type='event_invite',
-                    title=f"You're Invited: {event.title}",
-                    message=f"You've been invited to attend '{event.title}'!",
-                    data={},
-                    sender=event.host if hasattr(event.host, 'id') else None,
-                    reference_type="EventInvite",
-                    reference_id=invite.id
-                )
+                try:
+                    from notifications.services.dispatcher import get_push_dispatcher
+                    from notifications.services.messages import NotificationTemplate
+                    dispatcher = get_push_dispatcher()
+                    dispatcher.send_template_notification(
+                        recipient=invited_user_profile,
+                        template=NotificationTemplate.EVENT_INVITE,
+                        context={
+                            'host_name': event.host.name or event.host.username,
+                            'event_name': event.title
+                        },
+                        sender=event.host if hasattr(event.host, 'id') else None,
+                        reference_type="EventInvite",
+                        reference_id=invite.id,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send invite notification: {str(e)}")
                 
                 created_invites.append(invite)
             except Exception as e:
@@ -1261,21 +1297,22 @@ async def respond_to_invitation(
                 from notifications.services.dispatcher import get_push_dispatcher
                 dispatcher = get_push_dispatcher()
                 
-                dispatcher.send_notification(
-                recipient=event.host,
-                notification_type='event_invite',
-                title=f"Invitation Accepted: {event.title}",
-                message=f"{user_display_name} has accepted your invitation to '{event.title}'",
-                    data={
-                        'type': 'invite_accepted',
+                from notifications.services.messages import NotificationTemplate
+                dispatcher.send_template_notification(
+                    recipient=event.host,
+                    template=NotificationTemplate.INVITE_ACCEPTED,
+                    context={
+                        'event_name': event.title,
+                        'user_name': user_display_name
+                    },
+                    sender=user_profile,
+                    reference_type="EventInvite",
+                    reference_id=invite.id,
+                    additional_data={
                         'event_id': event.id,
                         'invite_id': invite.id,
-                        'route': 'event_detail',
                     },
-                sender=user_profile,
-                reference_type="EventInvite",
-                reference_id=invite.id
-            )
+                )
             except Exception as e:
                 # Never block invite acceptance on notification failure
                 logger.error(f"Failed to send invite acceptance push notification: {str(e)}")
@@ -1295,16 +1332,23 @@ async def respond_to_invitation(
                 user_profile, _ = UserProfile.objects.get_or_create(user=user)
                 user_display_name = user_profile.name or user_profile.phone_number or user.username
             
-            send_notification(
-                recipient=event.host,
-                notification_type='event_invite',
-                title=f"Invitation Declined: {event.title}",
-                message=f"{user_display_name} has declined your invitation to '{event.title}'",
-                data={},
-                sender=user_profile,
-                reference_type="EventInvite",
-                reference_id=invite.id
-            )
+            try:
+                from notifications.services.dispatcher import get_push_dispatcher
+                from notifications.services.messages import NotificationTemplate
+                dispatcher = get_push_dispatcher()
+                dispatcher.send_template_notification(
+                    recipient=event.host,
+                    template=NotificationTemplate.INVITE_DECLINED,
+                    context={
+                        'event_name': event.title,
+                        'user_name': user_display_name
+                    },
+                    sender=user_profile,
+                    reference_type="EventInvite",
+                    reference_id=invite.id,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send invite declined notification: {str(e)}")
             
             logger.info(f"Invitation {invite_id} declined by user {user.id}")
         
