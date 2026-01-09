@@ -25,14 +25,19 @@ def event_created_notification(sender, instance, created, **kwargs):
         
         # Send notification to event host
         try:
-            from notifications.models import Notification
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
             
-            Notification.objects.create(
+            dispatcher.send_template_notification(
                 recipient=instance.host,
-                title="Event Created Successfully",
-                message=f"Your event '{instance.title}' has been created successfully.",
-                notification_type="event_created",
-                data={
+                template=NotificationTemplate.EVENT_CREATED,
+                context={
+                    'event_name': instance.title
+                },
+                reference_type='Event',
+                reference_id=instance.id,
+                additional_data={
                     'event_id': instance.id,
                     'event_title': instance.title,
                 }
@@ -86,38 +91,37 @@ def payment_status_notification(sender, instance, **kwargs):
         # Use push dispatcher for notifications (handles both push and Notification record)
         try:
             from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
             dispatcher = get_push_dispatcher()
             
             if instance.status == 'completed':
-                dispatcher.send_notification(
+                dispatcher.send_template_notification(
                     recipient=instance.user,
-                    notification_type='payment_success',
-                    title="Payment Successful",
-                    message=f"Your payment for event '{instance.event.title}' has been processed successfully.",
-                    data={
-                        'type': 'payment_success',
-                        'event_id': instance.event.id,
-                        'payment_order_id': instance.id,
-                        'route': 'event_detail',
+                    template=NotificationTemplate.PAYMENT_SUCCESS,
+                    context={
+                        'event_name': instance.event.title
                     },
                     reference_type='PaymentOrder',
                     reference_id=instance.id,
+                    additional_data={
+                        'event_id': instance.event.id,
+                        'payment_order_id': instance.id,
+                    },
                 )
                 
             elif instance.status == 'failed':
-                dispatcher.send_notification(
+                dispatcher.send_template_notification(
                     recipient=instance.user,
-                    notification_type='payment_failed',
-                    title="Payment Failed",
-                    message=f"Your payment for event '{instance.event.title}' could not be processed. Please try again.",
-                    data={
-                        'type': 'payment_failed',
-                        'event_id': instance.event.id,
-                        'payment_order_id': instance.id,
-                        'route': 'payment_retry',
+                    template=NotificationTemplate.PAYMENT_FAILED,
+                    context={
+                        'event_name': instance.event.title
                     },
                     reference_type='PaymentOrder',
                     reference_id=instance.id,
+                    additional_data={
+                        'event_id': instance.event.id,
+                        'payment_order_id': instance.id,
+                    },
                 )
             
             logger.info(f"Payment status notification sent to user {instance.user.id}")
@@ -125,34 +129,43 @@ def payment_status_notification(sender, instance, **kwargs):
             # Fallback to direct Notification creation if dispatcher fails
             logger.warning(f"Push dispatcher failed, falling back to direct notification: {str(e)}")
             try:
-        if instance.status == 'completed':
-            Notification.objects.create(
-                recipient=instance.user,
-                title="Payment Successful",
-                message=f"Your payment for event '{instance.event.title}' has been processed successfully.",
+                from notifications.services.messages import NotificationTemplate, render_template
+                if instance.status == 'completed':
+                    rendered = render_template(
+                        NotificationTemplate.PAYMENT_SUCCESS,
+                        {'event_name': instance.event.title}
+                    )
+                    Notification.objects.create(
+                        recipient=instance.user,
+                        title=rendered['title'],
+                        message=rendered['body'],
                         type="payment_success",
                         metadata={
-                    'payment_id': instance.id,
-                    'event_id': instance.event.id,
-                    'amount': str(instance.amount),
+                            'payment_id': instance.id,
+                            'event_id': instance.event.id,
+                            'amount': str(instance.amount),
                         },
                         reference_type='PaymentOrder',
                         reference_id=instance.id,
-            )
-        elif instance.status == 'failed':
-            Notification.objects.create(
-                recipient=instance.user,
-                title="Payment Failed",
-                message=f"Your payment for event '{instance.event.title}' could not be processed. Please try again.",
+                    )
+                elif instance.status == 'failed':
+                    rendered = render_template(
+                        NotificationTemplate.PAYMENT_FAILED,
+                        {'event_name': instance.event.title}
+                    )
+                    Notification.objects.create(
+                        recipient=instance.user,
+                        title=rendered['title'],
+                        message=rendered['body'],
                         type="payment_failed",
                         metadata={
-                    'payment_id': instance.id,
-                    'event_id': instance.event.id,
-                    'amount': str(instance.amount),
+                            'payment_id': instance.id,
+                            'event_id': instance.event.id,
+                            'amount': str(instance.amount),
                         },
                         reference_type='PaymentOrder',
                         reference_id=instance.id,
-            )
+                    )
             except Exception as fallback_error:
                 logger.error(f"Failed to create fallback notification: {str(fallback_error)}")
         
@@ -169,14 +182,21 @@ def event_request_notification(sender, instance, created, **kwargs):
         
         # Send notification to event host
         try:
-            from notifications.models import Notification
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
             
-            Notification.objects.create(
+            dispatcher.send_template_notification(
                 recipient=instance.event.host,
-                title="New Event Request",
-                message=f"{instance.requester.username} has requested to join your event '{instance.event.title}'.",
-                notification_type="event_request",
-                data={
+                template=NotificationTemplate.NEW_JOIN_REQUEST,
+                context={
+                    'user_name': instance.requester.name or instance.requester.username,
+                    'event_name': instance.event.title
+                },
+                sender=instance.requester,
+                reference_type='EventRequest',
+                reference_id=instance.id,
+                additional_data={
                     'request_id': instance.id,
                     'event_id': instance.event.id,
                     'requester_id': instance.requester.id,
@@ -193,27 +213,38 @@ def event_request_notification(sender, instance, created, **kwargs):
         logger.info(f"Event request updated: {instance.id}, status: {instance.status}")
         
         try:
-            from notifications.models import Notification
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
             
             if instance.status == 'accepted':
-                Notification.objects.create(
+                dispatcher.send_template_notification(
                     recipient=instance.requester,
-                    title="Event Request Accepted",
-                    message=f"Your request to join '{instance.event.title}' has been accepted.",
-                    notification_type="event_request_accepted",
-                    data={
+                    template=NotificationTemplate.REQUEST_APPROVED,
+                    context={
+                        'event_name': instance.event.title,
+                        'host_name': instance.event.host.name or instance.event.host.username
+                    },
+                    sender=instance.event.host,
+                    reference_type='EventRequest',
+                    reference_id=instance.id,
+                    additional_data={
                         'request_id': instance.id,
                         'event_id': instance.event.id,
                     }
                 )
                 
             elif instance.status == 'declined':
-                Notification.objects.create(
+                dispatcher.send_template_notification(
                     recipient=instance.requester,
-                    title="Event Request Declined",
-                    message=f"Your request to join '{instance.event.title}' has been declined.",
-                    notification_type="event_request_declined",
-                    data={
+                    template=NotificationTemplate.REQUEST_DECLINED,
+                    context={
+                        'event_name': instance.event.title
+                    },
+                    sender=instance.event.host,
+                    reference_type='EventRequest',
+                    reference_id=instance.id,
+                    additional_data={
                         'request_id': instance.id,
                         'event_id': instance.event.id,
                     }
@@ -233,14 +264,17 @@ def profile_completion_notification(sender, instance, created, **kwargs):
         logger.info(f"User profile completed: {instance.user.id}")
         
         try:
-            from notifications.models import Notification
+            from notifications.services.dispatcher import get_push_dispatcher
+            from notifications.services.messages import NotificationTemplate
+            dispatcher = get_push_dispatcher()
             
-            Notification.objects.create(
-                recipient=instance.user,
-                title="Profile Completed",
-                message="Congratulations! Your profile has been completed successfully.",
-                notification_type="profile_completed",
-                data={
+            dispatcher.send_template_notification(
+                recipient=instance,
+                template=NotificationTemplate.PROFILE_COMPLETED,
+                context={},  # No parameters needed
+                reference_type='UserProfile',
+                reference_id=instance.id,
+                additional_data={
                     'user_id': instance.user.id,
                 }
             )

@@ -9,6 +9,8 @@ Orchestrates push notification delivery:
 - Persists NOTIFICATION record regardless of push success
 
 This is the ONLY place that sends push notifications.
+
+All transactional notifications MUST use templates from messages.py.
 """
 import logging
 from typing import List, Dict, Any, Optional
@@ -40,7 +42,7 @@ class PushNotificationDispatcher:
         self.onesignal_client = OneSignalClient()
         self.preferences_service = NotificationPreferencesService()
     
-    def send_notification(
+   def send_notification(
         self,
         recipient: 'UserProfile',
         notification_type: str,
