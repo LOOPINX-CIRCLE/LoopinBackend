@@ -8,7 +8,7 @@ import logging
 from typing import List
 from django.utils import timezone
 from notifications.services.dispatcher import get_push_dispatcher
-from notifications.services.messages import NotificationMessages
+# from notifications.services.messages import NotificationTemplate, render_template  # TODO: Use when implementing
 
 logger = logging.getLogger(__name__)
 

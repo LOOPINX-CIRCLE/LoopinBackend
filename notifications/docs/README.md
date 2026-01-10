@@ -114,7 +114,7 @@ Maps user profiles to their registered push notification devices. Enables one us
 
 ---
 
-## Notification Templates (IDEA-1)
+## Notification Templates
 
 All transactional notifications use centralized templates defined in the template registry. This ensures consistency, makes updates controlled, and prevents message drift across the platform.
 

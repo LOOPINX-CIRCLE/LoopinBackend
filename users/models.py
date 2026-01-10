@@ -402,6 +402,8 @@ class BankAccount(TimeStampedModel):
     @property
     def masked_account_number(self):
         """Return masked account number for security"""
+        if not self.account_number:
+            return "-"  # NULL-safe
         if len(self.account_number) <= 4:
             return "****"
         return f"****{self.account_number[-4:]}"

@@ -2,12 +2,20 @@
 from .onesignal import OneSignalClient
 from .dispatcher import PushNotificationDispatcher
 from .preferences import NotificationPreferencesService
-from .messages import NotificationMessages
+from .messages import NotificationTemplate, TEMPLATES, render_template
+from .rule_engine import RuleEngine, RuleEngineError
+from .campaign_service import CampaignService, CampaignServiceError
 
 __all__ = [
     'OneSignalClient',
     'PushNotificationDispatcher',
     'NotificationPreferencesService',
-    'NotificationMessages',
+    'NotificationTemplate',
+    'TEMPLATES',
+    'render_template',
+    'RuleEngine',
+    'RuleEngineError',
+    'CampaignService',
+    'CampaignServiceError',
 ]
 
