@@ -42,7 +42,7 @@ class PushNotificationDispatcher:
         self.onesignal_client = OneSignalClient()
         self.preferences_service = NotificationPreferencesService()
     
-   def send_notification(
+    def send_notification(
         self,
         recipient: 'UserProfile',
         notification_type: str,
