@@ -364,8 +364,17 @@ def update_event_with_relationships(
         )
     
     with transaction.atomic():
+        # Track if critical fields changed (time/venue changes require notifications)
+        # Capture old values BEFORE updating the event object
+        old_start_time = event.start_time
+        old_venue = event.venue_id
+        
+        # Capture venue update info BEFORE popping from update_data
+        venue_updated = "venue_id" in update_data
+        new_venue_id = update_data.get("venue_id") if venue_updated else None
+        
         # Handle venue reference update (venue is reference data, not a booking)
-        if "venue_id" in update_data:
+        if venue_updated:
             venue_id = update_data.pop("venue_id")
             if venue_id is None:
                 event.venue = None
@@ -383,17 +392,13 @@ def update_event_with_relationships(
         for field, value in update_data.items():
             setattr(event, field, value)
         
-        # Track if critical fields changed (time/venue changes require notifications)
-        old_start_time = event.start_time
-        old_venue = event.venue_id
-        
         event.save()
         
         # Send push notifications if event details changed (time or venue)
         # Only notify if event is published and has attendees
         if event.status == 'published':
             start_time_changed = 'start_time' in update_data and update_data['start_time'] != old_start_time
-            venue_changed = 'venue_id' in update_data and update_data['venue_id'] != old_venue
+            venue_changed = venue_updated and new_venue_id != old_venue
             
             if start_time_changed or venue_changed:
                 try:
@@ -710,11 +715,12 @@ async def create_event_endpoint(
             code="INVALID_INTEREST_IDS_FORMAT"
         )
     
-        # Get UserProfile for the user (Event.host requires UserProfile)
-        try:
-            user_profile = user.profile
-        except UserProfile.DoesNotExist:
-            user_profile, _ = await sync_to_async(lambda: UserProfile.objects.get_or_create(user=user))()
+    # Get UserProfile for the user (Event.host requires UserProfile)
+    # Note: Accessing reverse OneToOneField that doesn't exist raises AttributeError, not DoesNotExist
+    try:
+        user_profile = user.profile
+    except AttributeError:
+        user_profile, _ = await sync_to_async(lambda: UserProfile.objects.get_or_create(user=user))()
     
     # Upload cover images to Supabase Storage if provided
     cover_image_urls = []
