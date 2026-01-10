@@ -130,42 +130,42 @@ def payment_status_notification(sender, instance, **kwargs):
             logger.warning(f"Push dispatcher failed, falling back to direct notification: {str(e)}")
             try:
                 from notifications.services.messages import NotificationTemplate, render_template
-                if instance.status == 'completed':
+        if instance.status == 'completed':
                     rendered = render_template(
                         NotificationTemplate.PAYMENT_SUCCESS,
                         {'event_name': instance.event.title}
                     )
-                    Notification.objects.create(
-                        recipient=instance.user,
+            Notification.objects.create(
+                recipient=instance.user,
                         title=rendered['title'],
                         message=rendered['body'],
                         type="payment_success",
                         metadata={
-                            'payment_id': instance.id,
-                            'event_id': instance.event.id,
-                            'amount': str(instance.amount),
+                    'payment_id': instance.id,
+                    'event_id': instance.event.id,
+                    'amount': str(instance.amount),
                         },
                         reference_type='PaymentOrder',
                         reference_id=instance.id,
-                    )
-                elif instance.status == 'failed':
+            )
+        elif instance.status == 'failed':
                     rendered = render_template(
                         NotificationTemplate.PAYMENT_FAILED,
                         {'event_name': instance.event.title}
                     )
-                    Notification.objects.create(
-                        recipient=instance.user,
+            Notification.objects.create(
+                recipient=instance.user,
                         title=rendered['title'],
                         message=rendered['body'],
                         type="payment_failed",
                         metadata={
-                            'payment_id': instance.id,
-                            'event_id': instance.event.id,
-                            'amount': str(instance.amount),
+                    'payment_id': instance.id,
+                    'event_id': instance.event.id,
+                    'amount': str(instance.amount),
                         },
                         reference_type='PaymentOrder',
                         reference_id=instance.id,
-                    )
+            )
             except Exception as fallback_error:
                 logger.error(f"Failed to create fallback notification: {str(fallback_error)}")
         
