@@ -394,33 +394,28 @@ This flow is used when a user wants to host/create a new event.
 **Request Details:**
 - Method: POST
 - Headers: Include Authorization header with JWT token
-- Body: JSON object containing:
+- Content-Type: `multipart/form-data` (required for file uploads)
+- Body: Form data with file uploads containing:
   - `title`: Event title (required, 3-200 characters)
   - `description`: Event description (optional, max 20000 characters)
-  - `event_interest_ids`: Array of integers, list of event interest/category IDs (optional, can be empty array, each ID must be a valid interest ID from the event interests list)
-  - Venue option (choose exactly ONE of the following):
-    - `venue_id`: Integer ID of existing venue (if user selected from venues list)
-    - `venue_create`: Object with new venue details (if creating new venue inline)
-      - `name`: String, venue name (required, 1-150 characters)
-      - `address`: String, full address (required)
-      - `city`: String, city name (required, 1-100 characters)
-      - `venue_type`: String, type of venue (optional, default: "indoor", options: "indoor", "outdoor", "virtual", "hybrid")
-      - `capacity`: Integer, venue capacity hint (optional, default: 0 for unlimited, informational only)
-      - `latitude`: Decimal number, latitude coordinate (optional, between -90 and 90)
-      - `longitude`: Decimal number, longitude coordinate (optional, between -180 and 180)
-      - `metadata`: Object with additional venue information (optional, JSON object)
-    - `venue_text`: String, custom venue text (if not using venue from list, max 255 characters)
   - `start_time`: String, event start date and time (required, ISO 8601 format, example: "2024-12-25T18:00:00Z")
   - `duration_hours`: Decimal number, event duration in hours (required, must be greater than 0, can be decimal like 2.5 for 2 hours 30 minutes)
-  - `max_capacity`: Integer, maximum number of attendees (required, 0 means unlimited, must be 0 or positive)
-  - `is_paid`: Boolean, whether event requires payment (required, true or false, default: false)
-  - `ticket_price`: Decimal number, price per ticket (required if is_paid is true, must be 0 or greater, example: 500.00)
-  - `allow_plus_one`: Boolean, whether attendees can bring a guest (optional, true or false, default: true)
+  - `event_interest_ids`: String, JSON string array of event interest/category IDs (required, e.g., `"[1,2,3]"`, must be valid interest IDs from the event interests list)
+  - Venue option (choose exactly ONE of the following):
+    - `venue_id`: Integer ID of existing venue (optional, if user selected from venues list)
+    - `venue_text`: String, custom venue text (optional, if not using venue from list, max 255 characters)
+  - `max_capacity`: Integer, maximum number of attendees (optional, default: 0 = unlimited, must be 0 or positive)
+  - `is_paid`: Boolean, whether event requires payment (optional, true or false as string, default: false)
+  - `ticket_price`: Decimal number, price per ticket (optional, required if is_paid is true, must be 0 or greater, example: 500.00)
+  - `allow_plus_one`: Boolean, whether attendees can bring a guest (optional, true or false as string, default: true)
   - `gst_number`: String, GST number for paid events (optional, max 50 characters, only needed if is_paid is true)
   - `allowed_genders`: String, gender restrictions (optional, options: "all", "male", "female", "non_binary", default: "all")
-  - `cover_images`: Array of strings, image URLs (optional, max 3 images, each URL should be a valid image URL)
+  - `cover_images`: File array (optional, 0-3 image files, jpg/jpeg/png/webp formats, max 5MB each)
+    - Files are uploaded to Supabase Storage `event-images` bucket
+    - Public URLs are automatically generated and stored in the event record
+    - Backend validates file type, size, and count
   - `status`: String, event status (optional, options: "draft" or "published", default: "draft")
-  - `is_public`: Boolean, whether event is public (optional, true or false, default: true)
+  - `is_public`: Boolean, whether event is public (optional, true or false as string, default: true)
 
 **Success Response (201):**
 - Contains complete event object with all details
@@ -436,9 +431,18 @@ This flow is used when a user wants to host/create a new event.
 
 **Error Handling:**
 - If you get 400: Validation error, check the error message and highlight the problematic field
-  - Common errors: "Title must be between 3 and 200 characters", "Duration must be greater than 0", "Please provide exactly one venue option"
+  - Common errors: "Title must be between 3 and 200 characters", "Duration must be greater than 0", "Please provide exactly one venue option", "Maximum 3 cover images allowed", "File size exceeds 5MB", "Invalid file type"
 - If you get 401: User needs to log in again
+- If you get 422: Unprocessable Entity - usually means invalid form data or file upload issues
 - If you get 500: Server error, show "Unable to create event. Please try again."
+
+**Important Notes:**
+- Use `multipart/form-data` content type when sending files
+- `cover_images` must be actual image files from device, not URLs
+- `event_interest_ids` must be a JSON string (e.g., `"[1,2,3]"`), not a raw array
+- Boolean fields (`is_paid`, `is_public`, `allow_plus_one`) should be sent as strings ("true"/"false") or actual booleans depending on your HTTP client library
+- Backend automatically uploads images to Supabase Storage and stores the public URLs
+- `duration_hours` must be greater than 0 (backend enforces this validation)
 
 ### Step 4: Update Event (Optional)
 
@@ -1653,7 +1657,12 @@ Before releasing your app, test these scenarios:
    - Show relative time (e.g., "in 2 days", "yesterday")
 
 8. **Image Handling**
-   - Event cover images are URLs
+   - Event cover images are uploaded as files via `multipart/form-data`
+   - Files are uploaded to Supabase Storage and URLs are returned in response
+   - Supported formats: jpg, jpeg, png, webp
+   - Max file size: 5MB per image
+   - Max images: 3 per event
+   - For displaying images: Use URLs from event response (already uploaded to Supabase)
    - Load images asynchronously
    - Show placeholder while loading
    - Handle image load failures gracefully

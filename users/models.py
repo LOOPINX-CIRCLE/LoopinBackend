@@ -130,14 +130,30 @@ class EventInterest(TimeStampedModel):
 
 
 class PhoneOTP(TimeStampedModel):
-    """Model for storing phone number OTP verification"""
-    phone_number = models.CharField(max_length=15, unique=True)
+    """
+    Model for storing phone number OTP verification for normal users (customers).
+    
+    Used by USER_PROFILE (normal users) for phone-based authentication:
+    - Signup (new customer registration)
+    - Login (existing customer authentication)
+    - Password reset
+    - Phone verification
+    - Transaction security
+    
+    Note: Admin users (AUTH_USER with is_staff=True) typically don't use phone OTP.
+    Phone number links to USER_PROFILE.phone_number for normal users.
+    """
+    phone_number = models.CharField(
+        max_length=15, 
+        unique=True,
+        help_text="Phone number used by normal users (customers) for authentication. Links to USER_PROFILE.phone_number."
+    )
     otp_code = models.CharField(max_length=6)
     otp_type = models.CharField(
         max_length=20,
         choices=OTP_TYPE_CHOICES,
         default='signup',
-        help_text="Type of OTP (signup, login, etc.)"
+        help_text="Type of OTP for normal users (signup, login, password_reset, phone_verification, transaction)"
     )
     status = models.CharField(
         max_length=20,
@@ -386,6 +402,8 @@ class BankAccount(TimeStampedModel):
     @property
     def masked_account_number(self):
         """Return masked account number for security"""
+        if not self.account_number:
+            return "-"  # NULL-safe
         if len(self.account_number) <= 4:
             return "****"
         return f"****{self.account_number[-4:]}"

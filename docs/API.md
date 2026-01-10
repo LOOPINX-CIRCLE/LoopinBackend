@@ -104,33 +104,44 @@ curl http://localhost:8000/api/events/1
 ### Create Event
 `POST /api/events`
 
-Create a new event.
+Create a new event with optional cover image uploads.
 
 **Authentication**: Required (JWT)
 
-**Request Body**:
-```json
-{
-  "title": "Django Meetup",
-  "description": "Monthly Django developers meetup",
-  "start_time": "2025-12-15T18:00:00Z",
-  "end_time": "2025-12-15T21:00:00Z",
-  "venue_id": 1,
-  "status": "draft",
-  "is_public": true,
-  "max_capacity": 100,
-  "cover_images": ["https://example.com/image1.jpg"]
-}
-```
+**Content-Type**: `multipart/form-data` (for file uploads)
+
+**Request Format**: Form data with optional file uploads
+
+**Required Form Fields**:
+- `title` (string): Event title (3-200 characters)
+- `start_time` (string): ISO 8601 format datetime (e.g., "2025-12-15T18:00:00Z")
+- `duration_hours` (float): Event duration in hours (must be > 0)
+- `event_interest_ids` (string): JSON string array (e.g., `"[1,2,3]"`)
+
+**Optional Form Fields**:
+- `description` (string): Event description (max 20000 characters)
+- `venue_id` (integer): Existing venue ID (or null)
+- `venue_text` (string): Custom venue text (or null)
+- `max_capacity` (integer): Maximum attendees (0 = unlimited)
+- `is_paid` (boolean): Whether event requires payment
+- `ticket_price` (float): Ticket price (if is_paid=true)
+- `allow_plus_one` (boolean): Allow guests
+- `gst_number` (string): GST number for paid events
+- `allowed_genders` (string): "all", "male", "female", "non_binary"
+- `status` (string): "draft", "published", "cancelled", "completed", "postponed"
+- `is_public` (boolean): Public visibility
+- `cover_images` (file[]): Image files (max 3, jpg/jpeg/png/webp, 5MB each)
+  - Files are uploaded to Supabase Storage `event-images` bucket
+  - Public URLs are automatically generated and stored
 
 **Validation Rules**:
 - `title`: 3-200 characters
 - `description`: Optional, max 20000 characters
 - `start_time`: ISO 8601 format
-- `end_time`: Must be after start_time
+- `duration_hours`: Must be > 0 (end_time calculated automatically)
 - `status`: draft, published, cancelled, completed, postponed
 - `max_capacity`: Non-negative integer (0 = unlimited)
-- `cover_images`: Max 10 images with valid URLs
+- `cover_images`: Max 3 image files (not URLs), jpg/jpeg/png/webp, 5MB each
 
 **Response**: Event detail object (201 Created)
 
@@ -138,14 +149,17 @@ Create a new event.
 ```bash
 curl -X POST http://localhost:8000/api/events \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Django Meetup",
-    "description": "Monthly meetup",
-    "start_time": "2025-12-15T18:00:00Z",
-    "end_time": "2025-12-15T21:00:00Z",
-    "status": "published"
-  }'
+  -F "title=Django Meetup" \
+  -F "description=Monthly meetup" \
+  -F "start_time=2025-12-15T18:00:00Z" \
+  -F "duration_hours=3.0" \
+  -F "event_interest_ids=[1,2]" \
+  -F "venue_id=1" \
+  -F "status=published" \
+  -F "is_public=true" \
+  -F "max_capacity=100" \
+  -F "cover_images=@/path/to/image1.jpg" \
+  -F "cover_images=@/path/to/image2.jpg"
 ```
 
 ---

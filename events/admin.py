@@ -439,6 +439,8 @@ class EventAdmin(admin.ModelAdmin):
     
     def is_past_display(self, obj):
         """Display if event is past"""
+        if not obj or not obj.end_time:
+            return format_html('<span style="color: gray;">Not set</span>')
         is_past = obj.is_past
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -449,6 +451,8 @@ class EventAdmin(admin.ModelAdmin):
     
     def is_full_display(self, obj):
         """Display if event is full"""
+        if not obj:
+            return format_html('<span style="color: gray;">Not set</span>')
         is_full = obj.is_full
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -604,6 +608,8 @@ class EventRequestAdmin(admin.ModelAdmin):
     
     def has_host_message(self, obj):
         """Show if host has responded"""
+        if not obj:
+            return format_html('<span style="color: gray;">-</span>')
         has_message = bool(obj.host_message)
         return format_html(
             '<span style="color: {};">{}</span>',
@@ -611,7 +617,7 @@ class EventRequestAdmin(admin.ModelAdmin):
             '✓' if has_message else '✗'
         )
     has_host_message.short_description = "Host Replied"
-    has_host_message.boolean = True
+    # Note: boolean = True removed - this returns HTML, not a boolean
     
     actions = ['accept_requests', 'reject_requests']
     
@@ -726,8 +732,8 @@ class EventInviteAdmin(admin.ModelAdmin):
     
     def is_expired_display(self, obj):
         """Display if invite is expired"""
-        if not obj.expires_at:
-            return '-'
+        if not obj or not obj.expires_at:
+            return format_html('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -890,13 +896,15 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     
     def checked_in_display(self, obj):
         """Display check-in status"""
+        if not obj:
+            return format_html('<span style="color: gray;">Not set</span>')
         if obj.checked_in_at:
             return format_html(
                 '<span style="color: green; font-weight: bold;">✓ Yes</span>'
             )
         return format_html('<span style="color: gray;">No</span>')
     checked_in_display.short_description = "Checked In"
-    checked_in_display.boolean = True
+    # Note: boolean = True removed - this returns HTML, not a boolean
 
 
 # ============================================================================
@@ -1012,16 +1020,20 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     
     def consumed_display(self, obj):
         """Display if reservation is consumed"""
+        if not obj:
+            return format_html('<span style="color: gray;">Not set</span>')
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
             'green' if obj.consumed else 'orange',
             '✓ Consumed' if obj.consumed else 'Pending'
         )
     consumed_display.short_description = "Status"
-    consumed_display.boolean = True
+    # Note: boolean = True removed - this returns HTML, not a boolean
     
     def is_expired_display(self, obj):
         """Display if reservation is expired"""
+        if not obj or not obj.expires_at:
+            return format_html('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',

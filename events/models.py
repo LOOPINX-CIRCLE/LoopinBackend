@@ -148,6 +148,8 @@ class Event(TimeStampedModel):
     def is_past(self):
         """Check if event has already ended"""
         from django.utils import timezone
+        if not self.end_time:
+            return False  # NULL-safe: no end_time means event is not past
         return self.end_time < timezone.now()
 
     @property

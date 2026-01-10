@@ -81,16 +81,63 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    """Admin for User Profile management (Normal Users)"""
-    list_display = ('name', 'phone_number', 'gender', 'location', 'pictures_count', 'interests_count', 'is_verified', 'is_active', 'created_at')
-    list_filter = ('is_verified', 'is_active', 'gender', 'created_at', 'updated_at', 'location')
-    search_fields = ('name', 'phone_number', 'user__username', 'location', 'bio')
-    readonly_fields = ('created_at', 'updated_at', 'user', 'pictures_count', 'interests_count')
+    """
+    CEO-level admin interface for User Profiles.
+    
+    Features:
+    - Rich profile completion indicators
+    - Waitlist status tracking
+    - Activity metrics
+    - Quick verification actions
+    """
+    list_display = (
+        'name',
+        'phone_number',
+        'user_link',
+        'profile_completion_badge',
+        'waitlist_status',
+        'location',
+        'interests_count',
+        'is_verified_badge',
+        'is_active_badge',
+        'created_at',
+    )
+    list_filter = (
+        'is_verified',
+        'is_active',
+        'gender',
+        ('created_at', admin.DateFieldListFilter),
+        ('updated_at', admin.DateFieldListFilter),
+        'location',
+        ('waitlist_started_at', admin.DateFieldListFilter),
+    )
+    search_fields = (
+        'name',
+        'phone_number',
+        'user__username',
+        'user__email',
+        'location',
+        'bio',
+        'uuid',
+    )
+    readonly_fields = (
+        'uuid',
+        'created_at',
+        'updated_at',
+        'user',
+        'pictures_count',
+        'interests_count',
+        'profile_completion_badge_display',
+        'waitlist_status_display',
+        'is_verified_badge_display',
+        'is_active_badge_display',
+    )
     filter_horizontal = ('event_interests',)
+    date_hierarchy = 'created_at'
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('user', 'name', 'phone_number', 'gender'),
+            'fields': ('uuid', 'user', 'name', 'phone_number', 'gender'),
             'description': 'Essential contact and identification information'
         }),
         ('Profile Details', {
@@ -101,13 +148,17 @@ class UserProfileAdmin(admin.ModelAdmin):
             'fields': ('event_interests', 'interests_count'),
             'description': 'User selected event interests (1-5 required)'
         }),
-        ('Statistics', {
-            'fields': ('pictures_count',),
+        ('Profile Completion', {
+            'fields': ('profile_completion_badge_display', 'pictures_count',),
+            'description': 'Profile completion statistics and indicators'
+        }),
+        ('Waitlist Status', {
+            'fields': ('waitlist_status_display',),
             'classes': ('collapse',),
-            'description': 'Profile completion statistics'
+            'description': 'Waitlist promotion tracking (automatic 3.5-4 hour window)'
         }),
         ('Status', {
-            'fields': ('is_verified', 'is_active'),
+            'fields': ('is_verified', 'is_active', 'is_verified_badge_display', 'is_active_badge_display'),
             'description': 'Profile status and verification'
         }),
         ('Timestamps', {
@@ -117,48 +168,224 @@ class UserProfileAdmin(admin.ModelAdmin):
         }),
     )
     
+    def user_link(self, obj):
+        """Link to user"""
+        if obj.user:
+            url = reverse('admin:auth_user_change', args=[obj.user_id])
+            return format_html('<a href="{}">{}</a>', url, obj.user.username)
+        return '-'
+    user_link.short_description = "Auth User"
+    
     def pictures_count(self, obj):
         """Count of profile pictures"""
         if obj.profile_pictures:
             count = len(obj.profile_pictures)
             status = '✅' if count >= 1 else '⚠️'
-            return f'{status} {count}/6 pictures'
-        return '❌ No pictures'
+            color = '#4caf50' if count >= 1 else '#ff9800'
+            return format_html(
+                '<span style="color: {};">{} {}/6 pictures</span>',
+                color,
+                status,
+                count
+            )
+        return format_html('<span style="color: #f44336;">❌ No pictures</span>')
     pictures_count.short_description = 'Profile Pictures'
     
     def interests_count(self, obj):
         """Count of event interests"""
         count = obj.event_interests.count()
         status = '✅' if count >= 1 else '⚠️'
-        return f'{status} {count}/5 interests'
+        color = '#4caf50' if count >= 1 else '#ff9800'
+        return format_html(
+            '<span style="color: {};">{} {}/5 interests</span>',
+            color,
+            status,
+            count
+        )
     interests_count.short_description = 'Event Interests'
     
+    def profile_completion_badge(self, obj):
+        """Calculate and display profile completion percentage"""
+        total_fields = 6
+        completed = 0
+        
+        if obj.name: completed += 1
+        if obj.gender: completed += 1
+        if obj.profile_pictures and len(obj.profile_pictures) >= 1: completed += 1
+        if obj.event_interests.exists(): completed += 1
+        if obj.location: completed += 1
+        if obj.bio: completed += 1
+        
+        percentage = (completed / total_fields) * 100
+        
+        if percentage == 100:
+            color = '#4caf50'
+            badge_text = '✅ Complete'
+        elif percentage >= 50:
+            color = '#ff9800'
+            badge_text = f'🔄 {int(percentage)}%'
+        else:
+            color = '#f44336'
+            badge_text = f'⚠️ {int(percentage)}%'
+        
+        return format_html(
+            '<span style="background: {}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">{}</span>',
+            color,
+            badge_text
+        )
+    profile_completion_badge.short_description = "Completion"
+    
+    def profile_completion_badge_display(self, obj):
+        """Display completion badge in detail view"""
+        return self.profile_completion_badge(obj)
+    profile_completion_badge_display.short_description = "Profile Completion"
+    
+    def waitlist_status(self, obj):
+        """Display waitlist status"""
+        if not obj.is_active and obj.waitlist_started_at:
+            if obj.waitlist_promote_at:
+                from django.utils import timezone
+                now = timezone.now()
+                if now >= obj.waitlist_promote_at:
+                    return format_html('<span style="color: #ff9800;">⏳ Promoting Now</span>')
+                else:
+                    hours_until = (obj.waitlist_promote_at - now).total_seconds() / 3600
+                    return format_html(
+                        '<span style="color: #2196f3;">⏰ In {:.1f}h</span>',
+                        hours_until
+                    )
+            return format_html('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
+        return format_html('<span style="color: #4caf50;">✅ Active</span>')
+    waitlist_status.short_description = "Waitlist Status"
+    
+    def waitlist_status_display(self, obj):
+        """Display waitlist status in detail view"""
+        if obj.waitlist_started_at:
+            html = '<div style="background: #e3f2fd; padding: 15px; border-radius: 4px; border-left: 4px solid #2196f3;">'
+            html += '<h4 style="margin-top: 0;">Waitlist Information</h4>'
+            html += f'<p><strong>Started:</strong> {obj.waitlist_started_at.strftime("%Y-%m-%d %H:%M") if obj.waitlist_started_at else "N/A"}</p>'
+            if obj.waitlist_promote_at:
+                html += f'<p><strong>Scheduled Promotion:</strong> {obj.waitlist_promote_at.strftime("%Y-%m-%d %H:%M")}</p>'
+                from django.utils import timezone
+                now = timezone.now()
+                if now >= obj.waitlist_promote_at:
+                    html += '<p style="color: #ff9800;"><strong>Status:</strong> Ready for promotion (promotion may be in progress)</p>'
+                else:
+                    hours = (obj.waitlist_promote_at - now).total_seconds() / 3600
+                    html += f'<p style="color: #2196f3;"><strong>Status:</strong> Will be promoted in {hours:.1f} hours</p>'
+            html += '</div>'
+            return format_html(html)
+        return format_html('<span style="color: gray;">Not on waitlist</span>')
+    waitlist_status_display.short_description = "Waitlist Details"
+    
+    def is_verified_badge(self, obj):
+        """Display verification status badge"""
+        if obj.is_verified:
+            return format_html(
+                '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Verified</span>'
+            )
+        return format_html(
+            '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">⚠️ Unverified</span>'
+        )
+    is_verified_badge.short_description = "Verification"
+    
+    def is_verified_badge_display(self, obj):
+        """Display verification badge in detail view"""
+        return self.is_verified_badge(obj)
+    is_verified_badge_display.short_description = "Verification Status"
+    
+    def is_active_badge(self, obj):
+        """Display active status badge"""
+        if obj.is_active:
+            return format_html(
+                '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
+            )
+        return format_html(
+            '<span style="background: #f44336; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">❌ Inactive</span>'
+        )
+    is_active_badge.short_description = "Status"
+    
+    def is_active_badge_display(self, obj):
+        """Display active badge in detail view"""
+        return self.is_active_badge(obj)
+    is_active_badge_display.short_description = "Active Status"
+    
     def get_queryset(self, request):
-        """Show all users with profiles (including staff/superusers)"""
+        """Optimize queries with select_related and prefetch_related"""
         qs = super().get_queryset(request)
-        return qs.prefetch_related('event_interests').all()
+        return qs.select_related('user').prefetch_related('event_interests').order_by('-created_at')
+    
+    actions = ['verify_profiles', 'activate_profiles', 'deactivate_profiles']
+    
+    def verify_profiles(self, request, queryset):
+        """Bulk verify profiles"""
+        count = queryset.update(is_verified=True)
+        self.message_user(request, f'✅ {count} profile(s) verified.')
+    verify_profiles.short_description = "Verify selected profiles"
+    
+    def activate_profiles(self, request, queryset):
+        """Bulk activate profiles"""
+        count = queryset.update(is_active=True)
+        # Also activate the associated Django user
+        for profile in queryset:
+            if profile.user:
+                profile.user.is_active = True
+                profile.user.save()
+        self.message_user(request, f'✅ {count} profile(s) activated.')
+    activate_profiles.short_description = "Activate selected profiles"
+    
+    def deactivate_profiles(self, request, queryset):
+        """Bulk deactivate profiles"""
+        count = queryset.update(is_active=False)
+        # Also deactivate the associated Django user
+        for profile in queryset:
+            if profile.user:
+                profile.user.is_active = False
+                profile.user.save()
+        self.message_user(request, f'❌ {count} profile(s) deactivated.')
+    deactivate_profiles.short_description = "Deactivate selected profiles"
 
 @admin.register(EventInterest)
 class EventInterestAdmin(admin.ModelAdmin):
-    """Admin for Event Interest management"""
-    list_display = ('name', 'users_count', 'is_active', 'created_at')
+    """
+    CEO-level admin interface for Event Interests.
+    
+    Features:
+    - User count analytics
+    - Popularity tracking
+    - Quick activation/deactivation
+    """
+    list_display = (
+        'name',
+        'slug',
+        'users_count_display',
+        'events_count_display',
+        'is_active_badge',
+        'created_at',
+    )
     list_filter = ('is_active', 'created_at', 'updated_at')
-    search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at', 'users_count')
+    search_fields = ('name', 'slug')
+    readonly_fields = (
+        'slug',
+        'created_at',
+        'updated_at',
+        'users_count_display',
+        'events_count_display',
+        'is_active_badge_display',
+    )
     actions = ['activate_interests', 'deactivate_interests']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name',),
-            'description': 'Event interest details'
+            'fields': ('name', 'slug'),
+            'description': 'Event interest name and URL-friendly slug'
         }),
         ('Statistics', {
-            'fields': ('users_count',),
-            'classes': ('collapse',),
-            'description': 'Number of users who selected this interest'
+            'fields': ('users_count_display', 'events_count_display'),
+            'description': 'Usage statistics for this interest'
         }),
         ('Status', {
-            'fields': ('is_active',),
+            'fields': ('is_active', 'is_active_badge_display'),
             'description': 'Whether this interest is active for selection'
         }),
         ('Timestamps', {
@@ -168,78 +395,238 @@ class EventInterestAdmin(admin.ModelAdmin):
         }),
     )
     
-    def users_count(self, obj):
-        """Count of users who selected this interest"""
-        count = obj.userprofile_set.count()
-        return f'👥 {count} users'
-    users_count.short_description = 'Users Count'
+    def get_queryset(self, request):
+        """Optimize queries with counts"""
+        qs = super().get_queryset(request)
+        from django.db.models import Count
+        return qs.annotate(
+            user_count=Count('userprofile', distinct=True),
+            event_count=Count('event_maps__event', distinct=True),  # Fixed: use correct relation name
+        )
+    
+    def users_count_display(self, obj):
+        """Display user count with badge"""
+        if not obj:
+            return '-'
+        count = getattr(obj, 'user_count', None)
+        if count is None:
+            count = obj.userprofile_set.count() if hasattr(obj, 'userprofile_set') else 0
+        count_formatted = f"{count:,}"  # Format number with commas first
+        return format_html(
+            '<span style="background: #e3f2fd; color: #1976d2; padding: 4px 10px; border-radius: 4px; font-weight: bold;">👥 {} users</span>',
+            count_formatted
+        )
+    users_count_display.short_description = 'Users'
+    users_count_display.admin_order_field = 'user_count'
+    
+    def events_count_display(self, obj):
+        """Display event count"""
+        if not obj:
+            return '-'
+        # Use annotated count if available, otherwise count through event_maps
+        count = getattr(obj, 'event_count', None)
+        if count is None:
+            # Fallback: count through event_maps relation
+            count = obj.event_maps.count() if hasattr(obj, 'event_maps') else 0
+        count_formatted = f"{count:,}"  # Format number with commas first
+        return format_html(
+            '<span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 4px; font-weight: bold;">🎉 {} events</span>',
+            count_formatted
+        )
+    events_count_display.short_description = 'Events'
+    events_count_display.admin_order_field = 'event_count'
+    
+    def is_active_badge(self, obj):
+        """Display active status badge"""
+        if obj.is_active:
+            return format_html(
+                '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
+            )
+        return format_html(
+            '<span style="background: #9e9e9e; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✗ Inactive</span>'
+        )
+    is_active_badge.short_description = "Status"
+    
+    def is_active_badge_display(self, obj):
+        """Display active badge in detail view"""
+        return self.is_active_badge(obj)
+    is_active_badge_display.short_description = "Active Status"
     
     def activate_interests(self, request, queryset):
-        """Activate selected interests"""
+        """Bulk activate selected interests"""
         updated = queryset.update(is_active=True)
-        self.message_user(request, f'Successfully activated {updated} interests.')
+        self.message_user(request, f'✅ {updated} interest(s) activated successfully.')
     activate_interests.short_description = "Activate selected interests"
     
     def deactivate_interests(self, request, queryset):
-        """Deactivate selected interests"""
+        """Bulk deactivate selected interests"""
         updated = queryset.update(is_active=False)
-        self.message_user(request, f'Successfully deactivated {updated} interests.')
+        self.message_user(request, f'❌ {updated} interest(s) deactivated successfully.')
     deactivate_interests.short_description = "Deactivate selected interests"
 
 
 @admin.register(PhoneOTP)
 class PhoneOTPAdmin(admin.ModelAdmin):
-    """Admin for Phone OTP Lead Management"""
-    list_display = ('phone_number', 'otp_code', 'verification_status', 'attempts', 'created_at', 'expires_at')
-    list_filter = ('is_verified', 'created_at', 'expires_at')
-    search_fields = ('phone_number',)
-    readonly_fields = ('created_at', 'expires_at', 'otp_code')
-    actions = ['mark_as_verified', 'resend_otp']
+    """
+    CEO-level admin interface for Phone OTP Management.
+    
+    Phone OTP is used by USER_PROFILE (normal users/customers) for authentication.
+    Phone number links to USER_PROFILE.phone_number.
+    """
+    list_display = (
+        'phone_number',
+        'otp_type_badge',
+        'otp_code',
+        'verification_status_badge',
+        'attempts_display',
+        'expiration_status',
+        'created_at',
+    )
+    list_filter = (
+        'otp_type',
+        'status',
+        'is_verified',
+        ('created_at', admin.DateFieldListFilter),
+        ('expires_at', admin.DateFieldListFilter),
+    )
+    search_fields = ('phone_number', 'otp_code')
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'expires_at',
+        'otp_code',
+        'otp_type_badge_display',
+        'verification_status_badge_display',
+        'expiration_status_display',
+    )
+    actions = ['mark_as_verified', 'mark_as_expired', 'clear_expired']
     
     fieldsets = (
-        ('Lead Information', {
-            'fields': ('phone_number', 'otp_code'),
-            'description': 'Phone number and OTP details'
+        ('Normal User Authentication', {
+            'fields': ('phone_number', 'otp_code', 'otp_type', 'otp_type_badge_display'),
+            'description': 'Phone number (links to USER_PROFILE.phone_number) and OTP details for normal user authentication'
         }),
         ('Verification Status', {
-            'fields': ('is_verified', 'attempts'),
-            'description': 'Lead verification and attempt tracking'
+            'fields': ('status', 'is_verified', 'verification_status_badge_display', 'attempts'),
+            'description': 'OTP verification status and attempt tracking for normal users'
+        }),
+        ('Expiration', {
+            'fields': ('expires_at', 'expiration_status_display'),
+            'description': 'OTP expiration information'
         }),
         ('Timestamps', {
-            'fields': ('created_at', 'expires_at'),
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',),
             'description': 'Automatically managed timestamps'
         }),
     )
+    date_hierarchy = 'created_at'
     
-    def verification_status(self, obj):
-        """Get verification status with emoji"""
+    def otp_type_badge(self, obj):
+        """Display OTP type with badge"""
+        type_colors = {
+            'signup': '#4caf50',
+            'login': '#2196f3',
+            'password_reset': '#ff9800',
+            'phone_verification': '#9c27b0',
+            'transaction': '#f44336',
+        }
+        color = type_colors.get(obj.otp_type, '#9e9e9e')
+        return format_html(
+            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
+            color,
+            obj.get_otp_type_display()
+        )
+    otp_type_badge.short_description = 'OTP Type'
+    otp_type_badge.admin_order_field = 'otp_type'
+    
+    def otp_type_badge_display(self, obj):
+        """Display OTP type badge in detail view"""
+        return self.otp_type_badge(obj)
+    otp_type_badge_display.short_description = 'OTP Type'
+    
+    def verification_status_badge(self, obj):
+        """Display verification status with badge"""
         if obj.is_verified:
-            return '✅ Verified (Converted)'
+            return format_html(
+                '<span style="background: #4caf50; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Verified</span>'
+            )
+        elif obj.status == 'expired':
+            return format_html(
+                '<span style="background: #9e9e9e; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">⏰ Expired</span>'
+            )
+        elif obj.status == 'failed':
+            return format_html(
+                '<span style="background: #f44336; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Failed</span>'
+            )
         else:
-            return '📞 Unverified (Follow-up needed)'
-    verification_status.short_description = 'Status'
+            return format_html(
+                '<span style="background: #ff9800; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">📞 Pending</span>'
+            )
+    verification_status_badge.short_description = 'Status'
     
-    def mark_as_verified(self, request, queryset):
-        """Mark selected OTPs as verified"""
-        updated = queryset.update(is_verified=True)
-        self.message_user(request, f'Successfully marked {updated} leads as verified.')
-    mark_as_verified.short_description = "Mark selected leads as verified"
+    def verification_status_badge_display(self, obj):
+        """Display verification badge in detail view"""
+        return self.verification_status_badge(obj)
+    verification_status_badge_display.short_description = 'Verification Status'
     
-    def resend_otp(self, request, queryset):
-        """Regenerate OTP for selected leads"""
-        updated = 0
-        for otp in queryset:
-            otp.generate_otp()
-            otp.save()
-            # Note: In production, you might want to actually send SMS
-            updated += 1
-        self.message_user(request, f'Successfully regenerated OTP for {updated} leads.')
-    resend_otp.short_description = "Regenerate OTP for selected leads"
+    def attempts_display(self, obj):
+        """Display attempts with color coding"""
+        color = '#f44336' if obj.attempts >= 3 else '#ff9800' if obj.attempts >= 2 else '#4caf50'
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}/3</span>',
+            color,
+            obj.attempts
+        )
+    attempts_display.short_description = 'Attempts'
+    attempts_display.admin_order_field = 'attempts'
+    
+    def expiration_status(self, obj):
+        """Display expiration status"""
+        if not obj.expires_at:
+            return '-'
+        from django.utils import timezone
+        now = timezone.now()
+        is_expired = now > obj.expires_at
+        if is_expired:
+            return format_html('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
+        else:
+            minutes_left = (obj.expires_at - now).total_seconds() / 60
+            return format_html(
+                '<span style="color: #4caf50;">✓ Valid ({:.0f}m left)</span>',
+                minutes_left
+            )
+    expiration_status.short_description = 'Expiration'
+    
+    def expiration_status_display(self, obj):
+        """Display expiration status in detail view"""
+        return self.expiration_status(obj)
+    expiration_status_display.short_description = 'Expiration Status'
     
     def get_queryset(self, request):
         """Order by creation date, newest first"""
         return super().get_queryset(request).order_by('-created_at')
+    
+    def mark_as_verified(self, request, queryset):
+        """Bulk mark OTPs as verified"""
+        count = queryset.filter(status='pending').update(is_verified=True, status='verified')
+        self.message_user(request, f'✅ {count} OTP(s) marked as verified.')
+    mark_as_verified.short_description = "Mark selected as verified"
+    
+    def mark_as_expired(self, request, queryset):
+        """Bulk mark OTPs as expired"""
+        count = queryset.filter(status='pending').update(status='expired')
+        self.message_user(request, f'⏰ {count} OTP(s) marked as expired.')
+    mark_as_expired.short_description = "Mark selected as expired"
+    
+    def clear_expired(self, request, queryset):
+        """Clear expired OTPs (use with caution)"""
+        from django.utils import timezone
+        expired = queryset.filter(expires_at__lt=timezone.now())
+        count = expired.count()
+        expired.delete()
+        self.message_user(request, f'🗑️ {count} expired OTP(s) deleted.')
+    clear_expired.short_description = "Delete expired OTPs"
 
 
 @admin.register(HostLeadWhatsAppTemplate)
@@ -350,7 +737,6 @@ class HostLeadWhatsAppMessageInline(admin.TabularInline):
 @admin.register(HostLead)
 class HostLeadAdmin(admin.ModelAdmin):
     """Admin for 'Become a Host' Lead Management"""
-    change_form_template = "admin/users/hostlead/change_form.html"
     list_display = (
         'full_name',
         'phone_number',

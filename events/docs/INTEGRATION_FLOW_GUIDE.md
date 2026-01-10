@@ -39,7 +39,7 @@ flowchart TD
     Confirm --> ViewTicket["GET /events/{id}/my-ticket - View Ticket"]
     ViewTicket --> AllTickets["GET /events/my-tickets - All Tickets"]
     
-    HostFlow --> CreateEvent["POST /events - Create Event"]
+    HostFlow --> CreateEvent["POST /events - Create Event<br/>(multipart/form-data)"]
     CreateEvent --> ManageRequests["GET /events/{id}/requests - View Requests"]
     ManageRequests --> ProcessRequest{Process Request?}
     
@@ -118,7 +118,7 @@ flowchart TD
     A["1. GET /events/venues - List Venues"] --> B{Create Venue?}
     
     B -->|Yes| C["2. POST /events/venues - Create Venue"]
-    B -->|No| D["3. POST /events - Create Event"]
+    B -->|No| D["3. POST /events - Create Event<br/>(multipart/form-data)"]
     C --> D
     
     D --> E["4. GET /events/{id}/requests - View Requests"]
@@ -964,24 +964,27 @@ This flow explains how a host creates and manages events. Only users who create 
 **Request:**
 - Method: POST
 - Headers: Authorization: Bearer {token}
-- Body (check Swagger for exact structure - do not invent fields):
-  - `title`: string (required)
-  - `description`: string (required)
-  - `start_time`: ISO datetime string (required)
-  - `duration_hours`: double (required)
+- Content-Type: `multipart/form-data` (for file uploads)
+- Body (Form fields - check Swagger for exact structure - do not invent fields):
+  - `title`: string (required, 3-200 characters)
+  - `description`: string (optional, max 20000 characters)
+  - `start_time`: ISO datetime string (required, e.g., "2024-12-25T18:00:00Z")
+  - `duration_hours`: double (required, must be > 0)
+  - `event_interest_ids`: string (required, JSON string array, e.g., `"[1,2,3]"`)
+  - Venue option (choose exactly ONE):
   - `venue_id`: int (optional, if using existing venue)
   - `venue_text`: string (optional, if custom venue text)
-  - `venue_create`: object (optional, if creating venue inline)
   - `status`: string (default: "draft", options from Swagger)
-  - `is_public`: bool (required)
-  - `max_capacity`: int (required, 0 = unlimited)
-  - `is_paid`: bool (required)
-  - `ticket_price`: double (required if is_paid is true)
-  - `allow_plus_one`: bool (required)
-  - `gst_number`: string (optional)
-  - `allowed_genders`: string (required, options from Swagger)
-  - `cover_images`: List<string> (required, 1-3 image URLs)
-  - `event_interest_ids`: List<int> (required, 1-5 interest IDs)
+  - `is_public`: bool (optional, default: true)
+  - `max_capacity`: int (optional, default: 0 = unlimited)
+  - `is_paid`: bool (optional, default: false)
+  - `ticket_price`: double (optional, required if is_paid is true)
+  - `allow_plus_one`: bool (optional, default: true)
+  - `gst_number`: string (optional, for paid events)
+  - `allowed_genders`: string (optional, default: "all", options from Swagger)
+  - `cover_images`: File[] (optional, 0-3 image files, jpg/jpeg/png/webp, max 5MB each)
+    - Files are uploaded to Supabase Storage `event-images` bucket
+    - Public URLs are automatically generated and stored in event record
 
 **Response Structure (check Swagger for exact fields):**
 - Event object with created event details
@@ -1001,6 +1004,10 @@ This flow explains how a host creates and manages events. Only users who create 
 - Do not calculate `end_time` on frontend - backend calculates it from `start_time` + `duration_hours`
 - Do not validate business rules on frontend - backend handles all validation
 - Send exactly the fields shown in Swagger - no more, no less
+- Use `multipart/form-data` content type for file uploads
+- `cover_images` must be actual image files, not URLs
+- `event_interest_ids` must be a JSON string (e.g., `"[1,2,3]"`), not an array
+- `duration_hours` must be greater than 0 (backend validates this)
 
 #### Step 4: Update Event
 

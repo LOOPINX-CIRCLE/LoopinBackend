@@ -4,6 +4,7 @@ Implements high-performance CRUD operations with Django ORM, JWT auth, and optim
 """
 
 from typing import Optional, List, Dict, Any
+import json
 from datetime import datetime
 from decimal import Decimal
 import secrets
@@ -17,6 +18,9 @@ from fastapi import (
     Query,
     Path,
     Body,
+    Form,
+    File,
+    UploadFile,
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from django.contrib.auth.models import User
@@ -30,6 +34,7 @@ import logging
 
 from core.utils.logger import get_logger
 from core.exceptions import AuthorizationError, NotFoundError, ValidationError
+from core.services.storage import get_storage_service
 from events.models import Event, Venue, EventRequest, EventInvite, EventAttendee, EventInterestMap, EventImage
 from attendances.models import AttendanceRecord
 from users.models import UserProfile
@@ -359,8 +364,17 @@ def update_event_with_relationships(
         )
     
     with transaction.atomic():
+        # Track if critical fields changed (time/venue changes require notifications)
+        # Capture old values BEFORE updating the event object
+        old_start_time = event.start_time
+        old_venue = event.venue_id
+        
+        # Capture venue update info BEFORE popping from update_data
+        venue_updated = "venue_id" in update_data
+        new_venue_id = update_data.get("venue_id") if venue_updated else None
+        
         # Handle venue reference update (venue is reference data, not a booking)
-        if "venue_id" in update_data:
+        if venue_updated:
             venue_id = update_data.pop("venue_id")
             if venue_id is None:
                 event.venue = None
@@ -379,6 +393,52 @@ def update_event_with_relationships(
             setattr(event, field, value)
         
         event.save()
+        
+        # Send push notifications if event details changed (time or venue)
+        # Only notify if event is published and has attendees
+        if event.status == 'published':
+            start_time_changed = 'start_time' in update_data and update_data['start_time'] != old_start_time
+            venue_changed = venue_updated and new_venue_id != old_venue
+            
+            if start_time_changed or venue_changed:
+                try:
+                    from notifications.services.dispatcher import get_push_dispatcher
+                    from events.models import EventAttendee
+                    dispatcher = get_push_dispatcher()
+                    
+                    # Get all attendees (going status)
+                    attendees = EventAttendee.objects.filter(
+                        event=event,
+                        status='going',
+                    ).select_related('user')
+                    
+                    for attendee in attendees:
+                        try:
+                            change_message = []
+                            if start_time_changed:
+                                change_message.append("time")
+                            if venue_changed:
+                                change_message.append("venue")
+                            
+                            dispatcher.send_notification(
+                                recipient=attendee.user,
+                                notification_type='event_update',
+                                title="Event Updated",
+                                message=f"The event '{event.title}' has been updated ({', '.join(change_message)} changed).",
+                                data={
+                                    'type': 'event_update',
+                                    'event_id': event.id,
+                                    'route': 'event_detail',
+                                },
+                                reference_type='Event',
+                                reference_id=event.id,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send event update notification to attendee {attendee.user.id}: {str(e)}")
+                            
+                except Exception as e:
+                    # Never block event update on notification failure
+                    logger.error(f"Failed to send event update push notifications: {str(e)}")
         
         # Update event interests if provided
         if event_interest_ids is not None:
@@ -556,20 +616,62 @@ async def list_events(
 
 @router.post("", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event_endpoint(
-    event_data: EventCreate,
+    # Form fields - all required/optional as per EventCreate schema
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    start_time: str = Form(...),  # ISO format datetime string
+    duration_hours: float = Form(...),
+    venue_id: Optional[int] = Form(None),
+    venue_text: Optional[str] = Form(None),
+    max_capacity: int = Form(0),
+    is_paid: bool = Form(False),
+    ticket_price: float = Form(0.0),
+    allow_plus_one: bool = Form(True),
+    gst_number: Optional[str] = Form(None),
+    allowed_genders: str = Form("all"),
+    status: str = Form("draft"),
+    is_public: bool = Form(True),
+    event_interest_ids: str = Form("[]"),  # JSON string array
+    # File uploads - optional cover images
+    cover_images: Optional[List[UploadFile]] = File(None),
+    # Authentication
     user: User = Depends(get_current_user),
 ):
     """
     Create a new event with all ERD fields.
+    
+    Accepts multipart/form-data with actual image files for cover images.
+    Uploads cover images to Supabase Storage (event-images bucket).
     
     - **Auth**: Required (JWT)
     - **Validation**: Title, date/time validation, capacity checks, pricing
     - **Performance**: Atomic transaction with select_related
     - **Features**: Supports venue linking, venue auto-creation, event interests, pricing, capacity, restrictions
     
+    **Required Form Fields:**
+    - title: Event title
+    - start_time: ISO format datetime (e.g., "2024-12-25T18:00:00Z")
+    - duration_hours: Event duration in hours
+    
+    **Optional Form Fields:**
+    - description: Event description
+    - venue_id: Existing venue ID (JSON number or null)
+    - venue_text: Custom venue text
+    - max_capacity: Maximum attendees (0 = unlimited)
+    - is_paid: Boolean (true/false as string)
+    - ticket_price: Ticket price (float)
+    - allow_plus_one: Boolean
+    - gst_number: GST number
+    - allowed_genders: "all", "male", "female", "non_binary"
+    - status: "draft", "published", etc.
+    - is_public: Boolean
+    - event_interest_ids: JSON array string (e.g., "[1,2,3]")
+    
+    **File Uploads:**
+    - cover_images: Optional list of image files (max 3, jpg/jpeg/png/webp, 5MB each)
+    
     **Venue Options (Reference Data Only):**
     - `venue_id`: Use existing venue reference (fetch from GET /venues)
-    - `venue_create`: Auto-create new venue reference inline (avoids duplicating location details)
     - `venue_text`: Custom venue text without venue record
     
     **Important Notes:**
@@ -577,52 +679,96 @@ async def create_event_endpoint(
     - Multiple events can reference the same venue simultaneously without conflicts
     - Event capacity is controlled by `max_capacity`, not the venue's capacity field
     """
-    # Handle venue reference auto-creation if provided
-    venue_id = event_data.venue_id
-    if event_data.venue_create and not venue_id:
-        venue = await create_venue(
-            name=event_data.venue_create.name,
-            address=event_data.venue_create.address,
-            city=event_data.venue_create.city,
-            venue_type=event_data.venue_create.venue_type,
-            capacity=event_data.venue_create.capacity,
-            latitude=float(event_data.venue_create.latitude) if event_data.venue_create.latitude else None,
-            longitude=float(event_data.venue_create.longitude) if event_data.venue_create.longitude else None,
-            metadata=event_data.venue_create.metadata,
+    # Validate duration_hours must be greater than zero
+    if duration_hours <= 0:
+        raise ValidationError(
+            "duration_hours must be greater than zero",
+            code="INVALID_DURATION"
         )
-        venue_id = venue.id
-        logger.info(f"Auto-created venue reference {venue.id} for event by user {user.id}")
     
-    # Calculate end_time from start_time and duration_hours
+    # Parse start_time from ISO format string
     from datetime import timedelta
     from users.models import UserProfile
     try:
-        # Get UserProfile for the user (Event.host requires UserProfile)
+        start_time_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        if start_time_dt.tzinfo is None:
+            # Assume UTC if no timezone
+            from django.utils import timezone
+            start_time_dt = timezone.make_aware(start_time_dt, timezone.utc)
+    except ValueError as e:
+        raise ValidationError(
+            f"Invalid start_time format. Expected ISO format datetime (e.g., '2024-12-25T18:00:00Z'): {str(e)}",
+            code="INVALID_DATETIME_FORMAT"
+        )
+    
+    # Calculate end_time from start_time and duration_hours
+    end_time_dt = start_time_dt + timedelta(hours=duration_hours)
+    
+    # Parse event_interest_ids from JSON string
+    try:
+        interest_ids_list = json.loads(event_interest_ids)
+        if not isinstance(interest_ids_list, list):
+            raise ValueError("event_interest_ids must be a JSON array")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise ValidationError(
+            f"Invalid event_interest_ids format. Expected JSON array (e.g., '[1,2,3]'): {str(e)}",
+            code="INVALID_INTEREST_IDS_FORMAT"
+        )
+    
+    # Get UserProfile for the user (Event.host requires UserProfile)
+    # Note: Accessing reverse OneToOneField that doesn't exist raises AttributeError, not DoesNotExist
+    try:
+        user_profile = user.profile
+    except AttributeError:
+        user_profile, _ = await sync_to_async(lambda: UserProfile.objects.get_or_create(user=user))()
+    
+    # Upload cover images to Supabase Storage if provided
+    cover_image_urls = []
+    if cover_images:
+        # Validate count
+        if len(cover_images) > 3:
+            raise ValidationError(
+                "Maximum 3 cover images allowed",
+                code="TOO_MANY_COVER_IMAGES"
+            )
+        
         try:
-            user_profile = user.profile
-        except UserProfile.DoesNotExist:
-            user_profile, _ = UserProfile.objects.get_or_create(user=user)
-        
-        end_time = event_data.start_time + timedelta(hours=event_data.duration_hours)
-        
+            storage_service = get_storage_service()
+            cover_image_urls = await storage_service.upload_multiple_files(
+                files=cover_images,
+                bucket="event-images",
+                user_id=user_profile.id,
+                folder=None
+            )
+            logger.info(f"Uploaded {len(cover_image_urls)} cover images for event by user {user.id}")
+        except ValidationError as ve:
+            raise
+        except Exception as upload_error:
+            logger.error(f"Error uploading cover images: {upload_error}", exc_info=True)
+            raise ValidationError(
+                "An error occurred while uploading cover images. Please check file formats and sizes.",
+                code="IMAGE_UPLOAD_FAILED"
+            )
+    
+    try:
         event = await create_event_with_relationships(
             host=user_profile,
-            title=event_data.title,
-            description=event_data.description,
-            start_time=event_data.start_time,
-            end_time=end_time,
+            title=title,
+            description=description,
+            start_time=start_time_dt,
+            end_time=end_time_dt,
             venue_id=venue_id,
-            venue_text=event_data.venue_text,
-            status=event_data.status,
-            is_public=event_data.is_public,
-            max_capacity=event_data.max_capacity,
-            is_paid=event_data.is_paid,
-            ticket_price=float(event_data.ticket_price),
-            allow_plus_one=event_data.allow_plus_one,
-            gst_number=event_data.gst_number or "",
-            allowed_genders=event_data.allowed_genders,
-            cover_images=event_data.cover_images,
-            event_interest_ids=event_data.event_interest_ids,
+            venue_text=venue_text or "",
+            status=status,
+            is_public=is_public,
+            max_capacity=max_capacity,
+            is_paid=is_paid,
+            ticket_price=float(ticket_price),
+            allow_plus_one=allow_plus_one,
+            gst_number=gst_number or "",
+            allowed_genders=allowed_genders,
+            cover_images=cover_image_urls,
+            event_interest_ids=interest_ids_list,
         )
         
         # Refresh from DB to get all relationships

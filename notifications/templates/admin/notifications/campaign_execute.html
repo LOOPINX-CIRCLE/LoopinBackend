@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify humanize %}
+
+{% block title %}Execute Campaign | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:notifications_campaign_changelist' %}">Campaigns</a>
+&rsaquo; <a href="{% url 'admin:notifications_campaign_change' campaign.pk %}">{{ campaign.name }}</a>
+&rsaquo; Execute
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Execute Campaign</h1>
+
+<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 4px;">
+    <h2 style="margin-top: 0; color: #856404;">⚠️ Final Confirmation Required</h2>
+    <p style="color: #856404; font-size: 16px; margin: 10px 0;">
+        You are about to send <strong>{{ campaign.preview_count|floatformat:0|intcomma }} notifications</strong> to users.
+        This action cannot be undone.
+    </p>
+</div>
+
+<div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <h2 style="margin-top: 0;">Campaign Details</h2>
+    
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold; width: 200px;">Campaign Name:</td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">{{ campaign.name }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Template:</td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">{{ campaign.template.name|default:"No template" }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Audience Size:</td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                <span style="font-size: 18px; font-weight: bold; color: #2196f3;">{{ campaign.preview_count|floatformat:0|intcomma }} users</span>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Created By:</td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">{{ campaign.created_by.get_full_name|default:campaign.created_by.username }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; font-weight: bold;">Created At:</td>
+            <td style="padding: 10px;">{{ campaign.created_at|date:"Y-m-d H:i:s" }}</td>
+        </tr>
+    </table>
+</div>
+
+{% if campaign.description %}
+<div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <h3 style="margin-top: 0;">Description</h3>
+    <p style="color: #555;">{{ campaign.description }}</p>
+</div>
+{% endif %}
+
+<div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <h3 style="margin-top: 0;">Template Variables</h3>
+    <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 13px;">{{ campaign.template_variables|pprint }}</pre>
+</div>
+
+<div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <h3 style="margin-top: 0;">Audience Rules</h3>
+    <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 13px;">{{ campaign.audience_rules|pprint }}</pre>
+</div>
+
+<div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 20px; margin: 20px 0; border-radius: 4px;">
+    <h3 style="margin-top: 0; color: #1976d2;">What will happen:</h3>
+    <ul style="color: #555; margin: 10px 0; padding-left: 20px;">
+        <li>Notifications will be sent to {{ campaign.preview_count|floatformat:0|intcomma }} users matching the audience rules</li>
+        <li>Only users with active devices registered will receive push notifications</li>
+        <li>All notifications will be logged for audit purposes</li>
+        <li>Campaign status will change to "sent" and cannot be modified</li>
+        <li>Execution results will be tracked (sent count, failed count, errors)</li>
+    </ul>
+</div>
+
+<div style="margin: 30px 0; text-align: center;">
+    <form method="post" style="display: inline;">
+        {% csrf_token %}
+        <input type="hidden" name="confirm" value="1">
+        <button type="submit" onclick="return confirm('Are you absolutely sure you want to send {{ campaign.preview_count|floatformat:0|intcomma }} notifications? This action cannot be undone.');" 
+                style="background: #4caf50; color: white; padding: 15px 30px; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; margin-right: 20px;">
+            ✓ Confirm & Send Campaign
+        </button>
+    </form>
+    <a href="{% url 'admin:notifications_campaign_change' campaign.pk %}" 
+       style="background: #6c757d; color: white; padding: 15px 30px; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; text-decoration: none; display: inline-block;">
+        Cancel
+    </a>
+</div>
+
+{% endblock %}
