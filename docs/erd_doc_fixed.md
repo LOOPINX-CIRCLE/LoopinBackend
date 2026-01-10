@@ -77,10 +77,25 @@ erDiagram
     BANK_ACCOUNT ||--o{ HOST_PAYOUT_REQUEST : "receives payouts"
     EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
     
+    %% Host Lead Module Relationships
+    AUTH_USER ||--o{ HOST_LEAD_WHATSAPP_MESSAGE : "sends messages"
+    HOST_LEAD ||--o{ HOST_LEAD_WHATSAPP_MESSAGE : "receives messages"
+    HOST_LEAD_WHATSAPP_TEMPLATE ||--o{ HOST_LEAD_WHATSAPP_MESSAGE : "used by"
+    
     %% Notification & Audit Relationships
     USER_PROFILE ||--o{ USER_DEVICE : "has devices"
     USER_PROFILE ||--o{ NOTIFICATION : "receives notifications"
     USER_PROFILE ||--o{ NOTIFICATION : "sends notifications"
+    AUTH_USER ||--o{ CAMPAIGN : "creates campaigns"
+    AUTH_USER ||--o{ CAMPAIGN : "sends campaigns"
+    AUTH_USER ||--o{ CAMPAIGN : "cancels campaigns"
+    AUTH_USER ||--o{ NOTIFICATION_TEMPLATE : "creates templates"
+    NOTIFICATION_TEMPLATE ||--o{ TEMPLATE_VARIABLE_HINT : "has variable hints"
+    NOTIFICATION_TEMPLATE ||--o{ CAMPAIGN : "used by campaigns"
+    CAMPAIGN ||--o{ NOTIFICATION : "triggers notifications"
+    CAMPAIGN ||--o{ CAMPAIGN_EXECUTION : "has executions"
+    NOTIFICATION ||--o| CAMPAIGN_EXECUTION : "tracked by"
+    USER_PROFILE ||--o{ CAMPAIGN_EXECUTION : "receives campaign notifications"
     AUTH_USER ||--o{ AUDIT_LOG : "generates logs"
     AUTH_USER ||--o{ AUDIT_LOG_SUMMARY : "has summaries"
 
@@ -187,12 +202,46 @@ erDiagram
         DATETIME updated_at "Update"
     }
 
+    HOST_LEAD {
+        BIGINT id PK "Primary key"
+        STRING first_name "First name (max 100)"
+        STRING last_name "Last name (max 100)"
+        STRING phone_number "Phone number (unique, max 20)"
+        TEXT message "Optional message from potential host"
+        BOOLEAN is_contacted "Whether lead has been contacted"
+        BOOLEAN is_converted "Whether lead became a host"
+        TEXT notes "Internal notes about the lead"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
+    }
+
+    HOST_LEAD_WHATSAPP_TEMPLATE {
+        BIGINT id PK "Primary key"
+        STRING name "Template identifier (unique, max 120)"
+        TEXT message "Pre-approved message copy"
+    }
+
+    HOST_LEAD_WHATSAPP_MESSAGE {
+        BIGINT id PK "Primary key"
+        BIGINT lead_id FK "Host lead recipient (HOST_LEAD)"
+        BIGINT template_id FK "Template used (HOST_LEAD_WHATSAPP_TEMPLATE, nullable)"
+        BIGINT sent_by_id FK "Admin user who sent (AUTH_USER, nullable)"
+        STRING content_sid "Twilio Content Template SID (max 80)"
+        JSONB variables "Content variables for Twilio"
+        TEXT body_variable "Final text for variable {{2}}"
+        STRING status "queued|sent|delivered|undelivered|failed|test-mode"
+        STRING twilio_sid "Twilio message SID (max 64, nullable)"
+        STRING error_code "Twilio error code (max 50, nullable)"
+        TEXT error_message "Human-readable error message (nullable)"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
+    }
+
     EVENT_INTEREST {
         BIGINT id PK "Primary key"
-        STRING name "Interest name"
-        STRING slug "URL-friendly slug"
-        TEXT description "Interest description"
-        BOOLEAN is_active "Interest active"
+        STRING name "Interest name (unique, max 100)"
+        STRING slug "URL-friendly slug (unique, auto-generated)"
+        BOOLEAN is_active "Interest active (default: true)"
         DATETIME created_at "Creation"
         DATETIME updated_at "Update"
     }
@@ -403,6 +452,7 @@ erDiagram
         BIGINT id PK "Primary key"
         BIGINT recipient_id FK "Receiving user (USER_PROFILE, normal user)"
         BIGINT sender_id FK "Sending user (USER_PROFILE, normal user, nullable)"
+        BIGINT campaign_id FK "Parent campaign (CAMPAIGN, nullable)"
         UUID uuid "Public unique identifier"
         STRING type "event_request|event_invite|event_update|event_cancelled|payment_success|payment_failed|reminder|system|promotional"
         STRING title "Notification title (max 200)"
@@ -411,6 +461,69 @@ erDiagram
         BIGINT reference_id "Related object ID"
         BOOLEAN is_read "Read status"
         JSONB metadata "Additional data"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
+    }
+
+    NOTIFICATION_TEMPLATE {
+        BIGINT id PK "Primary key"
+        UUID uuid "Public unique identifier"
+        STRING name "Template name (unique, max 255)"
+        STRING key "Unique template key/slug (indexed, unique)"
+        STRING title "Notification title with {{variable}} placeholders (max 200)"
+        TEXT body "Notification message with {{variable}} placeholders"
+        STRING target_screen "Mobile app screen to navigate to (default: home, max 100)"
+        STRING notification_type "Type of notification (from NOTIFICATION_TYPE_CHOICES, default: system)"
+        INT version "Template version number (default: 1, indexed)"
+        BOOLEAN is_active "Whether template is available for use (default: true, indexed)"
+        BIGINT created_by_id FK "Admin user who created (AUTH_USER, nullable)"
+        DATETIME created_at "Creation (indexed)"
+        DATETIME updated_at "Update"
+    }
+
+    TEMPLATE_VARIABLE_HINT {
+        BIGINT id PK "Primary key"
+        BIGINT template_id FK "Parent template (NOTIFICATION_TEMPLATE)"
+        STRING variable_name "Variable name without braces (max 100)"
+        TEXT help_text "Help text explaining what this variable is for"
+        DATETIME created_at "Creation"
+        DATETIME updated_at "Update"
+    }
+
+    CAMPAIGN {
+        BIGINT id PK "Primary key"
+        UUID uuid "Public unique identifier"
+        STRING name "Campaign name (max 255)"
+        TEXT description "Campaign description (optional)"
+        BIGINT template_id FK "Notification template (NOTIFICATION_TEMPLATE, nullable, indexed)"
+        INT template_version "Immutable template version snapshot (nullable, indexed)"
+        JSONB template_variables "Variable values for template rendering (auto-populated from UI)"
+        JSONB audience_rules "Audience selection rules (auto-generated from UI fields)"
+        STRING status "draft|previewed|scheduled|sending|sent|cancelled|failed (indexed)"
+        INT preview_count "Number of users matching rules (nullable)"
+        DATETIME preview_computed_at "When preview was computed (nullable)"
+        DATETIME sent_at "When campaign was sent (nullable, indexed)"
+        BIGINT sent_by_id FK "Admin user who sent (AUTH_USER, nullable)"
+        INT total_sent "Notifications successfully sent (default: 0)"
+        INT total_failed "Notifications failed (default: 0)"
+        JSONB execution_metadata "Execution errors, warnings, batch info"
+        BIGINT created_by_id FK "Admin user who created (AUTH_USER, nullable)"
+        DATETIME cancelled_at "When cancelled (nullable)"
+        BIGINT cancelled_by_id FK "Admin user who cancelled (AUTH_USER, nullable)"
+        TEXT cancellation_reason "Reason for cancellation (optional)"
+        DATETIME created_at "Creation (indexed)"
+        DATETIME updated_at "Update"
+    }
+
+    CAMPAIGN_EXECUTION {
+        BIGINT id PK "Primary key"
+        BIGINT campaign_id FK "Parent campaign (CAMPAIGN)"
+        BIGINT notification_id FK "Notification record (NOTIFICATION)"
+        BIGINT user_profile_id FK "User who received (USER_PROFILE)"
+        BOOLEAN sent_successfully "Delivery success status (indexed)"
+        TEXT error_message "Error message if failed"
+        JSONB onesignal_response "Raw OneSignal API response"
+        DATETIME delivered_at "When delivered (nullable, indexed)"
         DATETIME created_at "Creation"
         DATETIME updated_at "Update"
     }
@@ -470,11 +583,11 @@ erDiagram
     classDef coreTables fill:#ffffff,stroke:#334155,stroke-width:2px,color:#020617
 
     %% Apply domain grouping
-    class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT userTables
+    class AUTH_USER,USER_PROFILE,USER_PHONE_OTP,BANK_ACCOUNT,HOST_LEAD,HOST_LEAD_WHATSAPP_TEMPLATE,HOST_LEAD_WHATSAPP_MESSAGE userTables
     class EVENT,EVENT_REQUEST,EVENT_INVITE,EVENT_ATTENDEE,VENUE,EVENT_INTEREST,EVENT_INTEREST_MAP,EVENT_IMAGE,CAPACITY_RESERVATION,HOST_PAYOUT_REQUEST eventTables
     class ATTENDANCE_RECORD,TICKET_SECRET attendanceTables
     class PAYMENT_ORDER,PAYMENT_TRANSACTION,PAYMENT_WEBHOOK paymentTables
-    class USER_DEVICE,NOTIFICATION notificationTables
+    class USER_DEVICE,NOTIFICATION,NOTIFICATION_TEMPLATE,TEMPLATE_VARIABLE_HINT,CAMPAIGN,CAMPAIGN_EXECUTION notificationTables
     class AUDIT_LOG,AUDIT_LOG_SUMMARY auditTables
     class PLATFORM_FEE_CONFIG coreTables
 ```
@@ -495,6 +608,8 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Complete audit trail** for security and compliance
 - **Push notification system** with device registration and OneSignal integration
 - **Flexible in-app notification system** for user engagement
+- **Admin-driven notification campaigns** with rule-based audience selection
+- **Host lead management system** with WhatsApp integration for lead communication
 
 **Database:** PostgreSQL 15+  
 **ORM:** Django ORM  
@@ -608,6 +723,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - ✅ `USER_DEVICE.user_profile` → `USER_PROFILE` (customers register devices for push)
 - ✅ `NOTIFICATION.recipient` → `USER_PROFILE` (normal users receive notifications)
 - ✅ `NOTIFICATION.sender` → `USER_PROFILE` (normal users send notifications)
+- ✅ `CAMPAIGN_EXECUTION.user_profile` → `USER_PROFILE` (customers receive campaign notifications)
 - ✅ `USER_PHONE_OTP` → Used by normal users (phone-based authentication)
 
 **Never use AUTH_USER for these actions** — enforce at service boundaries.
@@ -1280,6 +1396,138 @@ rejected/cancelled
 
 ---
 
+## **4.6 HOST LEAD MODULE** 📋
+
+### **4.6.1 HOST_LEAD** 📝
+**Purpose:** Store "Become a Host" lead information from potential hosts who want to host events
+
+**Key Features:**
+- Lead generation and tracking system
+- Contact status tracking (contacted/not contacted)
+- Conversion tracking (converted to actual host/not converted)
+- Internal notes for lead management
+
+**Fields:**
+- `first_name` - First name of the potential host (max 100 chars)
+- `last_name` - Last name of the potential host (max 100 chars)
+- `phone_number` - Phone number (unique, max 20 chars, indexed)
+- `message` - Optional message from the potential host
+- `is_contacted` - Whether the lead has been contacted by admin team (default: false)
+- `is_converted` - Whether the lead became an actual host (default: false)
+- `notes` - Internal administrative notes about the lead
+- `created_at` / `updated_at` - Timestamps (auto-managed)
+
+**Business Logic:**
+- Leads submitted via `/api/hosts/become-a-host` endpoint
+- Leads are stored regardless of contact status (full audit trail)
+- Conversion status updated when lead creates their first event
+- Phone number must be unique (prevents duplicate leads)
+- Ordered by creation date (newest first)
+
+**Use Cases:**
+- Capture interest from potential hosts
+- Track lead generation funnel
+- Manage host onboarding process
+- Monitor conversion rates
+
+**Admin Interface:**
+- Accessible via Django Admin at `/django/admin/users/hostlead/`
+- Admin users can mark leads as contacted/converted
+- Add internal notes for team collaboration
+- Filter and search by name, phone number, status
+
+---
+
+### **4.6.2 HOST_LEAD_WHATSAPP_TEMPLATE** 📱
+**Purpose:** Pre-approved WhatsApp message templates for communicating with host leads
+
+**Key Features:**
+- Centralized template management
+- Pre-approved message copy for consistency
+- Admin-managed templates only
+
+**Fields:**
+- `name` - Short identifier for the template (unique, max 120 chars)
+  - Example: "Intro Message", "Follow-up", "Welcome Template"
+- `message` - Pre-approved message text
+  - This text is injected into Twilio template variable {{2}}
+  - Must be approved before use (prevents inconsistent messaging)
+
+**Business Logic:**
+- Templates are read-only at runtime (admin-only creation/editing)
+- Templates used when sending WhatsApp messages to leads via admin panel
+- Template name used in admin UI for selection
+- Message content stored for audit trail
+
+**Use Cases:**
+- Standardize host lead communication
+- Ensure consistent messaging across team
+- Pre-approved copy for compliance
+- Quick template selection in admin panel
+
+**Admin Interface:**
+- Accessible via Django Admin at `/django/admin/users/hostleadwhatsapptemplate/`
+- Admin users can create/edit/delete templates
+- Templates appear in dropdown when sending messages to leads
+
+---
+
+### **4.6.3 HOST_LEAD_WHATSAPP_MESSAGE** 💬
+**Purpose:** Audit log of WhatsApp messages sent to host leads through admin panel
+
+**Key Features:**
+- Complete message delivery tracking
+- Twilio integration logging
+- Status tracking (queued, sent, delivered, failed, etc.)
+- Error logging for debugging
+
+**Fields:**
+- `lead` - Foreign key to HOST_LEAD (required)
+- `template` - Foreign key to HOST_LEAD_WHATSAPP_TEMPLATE (optional)
+- `sent_by` - Foreign key to AUTH_USER (admin who sent, nullable)
+- `content_sid` - Twilio Content Template SID (max 80 chars)
+- `variables` - JSON object of variables sent to Twilio
+  - Example: `{'1': 'John Doe', '2': 'Welcome message...'}`
+- `body_variable` - Final text value used for template variable {{2}}
+- `status` - Delivery status:
+  - `queued` - Queued / Sending
+  - `sent` - Sent successfully
+  - `delivered` - Delivered to recipient
+  - `undelivered` - Delivery failed
+  - `failed` - Send failed
+  - `test-mode` - Test mode (not actually sent)
+- `twilio_sid` - Twilio message SID for tracking (max 64 chars, nullable)
+- `error_code` - Twilio error code if failed (max 50 chars, nullable)
+- `error_message` - Human-readable error message (nullable)
+- `created_at` / `updated_at` - Timestamps
+
+**Business Logic:**
+- Messages sent via Django Admin panel only (admin users)
+- All message attempts logged regardless of success/failure
+- Status updated based on Twilio webhook callbacks
+- Complete audit trail for compliance and debugging
+- Links to lead and template for full context
+
+**Use Cases:**
+- Track communication with host leads
+- Debug delivery issues
+- Monitor message delivery rates
+- Compliance and audit requirements
+- Analyze conversion funnel effectiveness
+
+**Relationships:**
+- Many-to-One → `HOST_LEAD` (one lead receives many messages)
+- Many-to-One → `HOST_LEAD_WHATSAPP_TEMPLATE` (one template used by many messages)
+- Many-to-One → `AUTH_USER` (one admin sends many messages)
+
+**Admin Interface:**
+- Accessible via Django Admin at `/django/admin/users/hostleadwhatsappmessage/`
+- Shows all messages sent to leads
+- Filter by lead, status, date
+- View Twilio delivery status and errors
+
+---
+
 ## **5. NOTIFICATION MODULE** 🔔
 
 ### **5.1 USER_DEVICE** 📱
@@ -1336,6 +1584,200 @@ rejected/cancelled
 3. Push sent via OneSignal to all active devices
 4. Invalid player IDs trigger device deactivation
 5. Notification record persisted for in-app inbox regardless of push result
+
+**Campaign Tracking:**
+- Optional `campaign` foreign key links notifications to admin-driven campaigns
+- Campaign-driven notifications are tracked for audit and reporting
+- Transactional notifications (payments, events) typically have `campaign=None`
+
+---
+
+### **5.3 CAMPAIGN** 🎯
+**Purpose:** Admin-driven notification campaign system
+
+**Key Concept:** Campaigns allow administrators to send targeted notifications to specific user segments without code changes. This is separate from transactional notifications (which are automatic and event-driven).
+
+**Campaign Lifecycle:**
+```
+draft → previewed → scheduled/sending → sent
+                  ↓
+              cancelled/failed
+```
+
+**Template Integration:**
+- Campaigns use dynamic templates from `NOTIFICATION_TEMPLATE` table (created by admins/marketing team)
+- Templates define message format, target screen, and required parameters
+- Each template has a `version` field for versioning (campaigns store immutable `template_version` snapshot)
+- Templates become immutable (locked) once used in any campaign to preserve historical accuracy
+- Template variables are edited via UI (no JSON required)
+- Variable hints stored in `TEMPLATE_VARIABLE_HINT` table (UI-based, one hint per variable)
+
+**Audience Selection:**
+- `audience_rules` - JSON structure auto-generated from UI fields (not directly edited)
+- UI-based form fields replace JSON editing (marketing-friendly)
+- Logic: ALL filters use AND (user must match all conditions), Event interests use OR (user must have ANY selected interest)
+- Rules use field-based queries (location, interests, profile completion, verification status, etc.)
+- Negative filters supported (e.g., "No - Only users with incomplete profiles")
+- Rule engine safely translates UI selections to Django ORM queries
+- Preview functionality shows matching user count before sending
+
+**Status Management:**
+- `draft` - Campaign created but not previewed
+- `previewed` - Audience previewed, ready to send
+- `scheduled` - Scheduled for future execution (future feature)
+- `sending` - Currently being executed
+- `sent` - Successfully completed (immutable)
+- `cancelled` - Cancelled before sending (immutable)
+- `failed` - Execution failed (immutable)
+
+**Execution Tracking:**
+- `total_sent` - Count of successfully delivered notifications
+- `total_failed` - Count of failed deliveries
+- `execution_metadata` - Errors, warnings, batch processing info
+- All executions logged in `CAMPAIGN_EXECUTION` table
+
+**Versioning & Immutability:**
+- `template_version` - Immutable snapshot of template version at campaign creation
+- Ensures campaigns always reference the exact template they were created with
+- Enables analytics, rollbacks, and historical traceability
+- Templates locked once used (content fields cannot be changed)
+- Template version auto-captured on campaign creation
+
+**Security & Audit:**
+- Only AUTH_USER with `is_staff=True` can create/send campaigns
+- Campaigns immutable after sending (cannot modify sent campaigns)
+- Campaign execution is idempotent (atomic status transition, prevents duplicate sends)
+- All actions logged in `AUDIT_LOG` (campaign_create, campaign_preview, campaign_execute, campaign_cancel)
+- Kill switch via `DISABLE_CAMPAIGN_SYSTEM` environment variable
+
+**Business Rules:**
+- Mandatory preview before sending (prevents "send to everyone" mistakes)
+- Campaign can only be executed once (idempotency enforced at database level)
+- Rate limiting: Max users per campaign configurable (default: 10,000)
+- Batch processing for large audiences (default: 100 per batch)
+- Only users with active devices receive push notifications
+- Campaigns are immutable once sent (audit trail protection)
+- Audience logic: ALL filters = AND, Event interests = OR (explicitly documented)
+
+**Use Cases:**
+- Profile completion reminders for incomplete profiles
+- Event recommendations based on user interests
+- Location-based event alerts
+- Engagement campaigns for inactive users
+- Educational notifications about platform features
+
+---
+
+### **5.4 NOTIFICATION_TEMPLATE** 📝
+**Purpose:** Dynamic notification templates created by admins/marketing team
+
+**Key Concept:** Templates allow marketing team to create and manage notification message formats without code changes. This is IDEA-2 (Campaign System). IDEA-1 (Automated System Notifications) uses templates in `notifications/services/messages.py` and works independently.
+
+**Key Features:**
+- Dynamic template creation via Django Admin (no code required)
+- Versioning for audit trail and analytics (`version` field, unique per `key`)
+- Immutability protection (templates lock once used in campaigns)
+- Variable placeholders (e.g., `{{event_name}}`, `{{user_name}}`)
+- UI-based variable hints (stored in `TEMPLATE_VARIABLE_HINT` table)
+
+**Fields:**
+- `name` - Template name (unique, e.g., 'Profile Completion Reminder')
+- `key` - Unique template key/slug (unique, indexed, e.g., 'profile_completion_reminder')
+- `title` - Notification title with `{{variable}}` placeholders (max 200)
+- `body` - Notification message with `{{variable}}` placeholders
+- `target_screen` - Mobile app screen to navigate to (default: 'home')
+- `notification_type` - Type of notification (from NOTIFICATION_TYPE_CHOICES)
+- `version` - Template version number (default: 1, indexed, unique per key)
+- `is_active` - Whether template is available for use (default: true, indexed)
+- `created_by` - Admin user who created (nullable)
+
+**Immutability Rules:**
+- Templates become immutable (locked) once used in at least one campaign
+- Content fields (`title`, `body`, `target_screen`, `notification_type`) cannot be edited when locked
+- `is_immutable` property checks if template is used in any campaign
+- Ensures historical campaigns always reference the exact template they were created with
+- Admins must create a new template if they need different content (versioning)
+
+**Versioning:**
+- Version starts at 1 for new templates
+- Version increments on meaningful content changes (if not locked)
+- Each version is unique per key (`unique_together: ['key', 'version']`)
+- Campaigns store immutable `template_version` snapshot for audit trail
+- Enables analytics, rollbacks, A/B testing, and historical traceability
+
+**Relationships:**
+- Many-to-One → `AUTH_USER` (one admin creates templates)
+- One-to-Many → `CAMPAIGN` (one template used by many campaigns)
+- One-to-Many → `TEMPLATE_VARIABLE_HINT` (one template has many variable hints)
+
+**Use Cases:**
+- Marketing campaigns with custom messaging
+- Seasonal promotions
+- User engagement notifications
+- Educational content
+
+---
+
+### **5.5 TEMPLATE_VARIABLE_HINT** 💡
+**Purpose:** Help text for template variables (UI-based, no JSON!)
+
+**Key Features:**
+- Each variable gets its own record with clear help text
+- Marketing team can easily understand and edit these
+- Replaces JSON-based variable hints with database records
+
+**Fields:**
+- `template` - Parent template (required, FK to NOTIFICATION_TEMPLATE)
+- `variable_name` - Variable name without braces (e.g., 'event_name')
+- `help_text` - Help text explaining what this variable is for (e.g., 'Name of the event')
+- Unique constraint: `['template', 'variable_name']` (one hint per variable per template)
+
+**Business Logic:**
+- Variables are auto-extracted from template `title` and `body` fields
+- Each `{{variable}}` placeholder gets a hint record
+- Help text shown in campaign admin when filling template variables
+- Makes campaign creation user-friendly for non-technical users
+
+**Relationships:**
+- Many-to-One → `NOTIFICATION_TEMPLATE` (one template has many variable hints)
+
+---
+
+### **5.6 CAMPAIGN_EXECUTION** 📊
+**Purpose:** Individual notification delivery tracking for campaigns
+
+**Key Features:**
+- Links each notification sent in a campaign to the campaign record
+- Tracks delivery success/failure for each user
+- Stores OneSignal API responses for debugging
+- Enables campaign performance analysis and error investigation
+
+**Fields:**
+- `campaign` - Parent campaign (required)
+- `notification` - Notification record created (required)
+- `user_profile` - User who received notification (required)
+- `sent_successfully` - Whether push notification was delivered (boolean, indexed)
+- `error_message` - Error details if delivery failed
+- `onesignal_response` - Raw OneSignal API response (for debugging)
+- `delivered_at` - Timestamp when notification was delivered (nullable, indexed)
+
+**Business Logic:**
+- One execution record per notification per campaign
+- Execution records created during campaign execution
+- Success/failure determined by OneSignal API response
+- Error messages captured for failed deliveries
+- Enables campaign analytics and debugging
+
+**Use Cases:**
+- Campaign performance analysis (success rate, failure rate)
+- Debugging delivery issues (specific user failures)
+- Audit trail for compliance
+- User-specific delivery history
+
+**Relationships:**
+- Many-to-One → `CAMPAIGN` (one campaign has many executions)
+- One-to-One → `NOTIFICATION` (one execution tracks one notification)
+- Many-to-One → `USER_PROFILE` (one user can receive multiple campaign notifications)
 
 ---
 
@@ -1471,6 +1913,16 @@ final_price = PlatformFeeConfig.calculate_final_price(
 | **1-to-Many** | `EVENT` → `EVENT_REQUEST/INVITE/ATTENDEE` | Event has many interactions |
 | **1-to-Many** | `EVENT_REQUEST` → `EVENT_ATTENDEE` | Request converts to attendee |
 | **1-to-Many** | `PAYMENT_ORDER` → Transactions/Webhooks | Order has many records |
+| **1-to-Many** | `AUTH_USER` → `CAMPAIGN` | Admin creates/sends campaigns |
+| **1-to-Many** | `AUTH_USER` → `NOTIFICATION_TEMPLATE` | Admin creates templates |
+| **1-to-Many** | `NOTIFICATION_TEMPLATE` → `CAMPAIGN` | Template used by campaigns |
+| **1-to-Many** | `NOTIFICATION_TEMPLATE` → `TEMPLATE_VARIABLE_HINT` | Template has variable hints |
+| **1-to-Many** | `CAMPAIGN` → `NOTIFICATION` | Campaign triggers notifications |
+| **1-to-Many** | `CAMPAIGN` → `CAMPAIGN_EXECUTION` | Campaign has many execution records |
+| **1-to-Many** | `NOTIFICATION` → `CAMPAIGN_EXECUTION` | Notification tracked by execution |
+| **1-to-Many** | `AUTH_USER` → `HOST_LEAD_WHATSAPP_MESSAGE` | Admin sends WhatsApp messages to leads |
+| **1-to-Many** | `HOST_LEAD` → `HOST_LEAD_WHATSAPP_MESSAGE` | Lead receives many WhatsApp messages |
+| **1-to-Many** | `HOST_LEAD_WHATSAPP_TEMPLATE` → `HOST_LEAD_WHATSAPP_MESSAGE` | Template used by many messages |
 
 | **Many-to-Many** | `USER_PROFILE` ↔ `EVENT_INTEREST` | Users have many interests |
 | **Many-to-Many** | `EVENT` ↔ `EVENT_INTEREST` | Events in many categories |
@@ -1658,6 +2110,13 @@ final_price = PlatformFeeConfig.calculate_final_price(
 - Multiple devices per user supported
 - Automatic device deactivation on invalid player IDs
 - Only USER_PROFILE (customers) can register devices (AUTH_USER blocked)
+
+**Note:** 
+- Campaign management is available via Django Admin interface (`/django/admin/notifications/campaign/`). Campaign APIs are intentionally not exposed to external clients for security reasons. Only staff users can manage campaigns.
+- Template management is available via Django Admin interface (`/django/admin/notifications/notificationtemplate/`). Marketing team can create and manage templates here.
+- Templates are immutable once used in any campaign (locked). This ensures historical campaigns always reference the exact template they were created with.
+- Campaigns store immutable `template_version` snapshot for audit trail and analytics.
+- Campaign execution is idempotent (can only be executed once, prevents duplicate sends).
 
 ---
 
