@@ -14,7 +14,7 @@ psycopg2-binary==2.9.10
 # Authentication and security
 PyJWT==2.10.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.12
+python-multipart==0.0.18
 
 # Environment and configuration
 python-decouple==3.8
