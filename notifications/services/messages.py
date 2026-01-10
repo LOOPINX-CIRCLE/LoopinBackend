@@ -1,7 +1,7 @@
 """
 Notification template registry - Single source of truth for all transactional notifications.
 
-IDEA-1: Stable, Centralized, System-Owned Notification Templates
+Stable, Centralized, System-Owned Notification Templates
 
 This module provides:
 - NotificationTemplate enum for template keys (not strings)
