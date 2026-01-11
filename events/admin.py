@@ -6,6 +6,7 @@ from django.contrib import admin
 from django.db.models import Count, Q, Sum
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -394,7 +395,7 @@ class EventAdmin(admin.ModelAdmin):
     def capacity_info(self, obj):
         """Display capacity with fill percentage"""
         if obj.max_capacity == 0:
-            return format_html('<span style="color: gray;">Unlimited</span>')
+            return mark_safe('<span style="color: gray;">Unlimited</span>')
         
         percentage = (obj.going_count / obj.max_capacity) * 100
         color = 'red' if percentage >= 90 else 'orange' if percentage >= 70 else 'green'
@@ -415,7 +416,7 @@ class EventAdmin(admin.ModelAdmin):
                 '<span style="color: green; font-weight: bold;">₹{}</span>',
                 f"{obj.ticket_price:.2f}"
             )
-        return format_html('<span style="color: gray;">Free</span>')
+        return mark_safe('<span style="color: gray;">Free</span>')
     is_paid_display.short_description = "Price"
     is_paid_display.admin_order_field = 'is_paid'
     
@@ -440,7 +441,7 @@ class EventAdmin(admin.ModelAdmin):
     def is_past_display(self, obj):
         """Display if event is past"""
         if not obj or not obj.end_time:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_past = obj.is_past
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -452,7 +453,7 @@ class EventAdmin(admin.ModelAdmin):
     def is_full_display(self, obj):
         """Display if event is full"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_full = obj.is_full
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -609,7 +610,7 @@ class EventRequestAdmin(admin.ModelAdmin):
     def has_host_message(self, obj):
         """Show if host has responded"""
         if not obj:
-            return format_html('<span style="color: gray;">-</span>')
+            return mark_safe('<span style="color: gray;">-</span>')
         has_message = bool(obj.host_message)
         return format_html(
             '<span style="color: {};">{}</span>',
@@ -733,7 +734,7 @@ class EventInviteAdmin(admin.ModelAdmin):
     def is_expired_display(self, obj):
         """Display if invite is expired"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -850,7 +851,7 @@ class EventAttendeeAdmin(admin.ModelAdmin):
                 url,
                 obj.invite.id
             )
-        return format_html('<span style="color: gray;">Direct</span>')
+        return mark_safe('<span style="color: gray;">Direct</span>')
     origin_display.short_description = "Origin"
     
     def status_display(self, obj):
@@ -882,7 +883,7 @@ class EventAttendeeAdmin(admin.ModelAdmin):
                 '<span style="color: orange; font-weight: bold;">₹{}</span>',
                 f"{obj.price_paid:.2f}"
             )
-        return format_html('<span style="color: gray;">Free</span>')
+        return mark_safe('<span style="color: gray;">Free</span>')
     payment_status.short_description = "Payment"
     
     def payment_total(self, obj):
@@ -897,12 +898,12 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     def checked_in_display(self, obj):
         """Display check-in status"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.checked_in_at:
-            return format_html(
+            return mark_safe(
                 '<span style="color: green; font-weight: bold;">✓ Yes</span>'
             )
-        return format_html('<span style="color: gray;">No</span>')
+        return mark_safe('<span style="color: gray;">No</span>')
     checked_in_display.short_description = "Checked In"
     # Note: boolean = True removed - this returns HTML, not a boolean
 
@@ -1021,7 +1022,7 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     def consumed_display(self, obj):
         """Display if reservation is consumed"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
             'green' if obj.consumed else 'orange',
@@ -1033,7 +1034,7 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     def is_expired_display(self, obj):
         """Display if reservation is expired"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',

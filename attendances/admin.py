@@ -6,6 +6,7 @@ from django.contrib import admin
 from django.db.models import Count, Q, Sum
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -200,7 +201,7 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
     def is_checked_in_display(self, obj):
         """Display if currently checked in"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_checked = obj.is_checked_in
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -331,7 +332,7 @@ class TicketSecretAdmin(admin.ModelAdmin):
     def is_redeemed_display(self, obj):
         """Display redemption status"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
             'red' if obj.is_redeemed else 'green',

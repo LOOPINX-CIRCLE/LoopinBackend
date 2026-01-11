@@ -6,6 +6,7 @@ from django.db.models import Count
 from django.utils.text import Truncator
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .forms import HostLeadWhatsAppForm
 from .models import (
@@ -188,7 +189,7 @@ class UserProfileAdmin(admin.ModelAdmin):
                 status,
                 count
             )
-        return format_html('<span style="color: #f44336;">❌ No pictures</span>')
+        return mark_safe('<span style="color: #f44336;">❌ No pictures</span>')
     pictures_count.short_description = 'Profile Pictures'
     
     def interests_count(self, obj):
@@ -247,15 +248,15 @@ class UserProfileAdmin(admin.ModelAdmin):
                 from django.utils import timezone
                 now = timezone.now()
                 if now >= obj.waitlist_promote_at:
-                    return format_html('<span style="color: #ff9800;">⏳ Promoting Now</span>')
+                    return mark_safe('<span style="color: #ff9800;">⏳ Promoting Now</span>')
                 else:
                     hours_until = (obj.waitlist_promote_at - now).total_seconds() / 3600
                     return format_html(
                         '<span style="color: #2196f3;">⏰ In {:.1f}h</span>',
                         hours_until
                     )
-            return format_html('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
-        return format_html('<span style="color: #4caf50;">✅ Active</span>')
+            return mark_safe('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
+        return mark_safe('<span style="color: #4caf50;">✅ Active</span>')
     waitlist_status.short_description = "Waitlist Status"
     
     def waitlist_status_display(self, obj):
@@ -274,17 +275,17 @@ class UserProfileAdmin(admin.ModelAdmin):
                     hours = (obj.waitlist_promote_at - now).total_seconds() / 3600
                     html += f'<p style="color: #2196f3;"><strong>Status:</strong> Will be promoted in {hours:.1f} hours</p>'
             html += '</div>'
-            return format_html(html)
-        return format_html('<span style="color: gray;">Not on waitlist</span>')
+            return mark_safe(html)
+        return mark_safe('<span style="color: gray;">Not on waitlist</span>')
     waitlist_status_display.short_description = "Waitlist Details"
     
     def is_verified_badge(self, obj):
         """Display verification status badge"""
         if obj.is_verified:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Verified</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">⚠️ Unverified</span>'
         )
     is_verified_badge.short_description = "Verification"
@@ -297,10 +298,10 @@ class UserProfileAdmin(admin.ModelAdmin):
     def is_active_badge(self, obj):
         """Display active status badge"""
         if obj.is_active:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #f44336; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">❌ Inactive</span>'
         )
     is_active_badge.short_description = "Status"
@@ -439,10 +440,10 @@ class EventInterestAdmin(admin.ModelAdmin):
     def is_active_badge(self, obj):
         """Display active status badge"""
         if obj.is_active:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #9e9e9e; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✗ Inactive</span>'
         )
     is_active_badge.short_description = "Status"
@@ -548,19 +549,19 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     def verification_status_badge(self, obj):
         """Display verification status with badge"""
         if obj.is_verified:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Verified</span>'
             )
         elif obj.status == 'expired':
-            return format_html(
+            return mark_safe(
                 '<span style="background: #9e9e9e; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">⏰ Expired</span>'
             )
         elif obj.status == 'failed':
-            return format_html(
+            return mark_safe(
                 '<span style="background: #f44336; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Failed</span>'
             )
         else:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #ff9800; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">📞 Pending</span>'
             )
     verification_status_badge.short_description = 'Status'
@@ -589,7 +590,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
         now = timezone.now()
         is_expired = now > obj.expires_at
         if is_expired:
-            return format_html('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
+            return mark_safe('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
         else:
             minutes_left = (obj.expires_at - now).total_seconds() / 60
             return format_html(
@@ -1166,7 +1167,7 @@ class HostPayoutRequestAdmin(admin.ModelAdmin):
             contact = attendee.get('contact', 'N/A')
             html += f"<li><strong>{name}</strong> - {contact}</li>"
         html += "</ul>"
-        return format_html(html)
+        return mark_safe(html)
     attendees_details_display.short_description = 'Attendees'
     
     def approve_payout(self, request, queryset):

@@ -247,7 +247,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def success_badge(self, obj):
         """Display success/failure badge"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.is_successful:
             return format_html(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Success</span>'
@@ -275,7 +275,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def has_changes_indicator(self, obj):
         """Indicator if log has field changes"""
         if not obj:
-            return format_html('<span style="color: gray;">-</span>')
+            return mark_safe('<span style="color: gray;">-</span>')
         has_changes = obj.has_changes
         return format_html(
             '<span style="color: {};">{}</span>',
@@ -288,7 +288,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def payload_display(self, obj):
         """Display payload in readable format"""
         if not obj.payload:
-            return format_html('<span style="color: gray;">No payload</span>')
+            return mark_safe('<span style="color: gray;">No payload</span>')
         
         return format_html(
             '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 11px;">{}</pre>',
@@ -299,7 +299,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def old_values_display(self, obj):
         """Display old values"""
         if not obj.old_values:
-            return format_html('<span style="color: gray;">No old values</span>')
+            return mark_safe('<span style="color: gray;">No old values</span>')
         
         return format_html(
             '<pre style="background: #ffebee; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
@@ -310,7 +310,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def new_values_display(self, obj):
         """Display new values"""
         if not obj.new_values:
-            return format_html('<span style="color: gray;">No new values</span>')
+            return mark_safe('<span style="color: gray;">No new values</span>')
         
         return format_html(
             '<pre style="background: #e8f5e9; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
@@ -321,7 +321,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def change_diff_display(self, obj):
         """Display change diff"""
         if not obj.has_changes:
-            return format_html('<span style="color: gray;">No field changes tracked</span>')
+            return mark_safe('<span style="color: gray;">No field changes tracked</span>')
         
         html = '<div style="background: #fff3cd; padding: 15px; border-radius: 4px; border-left: 4px solid #ff9800;">'
         html += '<h4 style="margin-top: 0;">Field Changes</h4>'
@@ -355,7 +355,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def metadata_display(self, obj):
         """Display metadata"""
         if not obj.metadata:
-            return format_html('<span style="color: gray;">No metadata</span>')
+            return mark_safe('<span style="color: gray;">No metadata</span>')
         
         return format_html(
             '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
@@ -489,7 +489,7 @@ class AuditLogSummaryAdmin(admin.ModelAdmin):
         if obj.user:
             url = reverse('admin:auth_user_change', args=[obj.user.pk])
             return format_html('<a href="{}">{}</a>', url, obj.user.username)
-        return format_html('<span style="color: gray;">All Users</span>')
+        return mark_safe('<span style="color: gray;">All Users</span>')
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
     

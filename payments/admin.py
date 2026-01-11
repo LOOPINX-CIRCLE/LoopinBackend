@@ -6,6 +6,7 @@ from django.contrib import admin
 from django.db.models import Count, Sum, Q
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib import messages
@@ -299,7 +300,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
                 host_earning,
                 platform_fee
             )
-        return format_html('<span style="color: gray;">No snapshot</span>')
+        return mark_safe('<span style="color: gray;">No snapshot</span>')
     financial_breakdown.short_description = "Financial Breakdown"
     
     def retry_info(self, obj):
@@ -318,8 +319,8 @@ class PaymentOrderAdmin(admin.ModelAdmin):
                 retry_count
             )
         elif obj.is_final:
-            return format_html('<span style="color: green; font-size: 11px;">✓ Final</span>')
-        return format_html('<span style="color: gray; font-size: 11px;">-</span>')
+            return mark_safe('<span style="color: green; font-size: 11px;">✓ Final</span>')
+        return mark_safe('<span style="color: gray; font-size: 11px;">-</span>')
     retry_info.short_description = "Retry Info"
     
     def provider_badge(self, obj):
@@ -346,7 +347,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
     def is_expired_display(self, obj):
         """Display expiration status"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.is_expired
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
@@ -358,7 +359,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
     def financial_snapshot_display(self, obj):
         """Display financial snapshot in readable format"""
         if not obj.base_price_per_seat:
-            return format_html('<span style="color: gray;">Financial snapshot not captured yet</span>')
+            return mark_safe('<span style="color: gray;">Financial snapshot not captured yet</span>')
         
         return format_html(
             '<div style="background: #f5f5f5; padding: 15px; border-radius: 4px; border-left: 4px solid #4caf50;">'
@@ -433,7 +434,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
     def provider_response_display(self, obj):
         """Display provider response in readable format"""
         if not obj.provider_response:
-            return format_html('<span style="color: gray;">No provider response</span>')
+            return mark_safe('<span style="color: gray;">No provider response</span>')
         
         import json
         return format_html(
@@ -632,7 +633,7 @@ class PaymentTransactionAdmin(admin.ModelAdmin):
     def provider_response_display(self, obj):
         """Display provider response"""
         if not obj.provider_response:
-            return format_html('<span style="color: gray;">No response</span>')
+            return mark_safe('<span style="color: gray;">No response</span>')
         
         import json
         return format_html(
@@ -713,7 +714,7 @@ class PaymentWebhookAdmin(admin.ModelAdmin):
     def processed_badge(self, obj):
         """Display processed status"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         color = '#4caf50' if obj.processed else '#ff9800'
         text = '✓ Processed' if obj.processed else '⏳ Pending'
         return format_html(
