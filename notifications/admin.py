@@ -401,10 +401,10 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "-"
         if obj.is_immutable:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">🔒 LOCKED</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Editable</span>'
         )
     is_immutable_indicator.short_description = "Status"
@@ -413,7 +413,7 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
     def is_content_locked_indicator(self, obj):
         """Display immutability status in detail view"""
         if not obj.pk:
-            return format_html('<em>Template will be locked once used in any campaign</em>')
+            return mark_safe('<em>Template will be locked once used in any campaign</em>')
         if obj.is_immutable:
             count = obj.campaigns.count()
             return format_html(
@@ -425,7 +425,7 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
                 '</div>',
                 count
             )
-        return format_html(
+        return mark_safe(
             '<div style="background: #d4edda; border-left: 4px solid #4caf50; padding: 15px; margin: 10px 0; border-radius: 4px;">'
             '<strong style="color: #155724;">✓ Template is editable</strong><br>'
             '<span style="color: #155724;">This template has not been used in any campaigns yet. '
@@ -437,7 +437,7 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
     def variables_preview(self, obj):
         """Show required variables"""
         if not obj.pk:
-            return format_html('<em>Save template to see variables</em>')
+            return mark_safe('<em>Save template to see variables</em>')
         vars = obj.get_required_variables()
         if vars:
             hints_dict = obj.get_variable_hints_dict()
@@ -448,8 +448,8 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
                     var_list.append(f"<strong>{{{{ {var} }}}}</strong> - {hint}")
                 else:
                     var_list.append(f"<strong>{{{{ {var} }}}}</strong>")
-            return format_html('<ul>{}</ul>', format_html(''.join([f'<li>{v}</li>' for v in var_list])))
-        return format_html('<em>No variables required</em>')
+            return format_html('<ul>{}</ul>', mark_safe(''.join([f'<li>{v}</li>' for v in var_list])))
+        return mark_safe('<em>No variables required</em>')
     variables_preview.short_description = "Required Variables"
     
     def variables_count(self, obj):
@@ -709,7 +709,7 @@ class NotificationAdmin(admin.ModelAdmin):
                 url,
                 obj.campaign.name[:30] + '...' if len(obj.campaign.name) > 30 else obj.campaign.name
             )
-        return format_html('<span style="color: gray;">-</span>')
+        return mark_safe('<span style="color: gray;">-</span>')
     campaign_link.short_description = "Campaign"
     campaign_link.admin_order_field = 'campaign__name'
     
@@ -721,12 +721,12 @@ class NotificationAdmin(admin.ModelAdmin):
     def is_read_badge(self, obj):
         """Display read status with badge"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.is_read:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Read</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">📬 Unread</span>'
         )
     is_read_badge.short_description = "Status"
@@ -961,7 +961,7 @@ class CampaignAdmin(admin.ModelAdmin):
                 '<span style="font-weight: bold;">{:,}</span> users',
                 obj.preview_count
             )
-        return format_html('<span style="color: #f44336;">Not previewed</span>')
+        return mark_safe('<span style="color: #f44336;">Not previewed</span>')
     preview_count_display.short_description = "Audience Size"
     
     def results_display(self, obj):
@@ -1014,7 +1014,7 @@ class CampaignAdmin(admin.ModelAdmin):
                     reverse('admin:notifications_campaign_change', args=[obj.pk]) + '?cancel=1'
                 )
             )
-        return format_html(' '.join(actions)) if actions else "-"
+        return mark_safe(' '.join(actions)) if actions else "-"
     actions_display.short_description = "Actions"
     
     def audience_description(self, obj):
@@ -1066,7 +1066,7 @@ class CampaignAdmin(admin.ModelAdmin):
                 )
             except Exception as e:
                 return format_html('<span style="color: #f44336;">Error: {}</span>', str(e))
-        return format_html('<span style="color: #999;">Select a template to preview</span>')
+        return mark_safe('<span style="color: #999;">Select a template to preview</span>')
     template_preview.short_description = "Template Preview"
     
     def preview_button(self, obj):
@@ -1076,7 +1076,7 @@ class CampaignAdmin(admin.ModelAdmin):
                 '<a href="{}" class="button" style="background: #2196f3; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; display: inline-block; margin-top: 10px;">Preview Audience</a>',
                 reverse('admin:notifications_campaign_preview', args=[obj.pk])
             )
-        return format_html('<span style="color: #999;">Save campaign first to preview</span>')
+        return mark_safe('<span style="color: #999;">Save campaign first to preview</span>')
     preview_button.short_description = "Preview"
     
     def execution_metadata_display(self, obj):
@@ -1194,9 +1194,9 @@ class CampaignExecutionAdmin(admin.ModelAdmin):
     def sent_successfully_badge(self, obj):
         """Display success status with badge"""
         if obj.sent_successfully:
-            return format_html('<span style="color: #4caf50; font-weight: bold;">✓ Success</span>')
+            return mark_safe('<span style="color: #4caf50; font-weight: bold;">✓ Success</span>')
         else:
-            return format_html('<span style="color: #f44336; font-weight: bold;">✗ Failed</span>')
+            return mark_safe('<span style="color: #f44336; font-weight: bold;">✗ Failed</span>')
     sent_successfully_badge.short_description = "Status"
     sent_successfully_badge.admin_order_field = 'sent_successfully'
     
