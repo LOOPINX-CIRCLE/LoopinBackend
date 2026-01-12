@@ -251,9 +251,8 @@ class UserProfileAdmin(admin.ModelAdmin):
                     return mark_safe('<span style="color: #ff9800;">⏳ Promoting Now</span>')
                 else:
                     hours_until = (obj.waitlist_promote_at - now).total_seconds() / 3600
-                    return format_html(
-                        '<span style="color: #2196f3;">⏰ In {:.1f}h</span>',
-                        hours_until
+                    return mark_safe(
+                        f'<span style="color: #2196f3;">⏰ In {hours_until:.1f}h</span>'
                     )
             return mark_safe('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
         return mark_safe('<span style="color: #4caf50;">✅ Active</span>')
