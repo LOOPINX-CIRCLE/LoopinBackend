@@ -180,7 +180,7 @@ class AuditLogAdmin(admin.ModelAdmin):
                 url,
                 user.username
             )
-        return format_html('<span style="color: gray;">System</span>')
+        return mark_safe('<span style="color: gray;">System</span>')
     actor_display.short_description = "Actor"
     actor_display.admin_order_field = 'actor_user__username'
     

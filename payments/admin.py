@@ -283,7 +283,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
     def financial_breakdown(self, obj):
         """Display financial breakdown (CEO view)"""
         if obj.status not in ['paid', 'completed']:
-            return format_html('<span style="color: gray;">-</span>')
+            return mark_safe('<span style="color: gray;">-</span>')
         
         if obj.base_price_per_seat and obj.seats_count:
             base_total = obj.base_price_per_seat * obj.seats_count

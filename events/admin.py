@@ -195,7 +195,7 @@ class VenueAdmin(admin.ModelAdmin):
     def capacity_display(self, obj):
         """Display capacity with styling"""
         if obj.capacity == 0:
-            return format_html('<span style="color: red;">No Limit</span>')
+            return mark_safe('<span style="color: red;">No Limit</span>')
         return f"{obj.capacity:,}"
     capacity_display.short_description = "Capacity"
     capacity_display.admin_order_field = 'capacity'

@@ -180,7 +180,7 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
                 '<small style="color: gray;">{}</small>',
                 obj.checked_in_at.strftime('%Y-%m-%d %H:%M')
             )
-        return format_html('<span style="color: orange;">Not Checked In</span>')
+        return mark_safe('<span style="color: orange;">Not Checked In</span>')
     check_in_status.short_description = "Check-in Status"
     
     def duration_display(self, obj):
