@@ -25,6 +25,7 @@ from .schemas import (
     LoginRequest,
     AuthResponse,
     UserProfileResponse,
+    UserProfileUpdate,
     EventInterestResponse
 )
 from .services import twilio_service
@@ -68,7 +69,29 @@ def maybe_promote_user_from_waitlist_sync(user_id: int) -> bool:
         profile.save(update_fields=["is_active", "waitlist_started_at", "waitlist_promote_at", "updated_at"])
 
         logger.info(f"User {locked_user.id} promoted from waitlist to active.")
-        # TODO: Trigger user notification on promotion (out of scope for current implementation)
+        
+        # Send notification to user about account activation (non-blocking)
+        try:
+            from notifications.services.dispatcher import get_push_dispatcher
+            dispatcher = get_push_dispatcher()
+            
+            dispatcher.send_notification(
+                recipient=profile,
+                notification_type="system",
+                title="Welcome to Loopin!",
+                message="Your account is now active. Start exploring events and connecting with your community!",
+                data={
+                    'target_screen': 'home',
+                    'type': 'account_activated'
+                },
+                reference_type='UserProfile',
+                reference_id=profile.id,
+            )
+            logger.info(f"Waitlist promotion notification sent to user {locked_user.id}")
+        except Exception as notify_error:
+            # Never block promotion on notification failure
+            logger.error(f"Failed to send waitlist promotion notification to user {locked_user.id}: {notify_error}")
+        
         return True
 
 
@@ -628,8 +651,8 @@ async def complete_user_profile(
         # by marking the Django User as inactive and scheduling a promotion time.
         if was_incomplete_before:
             now = timezone.now()
-            # Random delay between 3.5 and 4 hours (210–240 minutes)
-            delay_minutes = random.randint(210, 240)
+            # Random delay between 1.10 and 1.35 hours (66–81 minutes)
+            delay_minutes = random.randint(66, 81)
             promote_at = now + timedelta(minutes=delay_minutes)
 
             # Mark auth user as inactive for waitlist duration
@@ -850,6 +873,106 @@ async def get_user_profile(token: str = Depends(security)):
     except Exception as e:
         logger.error(f"Profile retrieval error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving profile")
+
+
+@router.put("/profile", response_model=UserProfileResponse)
+async def update_user_profile(
+    update_data: UserProfileUpdate,
+    token: str = Depends(security)
+):
+    """
+    Update current user's profile information.
+    
+    All fields are optional for partial updates. Only provided fields will be updated.
+    """
+    try:
+        # Verify JWT token
+        payload = verify_jwt_token(token.credentials)
+        user_id = payload['user_id']
+        
+        # Get user and profile
+        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        
+        # Update fields if provided
+        update_dict = update_data.dict(exclude_unset=True)
+        
+        if 'name' in update_dict:
+            profile.name = update_dict['name']
+        if 'bio' in update_dict:
+            profile.bio = update_dict['bio'] or ""
+        if 'location' in update_dict:
+            profile.location = update_dict['location'] or ""
+        if 'birth_date' in update_dict:
+            if update_dict['birth_date']:
+                profile.birth_date = datetime.strptime(update_dict['birth_date'], '%Y-%m-%d').date()
+            else:
+                profile.birth_date = None
+        if 'gender' in update_dict:
+            profile.gender = update_dict['gender'] or ""
+        if 'profile_pictures' in update_dict:
+            profile.profile_pictures = update_dict['profile_pictures']
+        if 'event_interests' in update_dict:
+            # Get event interest objects
+            event_interest_ids = update_dict['event_interests']
+            event_interests = await sync_to_async(
+                lambda: list(EventInterest.objects.filter(id__in=event_interest_ids, is_active=True))
+            )()
+            if len(event_interests) != len(event_interest_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="One or more event interest IDs are invalid or inactive"
+                )
+            await sync_to_async(lambda: profile.event_interests.set(event_interests))()
+        
+        # Save profile
+        await sync_to_async(lambda: profile.save())()
+        logger.info(f"Profile updated for user {user_id}")
+        
+        # Refresh profile to get updated timestamp
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        
+        # Fetch event interests for response
+        event_interests_qs = await sync_to_async(lambda: list(profile.event_interests.filter(is_active=True).order_by('name')))()
+        event_interests_data = [
+            EventInterestResponse(
+                id=interest.id,
+                name=interest.name,
+                is_active=interest.is_active,
+                created_at=interest.created_at.isoformat(),
+                updated_at=interest.updated_at.isoformat()
+            ) for interest in event_interests_qs
+        ]
+        
+        return UserProfileResponse(
+            id=profile.id,
+            name=profile.name,
+            phone_number=profile.phone_number,
+            gender=profile.gender,
+            bio=profile.bio,
+            location=profile.location,
+            birth_date=profile.birth_date.isoformat() if profile.birth_date else None,
+            event_interests=event_interests_data,
+            profile_pictures=profile.profile_pictures,
+            is_verified=profile.is_verified,
+            is_active=user.is_active,
+            created_at=profile.created_at.isoformat(),
+            updated_at=profile.updated_at.isoformat()
+        )
+        
+    except ValueError as ve:
+        # Validation errors from schema validators
+        logger.error(f"Validation error in profile update: {ve}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except HTTPException:
+        raise
+    except User.DoesNotExist:
+        raise HTTPException(status_code=404, detail="User not found")
+    except UserProfile.DoesNotExist:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    except Exception as e:
+        logger.error(f"Profile update error: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while updating profile")
 
 
 @router.get("/event-interests", response_model=dict)
