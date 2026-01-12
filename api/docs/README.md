@@ -36,9 +36,12 @@ The API module provides FastAPI-based endpoints for mobile applications, offerin
 - **Endpoints**: Become a host, host leads management
 - **Features**: WhatsApp notifications
 
-### Users Router (`api/routers/users.py`)
-- **Purpose**: User management endpoints
-- **Endpoints**: User profiles, preferences, management
+### User Profile Endpoints (`users/auth_router.py`)
+- **Purpose**: User profile management (part of authentication router)
+- **Endpoints**: 
+  - `GET /api/auth/profile` - Get user profile (includes waitlist status via `is_active` field)
+  - `PUT /api/auth/profile` - Update user profile (supports partial updates)
+- **Note**: The `/api/users/*` router has been removed. All user profile management is now handled via `/api/auth/profile` endpoints.
 
 ### Health Check (`api/health.py`)
 - **Purpose**: System health monitoring

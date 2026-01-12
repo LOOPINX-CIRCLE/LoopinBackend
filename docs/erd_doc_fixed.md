@@ -133,7 +133,7 @@ erDiagram
         BOOLEAN is_verified "Phone verified status"
         BOOLEAN is_active "Profile active (mirrors AUTH_USER.is_active)"
         DATETIME waitlist_started_at "When user first entered waitlist (nullable)"
-        DATETIME waitlist_promote_at "Scheduled promotion time (3.5-4h window, nullable)"
+        DATETIME waitlist_promote_at "Scheduled promotion time (1.10-1.35h window, nullable)"
         DATETIME created_at "Record creation"
         DATETIME updated_at "Last update"
     }
@@ -604,7 +604,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Advanced attendance management** with check-in/check-out and secure ticketing
 - **Host payout management** with bank account management and financial calculations
 - **Configurable platform fee system** with admin-controlled fee percentage
-- **Automatic waitlist promotion** with 3.5-4 hour randomized window
+- **Automatic waitlist promotion** with 1.10-1.35 hour randomized window
 - **Complete audit trail** for security and compliance
 - **Push notification system** with device registration and OneSignal integration
 - **Flexible in-app notification system** for user engagement
@@ -784,11 +784,16 @@ The Loopin Backend database is designed for a production-ready event hosting pla
   - Django `AUTH_USER.is_active = False`
   - `USER_PROFILE.is_active = False`
   - `waitlist_started_at` set to the profile completion time
-  - `waitlist_promote_at` set to a randomized timestamp between **3.5 and 4 hours** (210-240 minutes) in the future
-- **Waitlist Promotion Window**: Random delay between 3.5-4 hours from profile completion
-  - Minimum wait: 3.5 hours (210 minutes)
-  - Maximum wait: 4.0 hours (240 minutes)
+  - `waitlist_promote_at` set to a randomized timestamp between **1.10 and 1.35 hours** (70-81 minutes) in the future
+- **Waitlist Promotion Window**: Random delay between 1.10-1.35 hours from profile completion
+  - Minimum wait: 1.10 hours (70 minutes)
+  - Maximum wait: 1.35 hours (81 minutes)
   - Each user gets a random delay within this window
+- **Waitlist Access Restrictions**: While on waitlist (`is_active = false`), users can only access:
+  - `GET /api/auth/profile` - View profile
+  - `PUT /api/auth/profile` - Update profile
+  - All other endpoints return 403 with waitlist message
+- **Promotion Notification**: When promoted from waitlist, users receive a push notification welcoming them to the platform
 - While `is_active = False`, all endpoints and features that depend on this flag must treat the account as **restricted/waitlisted** and deny core actions.
 - **Automatic Promotion**: During normal API traffic (no Celery/cron required), the backend checks `waitlist_promote_at` and **atomically promotes** the user to active when `now >= waitlist_promote_at`:
   - `AUTH_USER.is_active = True`

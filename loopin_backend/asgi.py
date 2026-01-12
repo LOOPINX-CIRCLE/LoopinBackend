@@ -96,7 +96,7 @@ def safe_import(module_name: str, description: str):
 # Import routers directly to include in main app (instead of mounting)
 # This ensures all routes appear in the OpenAPI schema
 try:
-    from api.routers import users, hosts, events, events_attendance, payouts, payments, notifications
+    from api.routers import hosts, events, events_attendance, payouts, payments, notifications
     logger.info("✅ API routers imported successfully")
 except Exception as e:
     logger.critical(f"❌ Failed to import API routers: {e}", exc_info=True)
@@ -320,11 +320,13 @@ except Exception as e:
 # This ensures all routes appear in the OpenAPI schema
 # Note: Routers that already have prefixes (like /events, /payouts) will be 
 # concatenated with /api, so /events becomes /api/events
-try:
-    app.include_router(users.router, prefix="/api/users", tags=["users"])
-    logger.info("✅ Users router included")
-except Exception as e:
-    logger.error(f"❌ Failed to include users router: {e}")
+# Users router removed - redundant/incomplete endpoints
+# Use /api/auth/profile (GET/PUT) instead for user profile management
+# try:
+#     app.include_router(users.router, prefix="/api/users", tags=["users"])
+#     logger.info("✅ Users router included")
+# except Exception as e:
+#     logger.error(f"❌ Failed to include users router: {e}")
 
 try:
     app.include_router(hosts.router, prefix="/api/hosts", tags=["Host Leads"])

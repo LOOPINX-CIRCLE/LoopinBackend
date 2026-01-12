@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from django.conf import settings
 
-from api.routers import users, hosts, events, events_attendance, payouts, payments, notifications
+from api.routers import hosts, events, events_attendance, payouts, payments, notifications
 from core.exceptions import (
     LoopinBaseException,
     ValidationError,
@@ -101,11 +101,12 @@ async def generic_exception_handler(request: Request, exc: Exception):
 # Include routers
 # Note: Legacy auth router (api/routers/auth.py) is deprecated in favor of phone authentication
 # Phone auth router is registered in asgi.py after Django is set up
-try:
-    app.include_router(users.router, prefix="/users", tags=["users"])
-    print("✅ Users router loaded successfully (prefix: /users)")
-except Exception as e:
-    print(f"❌ Failed to load users router: {e}")
+# Users router removed - redundant/incomplete endpoints. Use /api/auth/profile (GET/PUT) instead.
+# try:
+#     app.include_router(users.router, prefix="/users", tags=["users"])
+#     print("✅ Users router loaded successfully (prefix: /users)")
+# except Exception as e:
+#     print(f"❌ Failed to load users router: {e}")
 
 try:
     app.include_router(hosts.router, prefix="/hosts", tags=["Host Leads"])

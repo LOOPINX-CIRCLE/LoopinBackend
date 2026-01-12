@@ -517,7 +517,7 @@ sequenceDiagram
    - Profile pictures: 1-6 valid URLs
 5. Saves profile data
 6. Returns success
-7. For users completing their profile for the first time, the backend then places the account into a short **waitlist window** by setting `User.is_active = false` and scheduling an automatic promotion 3.5–4 hours in the future.
+7. For users completing their profile for the first time, the backend then places the account into a short **waitlist window** by setting `User.is_active = false` and scheduling an automatic promotion 1.10–1.35 hours in the future.
 
 **Request:**
 ```json
@@ -1138,7 +1138,63 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-#### 6. Logout
+#### 6. Update User Profile
+
+**Endpoint:** `PUT /api/auth/profile`
+
+**Description:** Update current user's profile information. All fields are optional for partial updates. Only provided fields will be updated. Waitlisted users can also access this endpoint.
+
+**Headers:**
+```
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+```
+
+**Request Body (all fields optional):**
+```json
+{
+  "name": "John Doe Updated",
+  "bio": "Updated bio text",
+  "location": "San Francisco, USA",
+  "birth_date": "1995-01-15",
+  "gender": "male",
+  "event_interests": [1, 3, 5],
+  "profile_pictures": [
+    "https://example.com/pic1.jpg",
+    "https://example.com/pic2.jpg"
+  ]
+}
+```
+
+**Success Response:**
+Returns the same structure as `GET /api/auth/profile` with updated fields.
+
+**Error Responses:**
+```json
+// Validation error
+{
+  "detail": "Name must be at least 2 characters long"
+}
+
+// Invalid event interest IDs
+{
+  "detail": "One or more event interest IDs are invalid or inactive"
+}
+
+// User not found
+{
+  "detail": "User not found"
+}
+
+// Profile not found
+{
+  "detail": "User profile not found"
+}
+```
+
+---
+
+#### 7. Logout
 
 **Endpoint:** `POST /api/auth/logout`
 
@@ -2178,7 +2234,8 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 - `is_active` (boolean): **Account active status from Django `User.is_active`**  
   - `false` immediately after first-time profile completion → user is in **waitlist state** and must not be allowed to use core app features yet  
   - `true` after automatic promotion → user is **fully active** and can use all app features  
-  - The backend automatically promotes users from waitlist to active once the current time passes the scheduled `waitlist_promote_at` timestamp, using normal request flow (no background workers, cron, or Celery).
+  - The backend automatically promotes users from waitlist to active once the current time passes the scheduled `waitlist_promote_at` timestamp (1.10-1.35 hours after profile completion), using normal request flow (no background workers, cron, or Celery).
+  - When a user is promoted from waitlist, they receive a push notification: "Welcome to Loopin! Your account is now active."
 - `created_at` (string): Account creation timestamp
 - `updated_at` (string): Last update timestamp
 
