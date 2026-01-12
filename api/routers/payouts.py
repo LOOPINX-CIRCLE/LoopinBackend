@@ -89,7 +89,7 @@ async def get_current_user(
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive",
+                detail="Your account is on the waitlist. You can only access your profile. Please wait 1.10-1.35 hours for activation.",
             )
         return user
     except User.DoesNotExist:
