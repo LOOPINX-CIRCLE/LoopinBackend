@@ -29,6 +29,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Prefetch
 from asgiref.sync import sync_to_async
+from users.auth_router import maybe_promote_user_from_waitlist_sync
 from pydantic import BaseModel, Field
 import logging
 
@@ -115,6 +116,15 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+    
+    # Automatic waitlist promotion check before rejecting inactive users
+    try:
+        promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+        if promoted:
+            # Refresh user instance to reflect new active state
+            user = await sync_to_async(User.objects.get)(id=user_id)
+    except Exception as promote_error:
+        logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
     
     if not user.is_active:
         raise HTTPException(
