@@ -59,22 +59,25 @@ def generate_slug(text: str, max_length: int = MAX_SLUG_LENGTH) -> str:
     - No leading/trailing dashes
     - No consecutive dashes
     - Maximum 70 characters
+    - Returns 'event' as fallback if normalization results in empty string
     
     Args:
         text: Source text (typically event title)
         max_length: Maximum slug length (default: 70)
         
     Returns:
-        Generated slug string
+        Generated slug string (never empty, defaults to 'event' if normalization fails)
         
     Example:
         >>> generate_slug("Tech Founder Meetup")
         'tech-founder-meetup'
         >>> generate_slug("São Paulo Tech Conference 2024")
         'sao-paulo-tech-conference-2024'
+        >>> generate_slug("🎉🎊")  # Emoji-only title
+        'event'
     """
     if not text:
-        return ""
+        return "event"
     
     # Normalize to ASCII (remove accents)
     text = normalize_to_ascii(text)
@@ -106,6 +109,10 @@ def generate_slug(text: str, max_length: int = MAX_SLUG_LENGTH) -> str:
     
     # Final cleanup: remove any trailing dashes after truncation
     text = text.rstrip('-')
+    
+    # Fallback: if slug is empty after normalization (e.g., emoji-only titles), use 'event'
+    if not text:
+        return "event"
     
     return text
 
