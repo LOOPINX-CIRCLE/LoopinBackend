@@ -894,6 +894,17 @@ async def update_user_profile(
         user = await sync_to_async(lambda: User.objects.get(id=user_id))()
         profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
         
+        # Automatic waitlist promotion check based on waitlist_promote_at.
+        # This allows users to be promoted during normal request flow without background workers.
+        try:
+            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+            if promoted:
+                # Refresh instances to reflect new active state
+                user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+                profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        except Exception as promote_error:
+            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
+        
         # Update fields if provided
         update_dict = update_data.dict(exclude_unset=True)
         
