@@ -5,7 +5,7 @@ This module provides minimal, public endpoints for single event URL sharing.
 No authentication required. Returns only fields needed for SEO-optimized web rendering.
 """
 
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 from fastapi import APIRouter, Path, status, Query
 from fastapi.responses import RedirectResponse
 from django.conf import settings
@@ -13,7 +13,7 @@ from asgiref.sync import sync_to_async
 from core.exceptions import NotFoundError
 from events.models import Event
 
-router = APIRouter(prefix="/public/events", tags=["public-events"])
+router = APIRouter(prefix="/events", tags=["public-events"])
 
 
 @sync_to_async
@@ -59,12 +59,15 @@ def validate_url_slug_and_city(
         - If mismatch: (False, canonical_url_for_redirect)
     """
     # Get expected values from event
-    expected_city_slug = None
+    # Use the same fallback logic as Event._get_city_slug() to ensure consistency
     if event.venue and event.venue.city_slug:
         expected_city_slug = event.venue.city_slug
     elif event.venue_text:
         from core.utils.slug_generator import generate_slug
         expected_city_slug = generate_slug(event.venue_text, max_length=100)
+    else:
+        # Default to 'unknown' to match Event._get_city_slug() fallback behavior
+        expected_city_slug = 'unknown'
     
     expected_event_slug = event.slug
     
@@ -76,7 +79,7 @@ def validate_url_slug_and_city(
         return True, None
     
     # Mismatch detected - return canonical URL for redirect
-    canonical_url = event.canonical_url or f"/in/{expected_city_slug or 'unknown'}/events/{expected_event_slug}--{event.canonical_id}"
+    canonical_url = event.canonical_url or f"/in/{expected_city_slug}/events/{expected_event_slug}--{event.canonical_id}"
     return False, canonical_url
 
 
@@ -85,7 +88,7 @@ async def get_single_event_seo(
     canonical_id: str = Path(..., description="Event canonical ID (Base62)"),
     url_city_slug: Optional[str] = Query(None, description="City slug from URL (for validation)"),
     url_event_slug: Optional[str] = Query(None, description="Event slug from URL (for validation)"),
-) -> Dict[str, Any]:
+) -> Union[Dict[str, Any], RedirectResponse]:
     """
     Public API for single event URL resolution and SEO data.
     
