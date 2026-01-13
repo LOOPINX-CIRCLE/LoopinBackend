@@ -139,7 +139,7 @@ def get_waitlist_metrics(
     
     Waitlist Logic:
     - New users completing profile are placed on waitlist (is_active=False)
-    - Random promotion delay: 3.5-4 hours (210-240 minutes) from profile completion
+    - Random promotion delay: 1.10-1.35 hours (70-81 minutes) from profile completion
     - waitlist_promote_at tracks scheduled promotion time
     - Automatic promotion occurs during normal API requests when now >= waitlist_promote_at
     
@@ -178,7 +178,7 @@ def get_waitlist_metrics(
     
     approval_rate = (active_users / total_users * 100) if total_users > 0 else 0
     
-    # Waitlist promotion metrics (3.5-4 hour window)
+    # Waitlist promotion metrics (1.10-1.35 hour window)
     from users.models import UserProfile
     
     # Users currently on waitlist with promotion times
@@ -213,15 +213,15 @@ def get_waitlist_metrics(
             expected_duration = (profile.waitlist_promote_at - profile.waitlist_started_at).total_seconds() / 3600
             current_waitlist_durations.append(expected_duration)
     
-    # Average expected waitlist duration (should be ~3.5-4 hours)
+    # Average expected waitlist duration (should be ~1.10-1.35 hours)
     avg_expected_duration = (
         sum(current_waitlist_durations) / len(current_waitlist_durations)
         if current_waitlist_durations else 0
     )
     
-    # Waitlist promotion window: 3.5-4 hours (210-240 minutes)
-    min_waitlist_hours = 3.5
-    max_waitlist_hours = 4.0
+    # Waitlist promotion window: 1.10-1.35 hours (70-81 minutes)
+    min_waitlist_hours = 1.10
+    max_waitlist_hours = 1.35
     
     # Trend: new waitlisted users per period (filtered by period window)
     waitlist_trend = (
@@ -253,8 +253,8 @@ def get_waitlist_metrics(
             'users_scheduled_for_promotion': users_scheduled_for_promotion,  # Ready to promote now
             'users_promoting_soon': users_promoting_soon,  # Promoting in next hour
             'avg_expected_duration_hours': round(avg_expected_duration, 2),  # Average wait time
-            'promotion_window_min_hours': min_waitlist_hours,  # 3.5 hours
-            'promotion_window_max_hours': max_waitlist_hours,  # 4.0 hours
+            'promotion_window_min_hours': min_waitlist_hours,  # 1.10 hours
+            'promotion_window_max_hours': max_waitlist_hours,  # 1.35 hours
         },
         'trend': paginated_trend,
         'pagination': {

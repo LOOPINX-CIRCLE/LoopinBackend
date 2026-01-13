@@ -6,6 +6,7 @@ The API module provides FastAPI-based endpoints for mobile applications, offerin
 ## Quick Links
 
 - **[SDK Integration Guide](./SDK_INTEGRATION_GUIDE.md)** - Complete guide for frontend developers to generate and integrate API client SDKs
+- **[Public Event URL Integration Guide](./PUBLIC_EVENT_URL_INTEGRATION.md)** - Guide for integrating single event URL sharing with SEO support
 - **Interactive API Docs (Swagger UI):** `https://loopinbackend-g17e.onrender.com/api/docs`
 - **OpenAPI JSON Spec:** `https://loopinbackend-g17e.onrender.com/api/openapi.json`
 - **ReDoc Documentation:** `https://loopinbackend-g17e.onrender.com/api/redoc`
@@ -27,18 +28,35 @@ The API module provides FastAPI-based endpoints for mobile applications, offerin
 
 ### Events Router (`api/routers/events.py`)
 - **Purpose**: Event management and discovery
-- **Endpoints**: List, create, update, delete events; venue management
-- **Features**: Filtering, pagination, search, location-based queries
+- **Endpoints**: List, create, update, delete events; venue management; canonical URL support
+- **Features**: Filtering, pagination, search, location-based queries, canonical URLs with SEO
+- **Canonical URLs**: 
+  - Format: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+  - Immutable `canonical_id` ensures links never break
+  - SEO-friendly slugs with automatic redirects
+  - `GET /api/events/canonical/{canonical_id}` - Preferred endpoint for production
+  - `GET /api/events/{event_id}/share-url` - Generate shareable canonical URLs
 - **File Uploads**: Event creation accepts `multipart/form-data` with cover image files (uploaded to Supabase Storage)
+
+### Public Events Router (`api/routers/public_events.py`)
+- **Purpose**: Public API for single event URL resolution (SEO + GEO)
+- **Endpoints**: `GET /api/public/events/{canonical_id}/seo`
+- **Features**: SEO-optimized event pages, social media sharing, canonical URLs
+- **Authentication**: None required (public endpoint)
+- **Use Case**: Frontend integration for shareable, SEO-friendly event URLs
+- **Documentation**: See [Public Event URL Integration Guide](./PUBLIC_EVENT_URL_INTEGRATION.md)
 
 ### Host Leads Router (`api/routers/hosts.py`)
 - **Purpose**: Host lead submission and management
 - **Endpoints**: Become a host, host leads management
 - **Features**: WhatsApp notifications
 
-### Users Router (`api/routers/users.py`)
-- **Purpose**: User management endpoints
-- **Endpoints**: User profiles, preferences, management
+### User Profile Endpoints (`users/auth_router.py`)
+- **Purpose**: User profile management (part of authentication router)
+- **Endpoints**: 
+  - `GET /api/auth/profile` - Get user profile (includes waitlist status via `is_active` field)
+  - `PUT /api/auth/profile` - Update user profile (supports partial updates)
+- **Note**: The `/api/users/*` router has been removed. All user profile management is now handled via `/api/auth/profile` endpoints.
 
 ### Health Check (`api/health.py`)
 - **Purpose**: System health monitoring

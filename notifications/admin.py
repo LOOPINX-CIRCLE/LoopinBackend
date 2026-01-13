@@ -1,6 +1,5 @@
 from django.contrib import admin
 from django import forms
-from django.utils.html import format_html
 from django.urls import path, reverse
 from django.shortcuts import render, redirect
 from django.contrib import messages
@@ -401,10 +400,10 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "-"
         if obj.is_immutable:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">🔒 LOCKED</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Editable</span>'
         )
     is_immutable_indicator.short_description = "Status"
@@ -413,19 +412,18 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
     def is_content_locked_indicator(self, obj):
         """Display immutability status in detail view"""
         if not obj.pk:
-            return format_html('<em>Template will be locked once used in any campaign</em>')
+            return mark_safe('<em>Template will be locked once used in any campaign</em>')
         if obj.is_immutable:
             count = obj.campaigns.count()
-            return format_html(
-                '<div style="background: #fff3cd; border-left: 4px solid #ff9800; padding: 15px; margin: 10px 0; border-radius: 4px;">'
-                '<strong style="color: #856404;">🔒 TEMPLATE IS LOCKED</strong><br>'
-                '<span style="color: #856404;">This template is used in <strong>{}</strong> campaign(s). '
-                'Content fields (title, body, target_screen, notification_type) cannot be changed. '
-                'To make changes, create a new template version.</span>'
-                '</div>',
-                count
+            return mark_safe(
+                f'<div style="background: #fff3cd; border-left: 4px solid #ff9800; padding: 15px; margin: 10px 0; border-radius: 4px;">'
+                f'<strong style="color: #856404;">🔒 TEMPLATE IS LOCKED</strong><br>'
+                f'<span style="color: #856404;">This template is used in <strong>{count}</strong> campaign(s). '
+                f'Content fields (title, body, target_screen, notification_type) cannot be changed. '
+                f'To make changes, create a new template version.</span>'
+                f'</div>'
             )
-        return format_html(
+        return mark_safe(
             '<div style="background: #d4edda; border-left: 4px solid #4caf50; padding: 15px; margin: 10px 0; border-radius: 4px;">'
             '<strong style="color: #155724;">✓ Template is editable</strong><br>'
             '<span style="color: #155724;">This template has not been used in any campaigns yet. '
@@ -437,7 +435,7 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
     def variables_preview(self, obj):
         """Show required variables"""
         if not obj.pk:
-            return format_html('<em>Save template to see variables</em>')
+            return mark_safe('<em>Save template to see variables</em>')
         vars = obj.get_required_variables()
         if vars:
             hints_dict = obj.get_variable_hints_dict()
@@ -448,8 +446,8 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
                     var_list.append(f"<strong>{{{{ {var} }}}}</strong> - {hint}")
                 else:
                     var_list.append(f"<strong>{{{{ {var} }}}}</strong>")
-            return format_html('<ul>{}</ul>', format_html(''.join([f'<li>{v}</li>' for v in var_list])))
-        return format_html('<em>No variables required</em>')
+            return mark_safe(f'<ul>{"".join([f"<li>{v}</li>" for v in var_list])}</ul>')
+        return mark_safe('<em>No variables required</em>')
     variables_preview.short_description = "Required Variables"
     
     def variables_count(self, obj):
@@ -467,7 +465,7 @@ class NotificationTemplateAdmin(admin.ModelAdmin):
         count = obj.campaigns.count()
         if count > 0:
             url = reverse('admin:notifications_campaign_changelist') + f'?template__id__exact={obj.pk}'
-            return format_html('<a href="{}">{}</a>', url, count)
+            return mark_safe(f'<a href="{url}">{count}</a>')
         return "0"
     usage_count.short_description = "Used In Campaigns"
     
@@ -671,11 +669,7 @@ class NotificationAdmin(admin.ModelAdmin):
             'promotional': '#e91e63',
         }
         color = type_colors.get(obj.type, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_type_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.get_type_display()}</span>')
     type_badge.short_description = "Type"
     type_badge.admin_order_field = 'type'
     
@@ -688,14 +682,16 @@ class NotificationAdmin(admin.ModelAdmin):
         """Link to recipient"""
         url = reverse('admin:users_userprofile_change', args=[obj.recipient_id])
         name = obj.recipient.name or obj.recipient.phone_number
-        return format_html('<a href="{}">{}</a>', url, name)
+        return mark_safe(f'<a href="{url}">{name}</a>')
     recipient_link.short_description = "Recipient"
     recipient_link.admin_order_field = 'recipient__name'
     
     def title_short(self, obj):
         """Display shortened title"""
+        from html import escape
         if len(obj.title) > 50:
-            return format_html('<span title="{}">{}</span>', obj.title, obj.title[:47] + '...')
+            escaped_title = escape(obj.title)
+            return mark_safe(f'<span title="{escaped_title}">{escape(obj.title[:47])}...</span>')
         return obj.title
     title_short.short_description = "Title"
     title_short.admin_order_field = 'title'
@@ -703,13 +699,12 @@ class NotificationAdmin(admin.ModelAdmin):
     def campaign_link(self, obj):
         """Display campaign link if exists"""
         if obj.campaign:
+            from html import escape
             url = reverse('admin:notifications_campaign_change', args=[obj.campaign_id])
-            return format_html(
-                '<a href="{}" style="color: #9c27b0;">📢 {}</a>',
-                url,
-                obj.campaign.name[:30] + '...' if len(obj.campaign.name) > 30 else obj.campaign.name
-            )
-        return format_html('<span style="color: gray;">-</span>')
+            campaign_name = obj.campaign.name[:30] + '...' if len(obj.campaign.name) > 30 else obj.campaign.name
+            escaped_name = escape(campaign_name)
+            return mark_safe(f'<a href="{url}" style="color: #9c27b0;">📢 {escaped_name}</a>')
+        return mark_safe('<span style="color: gray;">-</span>')
     campaign_link.short_description = "Campaign"
     campaign_link.admin_order_field = 'campaign__name'
     
@@ -721,12 +716,12 @@ class NotificationAdmin(admin.ModelAdmin):
     def is_read_badge(self, obj):
         """Display read status with badge"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.is_read:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Read</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">📬 Unread</span>'
         )
     is_read_badge.short_description = "Status"
@@ -924,12 +919,10 @@ class CampaignAdmin(admin.ModelAdmin):
     def template_display(self, obj):
         """Display template with badge and link"""
         if obj.template:
+            from html import escape
             url = reverse('admin:notifications_notificationtemplate_change', args=[obj.template.pk])
-            return format_html(
-                '<a href="{}" style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; color: #1976d2;">{}</a>',
-                url,
-                obj.template.name
-            )
+            escaped_name = escape(obj.template.name)
+            return mark_safe(f'<a href="{url}" style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; color: #1976d2;">{escaped_name}</a>')
         return "-"
     template_display.short_description = "Template"
     template_display.admin_order_field = 'template__name'
@@ -946,37 +939,27 @@ class CampaignAdmin(admin.ModelAdmin):
             'failed': '#e91e63',
         }
         color = colors.get(obj.status, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">{obj.get_status_display()}</span>')
     status_badge.short_description = "Status"
     status_badge.admin_order_field = 'status'
     
     def preview_count_display(self, obj):
         """Display preview count"""
         if obj.preview_count is not None:
-            return format_html(
-                '<span style="font-weight: bold;">{:,}</span> users',
-                obj.preview_count
-            )
-        return format_html('<span style="color: #f44336;">Not previewed</span>')
+            return mark_safe(f'<span style="font-weight: bold;">{obj.preview_count:,}</span> users')
+        return mark_safe('<span style="color: #f44336;">Not previewed</span>')
     preview_count_display.short_description = "Audience Size"
     
     def results_display(self, obj):
         """Display execution results"""
         if obj.status == 'sent':
             success_rate = (obj.total_sent / (obj.total_sent + obj.total_failed) * 100) if (obj.total_sent + obj.total_failed) > 0 else 0
-            return format_html(
-                '<div style="font-size: 11px;">'
-                '<span style="color: #4caf50;">✓ {:,}</span><br>'
-                '<span style="color: #f44336;">✗ {:,}</span><br>'
-                '<span style="color: #2196f3;">{:.1f}% success</span>'
-                '</div>',
-                obj.total_sent,
-                obj.total_failed,
-                success_rate
+            return mark_safe(
+                f'<div style="font-size: 11px;">'
+                f'<span style="color: #4caf50;">✓ {obj.total_sent:,}</span><br>'
+                f'<span style="color: #f44336;">✗ {obj.total_failed:,}</span><br>'
+                f'<span style="color: #2196f3;">{success_rate:.1f}% success</span>'
+                f'</div>'
             )
         return "-"
     results_display.short_description = "Results"
@@ -995,26 +978,17 @@ class CampaignAdmin(admin.ModelAdmin):
         if obj.can_be_sent:
             if obj.preview_count is None:
                 actions.append(
-                    format_html(
-                        '<a href="{}" class="button" style="background: #2196f3; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; margin-right: 5px;">Preview</a>',
-                        reverse('admin:notifications_campaign_preview', args=[obj.pk])
-                    )
+                    mark_safe(f'<a href="{reverse("admin:notifications_campaign_preview", args=[obj.pk])}" class="button" style="background: #2196f3; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; margin-right: 5px;">Preview</a>')
                 )
             else:
                 actions.append(
-                    format_html(
-                        '<a href="{}" class="button" style="background: #4caf50; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; margin-right: 5px;">Send</a>',
-                        reverse('admin:notifications_campaign_execute', args=[obj.pk])
-                    )
+                    mark_safe(f'<a href="{reverse("admin:notifications_campaign_execute", args=[obj.pk])}" class="button" style="background: #4caf50; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; margin-right: 5px;">Send</a>')
                 )
         if obj.status in ['draft', 'previewed', 'scheduled']:
             actions.append(
-                format_html(
-                    '<a href="{}" class="button" style="background: #f44336; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none;">Cancel</a>',
-                    reverse('admin:notifications_campaign_change', args=[obj.pk]) + '?cancel=1'
-                )
+                mark_safe(f'<a href="{reverse("admin:notifications_campaign_change", args=[obj.pk])}?cancel=1" class="button" style="background: #f44336; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none;">Cancel</a>')
             )
-        return format_html(' '.join(actions)) if actions else "-"
+        return mark_safe(' '.join(actions)) if actions else "-"
     actions_display.short_description = "Actions"
     
     def audience_description(self, obj):
@@ -1022,9 +996,9 @@ class CampaignAdmin(admin.ModelAdmin):
         if obj.audience_rules:
             try:
                 description = RuleEngine.generate_human_readable_description(obj.audience_rules)
-                return format_html('<div style="padding: 10px; background: #f5f5f5; border-radius: 4px;">{}</div>', description)
+                return mark_safe(f'<div style="padding: 10px; background: #f5f5f5; border-radius: 4px;">{description}</div>')
             except Exception as e:
-                return format_html('<span style="color: #f44336;">Error: {}</span>', str(e))
+                return mark_safe(f'<span style="color: #f44336;">Error: {str(e)}</span>')
         return "-"
     audience_description.short_description = "Audience Description"
     
@@ -1046,46 +1020,39 @@ class CampaignAdmin(admin.ModelAdmin):
                 missing_vars = set(re.findall(r'\{\{(\w+)\}\}', preview_title + preview_body))
                 warning = ""
                 if missing_vars:
-                    warning = format_html(
-                        '<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 11px; color: #856404;">'
-                        '⚠️ Missing variables: {}</div>',
-                        ', '.join([f"{{{{ {v} }}}}" for v in missing_vars])
+                    missing_vars_str = ', '.join([f"{{{{ {v} }}}}" for v in missing_vars])
+                    warning = mark_safe(
+                        f'<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 11px; color: #856404;">'
+                        f'⚠️ Missing variables: {missing_vars_str}</div>'
                     )
                 
-                return format_html(
-                    '<div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: white;">'
-                    '<div style="font-weight: bold; margin-bottom: 8px; color: #333;">{}</div>'
-                    '<div style="color: #666; font-size: 13px;">{}</div>'
-                    '<div style="margin-top: 8px; font-size: 11px; color: #999;">Target Screen: {}</div>'
-                    '{}'
-                    '</div>',
-                    preview_title,
-                    preview_body,
-                    obj.template.target_screen,
-                    warning
+                from html import escape
+                escaped_title = escape(preview_title)
+                escaped_body = escape(preview_body)
+                return mark_safe(
+                    f'<div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: white;">'
+                    f'<div style="font-weight: bold; margin-bottom: 8px; color: #333;">{escaped_title}</div>'
+                    f'<div style="color: #666; font-size: 13px;">{escaped_body}</div>'
+                    f'<div style="margin-top: 8px; font-size: 11px; color: #999;">Target Screen: {obj.template.target_screen}</div>'
+                    f'{warning}'
+                    f'</div>'
                 )
             except Exception as e:
-                return format_html('<span style="color: #f44336;">Error: {}</span>', str(e))
-        return format_html('<span style="color: #999;">Select a template to preview</span>')
+                return mark_safe(f'<span style="color: #f44336;">Error: {str(e)}</span>')
+        return mark_safe('<span style="color: #999;">Select a template to preview</span>')
     template_preview.short_description = "Template Preview"
     
     def preview_button(self, obj):
         """Display preview button"""
         if obj.pk:
-            return format_html(
-                '<a href="{}" class="button" style="background: #2196f3; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; display: inline-block; margin-top: 10px;">Preview Audience</a>',
-                reverse('admin:notifications_campaign_preview', args=[obj.pk])
-            )
-        return format_html('<span style="color: #999;">Save campaign first to preview</span>')
+            return mark_safe(f'<a href="{reverse("admin:notifications_campaign_preview", args=[obj.pk])}" class="button" style="background: #2196f3; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; display: inline-block; margin-top: 10px;">Preview Audience</a>')
+        return mark_safe('<span style="color: #999;">Save campaign first to preview</span>')
     preview_button.short_description = "Preview"
     
     def execution_metadata_display(self, obj):
         """Display execution metadata in readable format"""
         if obj.execution_metadata:
-            return format_html(
-                '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">{}</pre>',
-                json.dumps(obj.execution_metadata, indent=2)
-            )
+            return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">{json.dumps(obj.execution_metadata, indent=2)}</pre>')
         return "-"
     execution_metadata_display.short_description = "Execution Metadata"
     
@@ -1194,9 +1161,9 @@ class CampaignExecutionAdmin(admin.ModelAdmin):
     def sent_successfully_badge(self, obj):
         """Display success status with badge"""
         if obj.sent_successfully:
-            return format_html('<span style="color: #4caf50; font-weight: bold;">✓ Success</span>')
+            return mark_safe('<span style="color: #4caf50; font-weight: bold;">✓ Success</span>')
         else:
-            return format_html('<span style="color: #f44336; font-weight: bold;">✗ Failed</span>')
+            return mark_safe('<span style="color: #f44336; font-weight: bold;">✗ Failed</span>')
     sent_successfully_badge.short_description = "Status"
     sent_successfully_badge.admin_order_field = 'sent_successfully'
     

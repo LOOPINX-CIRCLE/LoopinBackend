@@ -263,11 +263,14 @@ class EventUpdate(BaseModel):
 
 
 class EventResponse(BaseModel):
-    """Schema for event response with all fields"""
+    """Schema for event response with all fields including canonical URL system"""
     id: int
     uuid: str
+    canonical_id: Optional[str] = Field(None, description="Immutable Base62 identifier for canonical URLs")
     title: str
-    slug: Optional[str]
+    slug: Optional[str] = Field(None, description="SEO-friendly slug (can change)")
+    slug_version: Optional[int] = Field(None, description="Slug version number (increments on slug changes)")
+    canonical_url: Optional[str] = Field(None, description="Full canonical URL path")
     description: Optional[str]
     host: Dict[str, Any]
     venue: Optional[Dict[str, Any]]
@@ -323,8 +326,11 @@ class EventResponse(BaseModel):
         return cls(
             id=event.id,
             uuid=str(event.uuid),
+            canonical_id=getattr(event, 'canonical_id', None),
             title=event.title,
             slug=event.slug,
+            slug_version=getattr(event, 'slug_version', None),
+            canonical_url=getattr(event, 'canonical_url', None),
             description=event.description,
             host={
                 "id": event.host.id,

@@ -4,7 +4,6 @@ CEO-level admin interface with rich displays, financial insights, and powerful a
 """
 from django.contrib import admin
 from django.db.models import Count, Sum, Q
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
@@ -219,18 +218,14 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         """Display shortened order ID with link"""
         short_id = obj.order_id[:20] + '...' if len(obj.order_id) > 20 else obj.order_id
         url = reverse('admin:payments_paymentorder_change', args=[obj.pk])
-        return format_html(
-            '<a href="{}"><code style="font-size: 11px;">{}</code></a>',
-            url,
-            short_id
-        )
+        return mark_safe(f'<a href="{url}"><code style="font-size: 11px;">{short_id}</code></a>')
     order_id_short.short_description = "Order ID"
     order_id_short.admin_order_field = 'order_id'
     
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
@@ -238,19 +233,15 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         """Link to user profile"""
         url = reverse('admin:users_userprofile_change', args=[obj.user_id])
         name = obj.user.name or obj.user.phone_number
-        return format_html('<a href="{}">{}</a>', url, name)
+        return mark_safe(f'<a href="{url}">{name}</a>')
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__name'
     
     def amount_display(self, obj):
         """Display amount with currency"""
         color = 'green' if obj.is_paid else 'red' if obj.status == 'failed' else 'orange'
-        return format_html(
-            '<span style="color: {}; font-weight: bold; font-size: 13px;">{}{:,.2f}</span>',
-            color,
-            '₹' if obj.currency == 'INR' else obj.currency + ' ',
-            obj.amount
-        )
+        currency_symbol = '₹' if obj.currency == 'INR' else obj.currency + ' '
+        return mark_safe(f'<span style="color: {color}; font-weight: bold; font-size: 13px;">{currency_symbol}{obj.amount:,.2f}</span>')
     amount_display.short_description = "Amount"
     amount_display.admin_order_field = 'amount'
     
@@ -271,35 +262,28 @@ class PaymentOrderAdmin(admin.ModelAdmin):
             f'background: {color}; color: white; padding: 4px 10px; '
             f'border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block;'
         )
-        return format_html(
-            '<span style="{}">{}</span>',
-            badge_style,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="{badge_style}">{obj.get_status_display()}</span>')
     status_badge.short_description = "Status"
     status_badge.admin_order_field = 'status'
     
     def financial_breakdown(self, obj):
         """Display financial breakdown (CEO view)"""
         if obj.status not in ['paid', 'completed']:
-            return format_html('<span style="color: gray;">-</span>')
+            return mark_safe('<span style="color: gray;">-</span>')
         
         if obj.base_price_per_seat and obj.seats_count:
             base_total = obj.base_price_per_seat * obj.seats_count
             platform_fee = obj.platform_fee_amount or 0
             host_earning = obj.host_earning_per_seat * obj.seats_count if obj.host_earning_per_seat else 0
             
-            return format_html(
-                '<div style="font-size: 11px; line-height: 1.4;">'
-                '<div>💰 Total: <strong>₹{:,.2f}</strong></div>'
-                '<div style="color: green;">✓ Host: ₹{:,.2f}</div>'
-                '<div style="color: blue;">✓ Platform: ₹{:,.2f}</div>'
-                '</div>',
-                obj.amount,
-                host_earning,
-                platform_fee
+            return mark_safe(
+                f'<div style="font-size: 11px; line-height: 1.4;">'
+                f'<div>💰 Total: <strong>₹{obj.amount:,.2f}</strong></div>'
+                f'<div style="color: green;">✓ Host: ₹{host_earning:,.2f}</div>'
+                f'<div style="color: blue;">✓ Platform: ₹{platform_fee:,.2f}</div>'
+                f'</div>'
             )
-        return format_html('<span style="color: gray;">No snapshot</span>')
+        return mark_safe('<span style="color: gray;">No snapshot</span>')
     financial_breakdown.short_description = "Financial Breakdown"
     
     def retry_info(self, obj):
@@ -307,19 +291,12 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         retry_count = getattr(obj, 'retry_count', obj.retry_attempts.count())
         if obj.parent_order:
             url = reverse('admin:payments_paymentorder_change', args=[obj.parent_order_id])
-            return format_html(
-                '<span style="color: orange; font-size: 11px;">↻ Retry of <a href="{}">#{}</a></span>',
-                url,
-                obj.parent_order.id
-            )
+            return mark_safe(f'<span style="color: orange; font-size: 11px;">↻ Retry of <a href="{url}">#{obj.parent_order.id}</a></span>')
         elif retry_count > 0:
-            return format_html(
-                '<span style="color: blue; font-size: 11px;">↻ Has {} retry(s)</span>',
-                retry_count
-            )
+            return mark_safe(f'<span style="color: blue; font-size: 11px;">↻ Has {retry_count} retry(s)</span>')
         elif obj.is_final:
-            return format_html('<span style="color: green; font-size: 11px;">✓ Final</span>')
-        return format_html('<span style="color: gray; font-size: 11px;">-</span>')
+            return mark_safe('<span style="color: green; font-size: 11px;">✓ Final</span>')
+        return mark_safe('<span style="color: gray; font-size: 11px;">-</span>')
     retry_info.short_description = "Retry Info"
     
     def provider_badge(self, obj):
@@ -335,54 +312,41 @@ class PaymentOrderAdmin(admin.ModelAdmin):
             'bank_transfer': '#4caf50',
         }
         color = provider_colors.get(obj.payment_provider, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_payment_provider_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.get_payment_provider_display()}</span>')
     provider_badge.short_description = "Provider"
     provider_badge.admin_order_field = 'payment_provider'
     
     def is_expired_display(self, obj):
         """Display expiration status"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.is_expired
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if is_expired else 'green',
-            '⚠️ Expired' if is_expired else '✓ Valid'
-        )
+        color = 'red' if is_expired else 'green'
+        text = '⚠️ Expired' if is_expired else '✓ Valid'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_expired_display.short_description = "Expiration"
     
     def financial_snapshot_display(self, obj):
         """Display financial snapshot in readable format"""
         if not obj.base_price_per_seat:
-            return format_html('<span style="color: gray;">Financial snapshot not captured yet</span>')
+            return mark_safe('<span style="color: gray;">Financial snapshot not captured yet</span>')
         
-        return format_html(
-            '<div style="background: #f5f5f5; padding: 15px; border-radius: 4px; border-left: 4px solid #4caf50;">'
-            '<h4 style="margin-top: 0; color: #333;">Financial Snapshot (Immutable)</h4>'
-            '<table style="width: 100%; border-collapse: collapse;">'
-            '<tr><td style="padding: 5px; font-weight: bold;">Base Price/Seat:</td><td style="padding: 5px;">₹{:.2f}</td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Seats:</td><td style="padding: 5px;">{}</td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Platform Fee %:</td><td style="padding: 5px;">{}%</td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Platform Fee Amount:</td><td style="padding: 5px; color: blue;">₹{:.2f}</td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Host Earning/Seat:</td><td style="padding: 5px; color: green;">₹{:.2f}</td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Total Host Earning:</td><td style="padding: 5px; color: green; font-size: 16px;"><strong>₹{:.2f}</strong></td></tr>'
-            '<tr><td style="padding: 5px; font-weight: bold;">Total Amount Paid:</td><td style="padding: 5px; font-size: 16px;"><strong>₹{:.2f}</strong></td></tr>'
-            '</table>'
-            '<p style="margin-top: 10px; margin-bottom: 0; font-size: 11px; color: #666;">'
-            '⚠️ These values are immutable and captured at payment time (CFO requirement)'
-            '</p>'
-            '</div>',
-            obj.base_price_per_seat,
-            obj.seats_count,
-            obj.platform_fee_percentage,
-            obj.platform_fee_amount or 0,
-            obj.host_earning_per_seat or 0,
-            obj.total_host_earning or 0,
-            obj.amount
+        return mark_safe(
+            f'<div style="background: #f5f5f5; padding: 15px; border-radius: 4px; border-left: 4px solid #4caf50;">'
+            f'<h4 style="margin-top: 0; color: #333;">Financial Snapshot (Immutable)</h4>'
+            f'<table style="width: 100%; border-collapse: collapse;">'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Base Price/Seat:</td><td style="padding: 5px;">₹{obj.base_price_per_seat:.2f}</td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Seats:</td><td style="padding: 5px;">{obj.seats_count}</td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Platform Fee %:</td><td style="padding: 5px;">{obj.platform_fee_percentage}%</td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Platform Fee Amount:</td><td style="padding: 5px; color: blue;">₹{(obj.platform_fee_amount or 0):.2f}</td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Host Earning/Seat:</td><td style="padding: 5px; color: green;">₹{(obj.host_earning_per_seat or 0):.2f}</td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Total Host Earning:</td><td style="padding: 5px; color: green; font-size: 16px;"><strong>₹{(obj.total_host_earning or 0):.2f}</strong></td></tr>'
+            f'<tr><td style="padding: 5px; font-weight: bold;">Total Amount Paid:</td><td style="padding: 5px; font-size: 16px;"><strong>₹{obj.amount:.2f}</strong></td></tr>'
+            f'</table>'
+            f'<p style="margin-top: 10px; margin-bottom: 0; font-size: 11px; color: #666;">'
+            f'⚠️ These values are immutable and captured at payment time (CFO requirement)'
+            f'</p>'
+            f'</div>'
         )
     financial_snapshot_display.short_description = "Financial Snapshot"
     
@@ -392,33 +356,20 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         
         if obj.parent_order:
             url = reverse('admin:payments_paymentorder_change', args=[obj.parent_order_id])
-            html += format_html(
-                '<div style="margin-bottom: 5px;">'
-                '↻ <strong>This is a retry attempt</strong><br>'
-                'Parent Order: <a href="{}">#{}</a>'
-                '</div>',
-                url,
-                obj.parent_order.id
-            )
+            html += f'<div style="margin-bottom: 5px;">'
+            html += f'↻ <strong>This is a retry attempt</strong><br>'
+            html += f'Parent Order: <a href="{url}">#{obj.parent_order.id}</a>'
+            html += '</div>'
         
         retry_count = obj.retry_attempts.count()
         if retry_count > 0:
-            html += format_html(
-                '<div style="margin-top: 5px;">'
-                'This order has <strong>{} retry attempt(s)</strong>:<br>',
-                retry_count
-            )
+            html += f'<div style="margin-top: 5px;">'
+            html += f'This order has <strong>{retry_count} retry attempt(s)</strong>:<br>'
             for retry in obj.retry_attempts.all()[:5]:
                 retry_url = reverse('admin:payments_paymentorder_change', args=[retry.id])
                 status_color = 'green' if retry.is_paid else 'red'
-                html += format_html(
-                    '  → <a href="{}">Order #{}</a> '
-                    '<span style="color: {};">({})</span><br>',
-                    retry_url,
-                    retry.id,
-                    status_color,
-                    retry.get_status_display()
-                )
+                html += f'  → <a href="{retry_url}">Order #{retry.id}</a> '
+                html += f'<span style="color: {status_color};">({retry.get_status_display()})</span><br>'
             html += '</div>'
         
         if obj.is_final:
@@ -427,19 +378,16 @@ class PaymentOrderAdmin(admin.ModelAdmin):
             html += '</div>'
         
         html += '</div>'
-        return format_html(html)
+        return mark_safe(html)
     retry_tree_display.short_description = "Retry Tree"
     
     def provider_response_display(self, obj):
         """Display provider response in readable format"""
         if not obj.provider_response:
-            return format_html('<span style="color: gray;">No provider response</span>')
+            return mark_safe('<span style="color: gray;">No provider response</span>')
         
         import json
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.provider_response, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.provider_response, indent=2)}</pre>')
     provider_response_display.short_description = "Provider Response"
     
     def provider_badge_display(self, obj):
@@ -451,10 +399,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         """Display total host earning"""
         earning = obj.total_host_earning
         if earning:
-            return format_html(
-                '<span style="color: green; font-weight: bold; font-size: 16px;">₹{:.2f}</span>',
-                earning
-            )
+            return mark_safe(f'<span style="color: green; font-weight: bold; font-size: 16px;">₹{earning:.2f}</span>')
         return '-'
     total_host_earning_display.short_description = "Total Host Earning"
     
@@ -462,10 +407,7 @@ class PaymentOrderAdmin(admin.ModelAdmin):
         """Display total platform fee"""
         fee = obj.total_platform_fee
         if fee:
-            return format_html(
-                '<span style="color: blue; font-weight: bold; font-size: 16px;">₹{:.2f}</span>',
-                fee
-            )
+            return mark_safe(f'<span style="color: blue; font-weight: bold; font-size: 16px;">₹{fee:.2f}</span>')
         return '-'
     total_platform_fee_display.short_description = "Total Platform Fee"
     
@@ -575,7 +517,7 @@ class PaymentTransactionAdmin(admin.ModelAdmin):
     def payment_order_link(self, obj):
         """Link to payment order"""
         url = reverse('admin:payments_paymentorder_change', args=[obj.payment_order_id])
-        return format_html('<a href="{}">Order #{}</a>', url, obj.payment_order.id)
+        return mark_safe(f'<a href="{url}">Order #{obj.payment_order.id}</a>')
     payment_order_link.short_description = "Payment Order"
     payment_order_link.admin_order_field = 'payment_order__id'
     
@@ -587,21 +529,14 @@ class PaymentTransactionAdmin(admin.ModelAdmin):
             'chargeback': '#f44336',
         }
         color = colors.get(obj.transaction_type, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_transaction_type_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.get_transaction_type_display()}</span>')
     transaction_type_badge.short_description = "Type"
     transaction_type_badge.admin_order_field = 'transaction_type'
     
     def amount_display(self, obj):
         """Display amount"""
-        return format_html(
-            '<span style="font-weight: bold; color: {};">₹{:.2f}</span>',
-            'green' if obj.transaction_type == 'payment' else 'red',
-            obj.amount
-        )
+        color = 'green' if obj.transaction_type == 'payment' else 'red'
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">₹{obj.amount:.2f}</span>')
     amount_display.short_description = "Amount"
     amount_display.admin_order_field = 'amount'
     
@@ -613,11 +548,7 @@ class PaymentTransactionAdmin(admin.ModelAdmin):
             'failed': '#f44336',
         }
         color = colors.get(obj.status, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">{obj.get_status_display()}</span>')
     status_badge.short_description = "Status"
     status_badge.admin_order_field = 'status'
     
@@ -625,20 +556,17 @@ class PaymentTransactionAdmin(admin.ModelAdmin):
         """Display shortened provider transaction ID"""
         if obj.provider_transaction_id:
             short_id = obj.provider_transaction_id[:20] + '...' if len(obj.provider_transaction_id) > 20 else obj.provider_transaction_id
-            return format_html('<code style="font-size: 11px;">{}</code>', short_id)
+            return mark_safe(f'<code style="font-size: 11px;">{short_id}</code>')
         return '-'
     provider_transaction_id_short.short_description = "Provider TXN ID"
     
     def provider_response_display(self, obj):
         """Display provider response"""
         if not obj.provider_response:
-            return format_html('<span style="color: gray;">No response</span>')
+            return mark_safe('<span style="color: gray;">No response</span>')
         
         import json
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.provider_response, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.provider_response, indent=2)}</pre>')
     provider_response_display.short_description = "Provider Response"
     
     def has_add_permission(self, request):
@@ -706,21 +634,17 @@ class PaymentWebhookAdmin(admin.ModelAdmin):
     def payment_order_link(self, obj):
         """Link to payment order"""
         url = reverse('admin:payments_paymentorder_change', args=[obj.payment_order_id])
-        return format_html('<a href="{}">Order #{}</a>', url, obj.payment_order.id)
+        return mark_safe(f'<a href="{url}">Order #{obj.payment_order.id}</a>')
     payment_order_link.short_description = "Payment Order"
     payment_order_link.admin_order_field = 'payment_order__id'
     
     def processed_badge(self, obj):
         """Display processed status"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         color = '#4caf50' if obj.processed else '#ff9800'
         text = '✓ Processed' if obj.processed else '⏳ Pending'
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">{}</span>',
-            color,
-            text
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">{text}</span>')
     processed_badge.short_description = "Processed"
     processed_badge.admin_order_field = 'processed'
     # Note: boolean = True removed - this returns HTML, not a boolean
@@ -729,17 +653,14 @@ class PaymentWebhookAdmin(admin.ModelAdmin):
         """Display shortened signature"""
         if obj.signature:
             short = obj.signature[:30] + '...' if len(obj.signature) > 30 else obj.signature
-            return format_html('<code style="font-size: 11px;">{}</code>', short)
+            return mark_safe(f'<code style="font-size: 11px;">{short}</code>')
         return '-'
     signature_short.short_description = "Signature"
     
     def payload_display(self, obj):
         """Display payload in readable format"""
         import json
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 400px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.payload, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 400px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.payload, indent=2)}</pre>')
     payload_display.short_description = "Payload"
     
     def has_add_permission(self, request):

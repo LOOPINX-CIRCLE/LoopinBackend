@@ -4,13 +4,14 @@ Designed for optimal performance, usability, and maintainability.
 """
 from django.contrib import admin
 from django.db.models import Count, Q, Sum
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from django import forms
 import uuid
+import json
 
 from .models import (
     Venue,
@@ -42,13 +43,23 @@ class EventInterestMapInline(admin.TabularInline):
 
 
 class EventImageInline(admin.TabularInline):
-    """Inline for managing event images"""
+    """Inline for managing event images with preview"""
     model = EventImage
     extra = 1
-    fields = ('image_url', 'position')
+    fields = ('image_preview', 'image_url', 'position')
+    readonly_fields = ('image_preview',)
     ordering = ('position',)
     verbose_name = "Event Image"
     verbose_name_plural = "Event Images"
+    
+    def image_preview(self, obj):
+        """Display image preview in inline"""
+        if obj and obj.image_url:
+            from html import escape
+            escaped_url = escape(obj.image_url)
+            return mark_safe(f'<img src="{escaped_url}" style="max-width: 100px; max-height: 100px; object-fit: cover; border-radius: 4px;" />')
+        return mark_safe('<span style="color: #999;">No image</span>')
+    image_preview.short_description = "Preview"
 
 
 class EventAttendeeInline(admin.TabularInline):
@@ -194,7 +205,7 @@ class VenueAdmin(admin.ModelAdmin):
     def capacity_display(self, obj):
         """Display capacity with styling"""
         if obj.capacity == 0:
-            return format_html('<span style="color: red;">No Limit</span>')
+            return mark_safe('<span style="color: red;">No Limit</span>')
         return f"{obj.capacity:,}"
     capacity_display.short_description = "Capacity"
     capacity_display.admin_order_field = 'capacity'
@@ -202,11 +213,8 @@ class VenueAdmin(admin.ModelAdmin):
     def active_events_count(self, obj):
         """Display count of active events at this venue"""
         count = getattr(obj, 'active_events', obj.events.filter(is_active=True, status='published').count())
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            'green' if count > 0 else 'gray',
-            count
-        )
+        color = 'green' if count > 0 else 'gray'
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{count}</span>')
     active_events_count.short_description = "Active Events"
     active_events_count.admin_order_field = 'active_events'
     
@@ -215,10 +223,7 @@ class VenueAdmin(admin.ModelAdmin):
         if not obj.metadata:
             return "No additional information"
         import json
-        return format_html(
-            '<pre style="max-height: 200px; overflow-y: auto;">{}</pre>',
-            json.dumps(obj.metadata, indent=2)
-        )
+        return mark_safe(f'<pre style="max-height: 200px; overflow-y: auto;">{json.dumps(obj.metadata, indent=2)}</pre>')
     metadata_display.short_description = "Metadata (JSON)"
     
     actions = ['activate_venues', 'deactivate_venues']
@@ -237,12 +242,85 @@ class VenueAdmin(admin.ModelAdmin):
 
 
 # ============================================================================
+# EVENT ADMIN FORMS
+# ============================================================================
+
+class EventAdminForm(forms.ModelForm):
+    """Custom form for Event admin with user-friendly cover images fields"""
+    
+    cover_image_1 = forms.URLField(
+        required=False,
+        label="Cover Image 1 (URL)",
+        help_text="Enter the full URL of the first cover image (e.g., https://example.com/image1.jpg)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image1.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    cover_image_2 = forms.URLField(
+        required=False,
+        label="Cover Image 2 (URL)",
+        help_text="Enter the full URL of the second cover image (optional)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image2.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    cover_image_3 = forms.URLField(
+        required=False,
+        label="Cover Image 3 (URL)",
+        help_text="Enter the full URL of the third cover image (optional)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image3.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    
+    class Meta:
+        model = Event
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Populate the individual image fields from the cover_images JSONField
+        if self.instance and self.instance.pk:
+            cover_images = self.instance.cover_images or []
+            if isinstance(cover_images, list):
+                if len(cover_images) > 0:
+                    self.fields['cover_image_1'].initial = cover_images[0]
+                if len(cover_images) > 1:
+                    self.fields['cover_image_2'].initial = cover_images[1]
+                if len(cover_images) > 2:
+                    self.fields['cover_image_3'].initial = cover_images[2]
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        # Collect non-empty image URLs
+        cover_images = []
+        for i in range(1, 4):
+            image_url = cleaned_data.get(f'cover_image_{i}', '').strip()
+            if image_url:
+                cover_images.append(image_url)
+        
+        # Validate: at least 1 image, max 3 images
+        if len(cover_images) == 0:
+            raise ValidationError("At least one cover image URL is required.")
+        if len(cover_images) > 3:
+            raise ValidationError("Maximum 3 cover images allowed.")
+        
+        # Store in the cover_images JSONField
+        cleaned_data['cover_images'] = cover_images
+        return cleaned_data
+
+
+# ============================================================================
 # EVENT ADMIN
 # ============================================================================
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
     """Comprehensive admin configuration for Event model"""
+    form = EventAdminForm
     
     list_display = [
         'title',
@@ -269,8 +347,10 @@ class EventAdmin(admin.ModelAdmin):
         'description',
         'slug',
         'uuid',
-        'host__username',
-        'host__email',
+        'host__name',
+        'host__phone_number',
+        'host__user__username',
+        'host__user__email',
         'venue__name',
     ]
     readonly_fields = [
@@ -285,6 +365,7 @@ class EventAdmin(admin.ModelAdmin):
         'capacity_status',
         'revenue_display',
         'duration_display',
+        'cover_images_preview',
     ]
     fieldsets = (
         (_('Basic Information'), {
@@ -313,7 +394,8 @@ class EventAdmin(admin.ModelAdmin):
             'fields': ('allowed_genders',)
         }),
         (_('Media'), {
-            'fields': ('cover_images',)
+            'fields': ('cover_image_1', 'cover_image_2', 'cover_image_3', 'cover_images_preview'),
+            'description': 'Add 1-3 cover image URLs. Images will be displayed in the order you enter them.',
         }),
         (_('Status & Visibility'), {
             'fields': ('status', 'is_public', 'is_active')
@@ -357,18 +439,19 @@ class EventAdmin(admin.ModelAdmin):
     
     def host_link(self, obj):
         """Link to host's profile"""
-        url = reverse('admin:auth_user_change', args=[obj.host_id])
-        return format_html('<a href="{}">{}</a>', url, obj.host.username)
+        url = reverse('admin:users_userprofile_change', args=[obj.host_id])
+        name = obj.host.name if obj.host.name else (obj.host.user.username if obj.host.user else f'Profile #{obj.host_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     host_link.short_description = "Host"
-    host_link.admin_order_field = 'host__username'
+    host_link.admin_order_field = 'host__name'
     
     def venue_link(self, obj):
         """Link to venue with fallback to venue_text"""
         if obj.venue:
             url = reverse('admin:events_venue_change', args=[obj.venue_id])
-            return format_html('<a href="{}">{}</a>', url, obj.venue.name)
+            return mark_safe(f'<a href="{url}">{obj.venue.name}</a>')
         elif obj.venue_text:
-            return format_html('<em>{}</em>', obj.venue_text)
+            return mark_safe(f'<em>{obj.venue_text}</em>')
         return '-'
     venue_link.short_description = "Venue"
     venue_link.admin_order_field = 'venue__name'
@@ -383,39 +466,26 @@ class EventAdmin(admin.ModelAdmin):
             'postponed': 'orange',
         }
         color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_status_display()}</span>')
     status_display.short_description = "Status"
     status_display.admin_order_field = 'status'
     
     def capacity_info(self, obj):
         """Display capacity with fill percentage"""
         if obj.max_capacity == 0:
-            return format_html('<span style="color: gray;">Unlimited</span>')
+            return mark_safe('<span style="color: gray;">Unlimited</span>')
         
         percentage = (obj.going_count / obj.max_capacity) * 100
         color = 'red' if percentage >= 90 else 'orange' if percentage >= 70 else 'green'
-        return format_html(
-            '<span style="color: {};">{} / {} ({}%)</span>',
-            color,
-            obj.going_count,
-            obj.max_capacity,
-            int(percentage)
-        )
+        return mark_safe(f'<span style="color: {color};">{obj.going_count} / {obj.max_capacity} ({int(percentage)}%)</span>')
     capacity_info.short_description = "Capacity"
     capacity_info.admin_order_field = 'going_count'
     
     def is_paid_display(self, obj):
         """Display payment status with price"""
         if obj.is_paid:
-            return format_html(
-                '<span style="color: green; font-weight: bold;">₹{}</span>',
-                f"{obj.ticket_price:.2f}"
-            )
-        return format_html('<span style="color: gray;">Free</span>')
+            return mark_safe(f'<span style="color: green; font-weight: bold;">₹{obj.ticket_price:.2f}</span>')
+        return mark_safe('<span style="color: gray;">Free</span>')
     is_paid_display.short_description = "Price"
     is_paid_display.admin_order_field = 'is_paid'
     
@@ -431,34 +501,64 @@ class EventAdmin(admin.ModelAdmin):
     def revenue_display(self, obj):
         """Display total revenue from this event"""
         revenue = getattr(obj, 'total_revenue', 0) or 0
-        return format_html(
-            '<span style="font-weight: bold; color: green;">₹{}</span>',
-            f"{revenue:.2f}"
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: green;">₹{revenue:.2f}</span>')
     revenue_display.short_description = "Total Revenue"
     
     def is_past_display(self, obj):
         """Display if event is past"""
         if not obj or not obj.end_time:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_past = obj.is_past
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if is_past else 'green',
-            'Past Event' if is_past else 'Upcoming/Current'
-        )
+        color = 'red' if is_past else 'green'
+        text = 'Past Event' if is_past else 'Upcoming/Current'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_past_display.short_description = "Timing Status"
+    
+    def cover_images_preview(self, obj):
+        """Display preview of cover images with thumbnails"""
+        if not obj or not obj.cover_images:
+            return mark_safe('<p style="color: #999; font-style: italic; padding: 10px; background: #f5f5f5; border-radius: 4px;">No cover images added yet. Add image URLs above and save to see previews.</p>')
+        
+        cover_images = obj.cover_images if isinstance(obj.cover_images, list) else []
+        if not cover_images:
+            return mark_safe('<p style="color: #999; font-style: italic; padding: 10px; background: #f5f5f5; border-radius: 4px;">No cover images added yet.</p>')
+        
+        from html import escape
+        preview_html = '<div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px;">'
+        
+        for i, image_url in enumerate(cover_images, 1):
+            if image_url:
+                escaped_url = escape(image_url)
+                preview_html += f'''
+                    <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #f9f9f9; text-align: center;">
+                        <div style="font-weight: bold; margin-bottom: 8px; color: #417690;">Image {i}</div>
+                        <img src="{escaped_url}" 
+                             style="max-width: 200px; max-height: 200px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd;"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                        <div style="display: none; color: #f44336; padding: 10px; font-size: 12px;">
+                            ❌ Image failed to load<br/>
+                            <small style="word-break: break-all;">{escaped_url}</small>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 11px; color: #666; word-break: break-all; max-width: 200px;">
+                            {escaped_url}
+                        </div>
+                    </div>
+                '''
+        
+        preview_html += '</div>'
+        preview_html += f'<p style="margin-top: 15px; color: #666; font-size: 12px;"><strong>Total:</strong> {len(cover_images)} image(s) added</p>'
+        
+        return mark_safe(preview_html)
+    cover_images_preview.short_description = "Image Previews"
     
     def is_full_display(self, obj):
         """Display if event is full"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_full = obj.is_full
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if is_full else 'green',
-            'FULL' if is_full else 'Available'
-        )
+        color = 'red' if is_full else 'green'
+        text = 'FULL' if is_full else 'Available'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_full_display.short_description = "Availability"
     
     def duration_display(self, obj):
@@ -472,11 +572,11 @@ class EventAdmin(admin.ModelAdmin):
         
         if hours < 1:
             minutes = total_seconds / 60
-            return format_html('<span style="color: blue; font-weight: bold;">{:.1f} min</span>', minutes)
+            return mark_safe(f'<span style="color: blue; font-weight: bold;">{minutes:.1f} min</span>')
         elif hours == int(hours):
-            return format_html('<span style="color: blue; font-weight: bold;">{} hr</span>', int(hours))
+            return mark_safe(f'<span style="color: blue; font-weight: bold;">{int(hours)} hr</span>')
         else:
-            return format_html('<span style="color: blue; font-weight: bold;">{:.1f} hr</span>', hours)
+            return mark_safe(f'<span style="color: blue; font-weight: bold;">{hours:.1f} hr</span>')
     duration_display.short_description = "Duration"
     
     actions = [
@@ -544,8 +644,10 @@ class EventRequestAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'requester__username',
-        'requester__email',
+        'requester__name',
+        'requester__phone_number',
+        'requester__user__username',
+        'requester__user__email',
         'message',
         'host_message',
         'uuid',
@@ -579,16 +681,17 @@ class EventRequestAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def requester_link(self, obj):
         """Link to requester's profile"""
-        url = reverse('admin:auth_user_change', args=[obj.requester_id])
-        return format_html('<a href="{}">{}</a>', url, obj.requester.username)
+        url = reverse('admin:users_userprofile_change', args=[obj.requester_id])
+        name = obj.requester.name if obj.requester.name else (obj.requester.user.username if obj.requester.user else f'Profile #{obj.requester_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     requester_link.short_description = "Requester"
-    requester_link.admin_order_field = 'requester__username'
+    requester_link.admin_order_field = 'requester__name'
     
     def status_display(self, obj):
         """Display status with color"""
@@ -598,24 +701,18 @@ class EventRequestAdmin(admin.ModelAdmin):
             'rejected': 'red',
         }
         color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_status_display()}</span>')
     status_display.short_description = "Status"
     status_display.admin_order_field = 'status'
     
     def has_host_message(self, obj):
         """Show if host has responded"""
         if not obj:
-            return format_html('<span style="color: gray;">-</span>')
+            return mark_safe('<span style="color: gray;">-</span>')
         has_message = bool(obj.host_message)
-        return format_html(
-            '<span style="color: {};">{}</span>',
-            'green' if has_message else 'gray',
-            '✓' if has_message else '✗'
-        )
+        color = 'green' if has_message else 'gray'
+        symbol = '✓' if has_message else '✗'
+        return mark_safe(f'<span style="color: {color};">{symbol}</span>')
     has_host_message.short_description = "Host Replied"
     # Note: boolean = True removed - this returns HTML, not a boolean
     
@@ -658,9 +755,13 @@ class EventInviteAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'host__username',
-        'invited_user__username',
-        'invited_user__email',
+        'host__name',
+        'host__phone_number',
+        'host__user__username',
+        'invited_user__name',
+        'invited_user__phone_number',
+        'invited_user__user__username',
+        'invited_user__user__email',
         'uuid',
     ]
     readonly_fields = [
@@ -693,25 +794,27 @@ class EventInviteAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def host_link(self, obj):
         """Link to host"""
         if obj.host:
-            url = reverse('admin:auth_user_change', args=[obj.host_id])
-            return format_html('<a href="{}">{}</a>', url, obj.host.username)
+            url = reverse('admin:users_userprofile_change', args=[obj.host_id])
+            name = obj.host.name if obj.host.name else (obj.host.user.username if obj.host.user else f'Profile #{obj.host_id}')
+            return mark_safe(f'<a href="{url}">{name}</a>')
         return '-'
     host_link.short_description = "Host"
-    host_link.admin_order_field = 'host__username'
+    host_link.admin_order_field = 'host__name'
     
     def invited_user_link(self, obj):
         """Link to invited user"""
-        url = reverse('admin:auth_user_change', args=[obj.invited_user_id])
-        return format_html('<a href="{}">{}</a>', url, obj.invited_user.username)
+        url = reverse('admin:users_userprofile_change', args=[obj.invited_user_id])
+        name = obj.invited_user.name if obj.invited_user.name else (obj.invited_user.user.username if obj.invited_user.user else f'Profile #{obj.invited_user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     invited_user_link.short_description = "Invited User"
-    invited_user_link.admin_order_field = 'invited_user__username'
+    invited_user_link.admin_order_field = 'invited_user__name'
     
     def status_display(self, obj):
         """Display status with color"""
@@ -722,24 +825,18 @@ class EventInviteAdmin(admin.ModelAdmin):
             'expired': 'gray',
         }
         color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_status_display()}</span>')
     status_display.short_description = "Status"
     status_display.admin_order_field = 'status'
     
     def is_expired_display(self, obj):
         """Display if invite is expired"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if is_expired else 'green',
-            'Expired' if is_expired else 'Valid'
-        )
+        color = 'red' if is_expired else 'green'
+        text = 'Expired' if is_expired else 'Valid'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_expired_display.short_description = "Expiration"
     
     actions = ['accept_invites', 'reject_invites']
@@ -785,8 +882,10 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'user__username',
-        'user__email',
+        'user__name',
+        'user__phone_number',
+        'user__user__username',
+        'user__user__email',
         'uuid',
     ]
     readonly_fields = [
@@ -823,34 +922,27 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def user_link(self, obj):
         """Link to user"""
-        url = reverse('admin:auth_user_change', args=[obj.user_id])
-        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+        url = reverse('admin:users_userprofile_change', args=[obj.user_id])
+        name = obj.user.name if obj.user.name else (obj.user.user.username if obj.user.user else f'Profile #{obj.user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     user_link.short_description = "User"
-    user_link.admin_order_field = 'user__username'
+    user_link.admin_order_field = 'user__name'
     
     def origin_display(self, obj):
         """Display origin (request or invite)"""
         if obj.request:
             url = reverse('admin:events_eventrequest_change', args=[obj.request_id])
-            return format_html(
-                '<span style="color: blue;">Request: <a href="{}">#{}</a></span>',
-                url,
-                obj.request.id
-            )
+            return mark_safe(f'<span style="color: blue;">Request: <a href="{url}">#{obj.request.id}</a></span>')
         elif obj.invite:
             url = reverse('admin:events_eventinvite_change', args=[obj.invite_id])
-            return format_html(
-                '<span style="color: green;">Invite: <a href="{}">#{}</a></span>',
-                url,
-                obj.invite.id
-            )
-        return format_html('<span style="color: gray;">Direct</span>')
+            return mark_safe(f'<span style="color: green;">Invite: <a href="{url}">#{obj.invite.id}</a></span>')
+        return mark_safe('<span style="color: gray;">Direct</span>')
     origin_display.short_description = "Origin"
     
     def status_display(self, obj):
@@ -863,46 +955,34 @@ class EventAttendeeAdmin(admin.ModelAdmin):
             'cancelled': 'gray',
         }
         color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_status_display()}</span>')
     status_display.short_description = "Status"
     status_display.admin_order_field = 'status'
     
     def payment_status(self, obj):
         """Display payment status"""
         if obj.is_paid:
-            return format_html(
-                '<span style="color: green; font-weight: bold;">✓ Paid</span>'
-            )
+            return mark_safe('<span style="color: green; font-weight: bold;">✓ Paid</span>')
         if obj.price_paid > 0:
-            return format_html(
-                '<span style="color: orange; font-weight: bold;">₹{}</span>',
-                f"{obj.price_paid:.2f}"
-            )
-        return format_html('<span style="color: gray;">Free</span>')
+            return mark_safe(f'<span style="color: orange; font-weight: bold;">₹{obj.price_paid:.2f}</span>')
+        return mark_safe('<span style="color: gray;">Free</span>')
     payment_status.short_description = "Payment"
     
     def payment_total(self, obj):
         """Display total payment"""
         total = obj.price_paid + obj.platform_fee
-        return format_html(
-            '<span style="font-weight: bold;">₹{}</span>',
-            f"{total:.2f}"
-        )
+        return mark_safe(f'<span style="font-weight: bold;">₹{total:.2f}</span>')
     payment_total.short_description = "Total Amount"
     
     def checked_in_display(self, obj):
         """Display check-in status"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.checked_in_at:
-            return format_html(
+            return mark_safe(
                 '<span style="color: green; font-weight: bold;">✓ Yes</span>'
             )
-        return format_html('<span style="color: gray;">No</span>')
+        return mark_safe('<span style="color: gray;">No</span>')
     checked_in_display.short_description = "Checked In"
     # Note: boolean = True removed - this returns HTML, not a boolean
 
@@ -940,14 +1020,14 @@ class EventInterestMapAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def event_interest_link(self, obj):
         """Link to event interest"""
         url = reverse('admin:users_eventinterest_change', args=[obj.event_interest_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event_interest.name)
+        return mark_safe(f'<a href="{url}">{obj.event_interest.name}</a>')
     event_interest_link.short_description = "Interest"
     event_interest_link.admin_order_field = 'event_interest__name'
 
@@ -977,8 +1057,10 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     search_fields = [
         'reservation_key',
         'event__title',
-        'user__username',
-        'user__email',
+        'user__name',
+        'user__phone_number',
+        'user__user__username',
+        'user__user__email',
     ]
     readonly_fields = [
         'reservation_key',
@@ -1007,39 +1089,36 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def user_link(self, obj):
         """Link to user"""
-        url = reverse('admin:auth_user_change', args=[obj.user_id])
-        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+        url = reverse('admin:users_userprofile_change', args=[obj.user_id])
+        name = obj.user.name if obj.user.name else (obj.user.user.username if obj.user.user else f'Profile #{obj.user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     user_link.short_description = "User"
-    user_link.admin_order_field = 'user__username'
+    user_link.admin_order_field = 'user__name'
     
     def consumed_display(self, obj):
         """Display if reservation is consumed"""
         if not obj:
-            return format_html('<span style="color: gray;">Not set</span>')
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'green' if obj.consumed else 'orange',
-            '✓ Consumed' if obj.consumed else 'Pending'
-        )
+            return mark_safe('<span style="color: gray;">Not set</span>')
+        color = 'green' if obj.consumed else 'orange'
+        text = '✓ Consumed' if obj.consumed else 'Pending'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     consumed_display.short_description = "Status"
     # Note: boolean = True removed - this returns HTML, not a boolean
     
     def is_expired_display(self, obj):
         """Display if reservation is expired"""
         if not obj or not obj.expires_at:
-            return format_html('<span style="color: gray;">Not set</span>')
+            return mark_safe('<span style="color: gray;">Not set</span>')
         is_expired = obj.expires_at < timezone.now()
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if is_expired else 'green',
-            'Expired' if is_expired else 'Valid'
-        )
+        color = 'red' if is_expired else 'green'
+        text = 'Expired' if is_expired else 'Valid'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_expired_display.short_description = "Expiration"
     
     actions = ['mark_as_consumed']
@@ -1100,17 +1179,14 @@ class EventImageAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def image_preview(self, obj):
         """Display image preview"""
         if obj.image_url:
-            return format_html(
-                '<img src="{}" style="max-width: 200px; max-height: 200px;" />',
-                obj.image_url
-            )
+            return mark_safe(f'<img src="{obj.image_url}" style="max-width: 200px; max-height: 200px;" />')
         return 'No image'
     image_preview.short_description = "Preview"
 

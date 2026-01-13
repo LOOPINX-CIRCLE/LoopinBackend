@@ -472,13 +472,14 @@ metrics = get_user_lifecycle_metrics(period='monthly')
 
 #### `get_waitlist_metrics(period: str) -> Dict[str, Any]`
 
-**Purpose**: Get waitlist-specific metrics with 3.5-4 hour promotion window tracking.
+**Purpose**: Get waitlist-specific metrics with 1.10-1.35 hour promotion window tracking.
 
 **Waitlist Promotion Logic**:
 - New users completing profile are placed on waitlist (`is_active=False`)
-- Random promotion delay: **3.5-4 hours** (210-240 minutes) from profile completion
+- Random promotion delay: **1.10-1.35 hours** (70-81 minutes) from profile completion
 - `waitlist_promote_at` tracks scheduled promotion time
 - Automatic promotion occurs during normal API requests when `now >= waitlist_promote_at`
+- Users receive a push notification when promoted from waitlist
 
 **Parameters**:
 - `period` (str): Time period. Options: `'weekly'`, `'monthly'`, `'yearly'`. Default: `'monthly'`
@@ -491,9 +492,9 @@ metrics = get_user_lifecycle_metrics(period='monthly')
     'waitlist_promotion': {
         'users_scheduled_for_promotion': int,  # Ready to promote now (waitlist_promote_at <= now)
         'users_promoting_soon': int,            # Promoting in next hour
-        'avg_expected_duration_hours': float,   # Average wait time (should be ~3.5-4 hours)
-        'promotion_window_min_hours': float,   # 3.5 hours (minimum wait)
-        'promotion_window_max_hours': float,    # 4.0 hours (maximum wait)
+        'avg_expected_duration_hours': float,   # Average wait time (should be ~1.10-1.35 hours)
+        'promotion_window_min_hours': float,   # 1.10 hours (minimum wait)
+        'promotion_window_max_hours': float,    # 1.35 hours (maximum wait)
     },
     'trend': [                    # New waitlisted users per period
         {
@@ -510,8 +511,8 @@ metrics = get_user_lifecycle_metrics(period='monthly')
 - `users.models.UserProfile` with `waitlist_promote_at` and `waitlist_started_at` fields
 
 **Business Logic**:
-- **Waitlist Duration**: Random between 3.5-4 hours (210-240 minutes)
-- **Promotion Time**: Set when profile is completed: `waitlist_promote_at = now + random(210-240 minutes)`
+- **Waitlist Duration**: Random between 1.10-1.35 hours (70-81 minutes)
+- **Promotion Time**: Set when profile is completed: `waitlist_promote_at = now + random(70-81 minutes)`
 - **Automatic Promotion**: Checked during API requests, promoted when `now >= waitlist_promote_at`
 
 **Example**:
@@ -1311,9 +1312,9 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
     'waitlist_promotion': {
         'users_scheduled_for_promotion': int,  # Ready now
         'users_promoting_soon': int,            # Next hour
-        'avg_expected_duration_hours': float,   # ~3.5-4 hours
-        'promotion_window_min_hours': float,   # 3.5 hours
-        'promotion_window_max_hours': float,    # 4.0 hours
+        'avg_expected_duration_hours': float,   # ~1.10-1.35 hours
+        'promotion_window_min_hours': float,   # 1.10 hours
+        'promotion_window_max_hours': float,    # 1.35 hours
     },
     'trend': [
         {
@@ -1451,13 +1452,14 @@ curl "http://localhost:8000/django/admin/dashboard/api/?metric_type=user_lifecyc
 1. User registers → `User` and `UserProfile` created
 2. User completes profile → Placed on waitlist automatically
 3. `User.is_active = False` (waitlist state)
-4. `waitlist_promote_at` set to random time: **3.5-4 hours** (210-240 minutes) from profile completion
+4. `waitlist_promote_at` set to random time: **1.10-1.35 hours** (70-81 minutes) from profile completion
 5. Automatic promotion when `now >= waitlist_promote_at` during normal API requests
 6. `User.is_active = True` (active user) - no admin approval needed
+7. User receives push notification when promoted from waitlist
 
 **Waitlist Promotion Window**:
-- **Minimum**: 3.5 hours (210 minutes)
-- **Maximum**: 4.0 hours (240 minutes)
+- **Minimum**: 1.10 hours (70 minutes)
+- **Maximum**: 1.35 hours (81 minutes)
 - **Random**: Each user gets random delay within this window
 - **Automatic**: Promotion happens during normal API traffic (no background workers)
 

@@ -135,6 +135,79 @@ class EventInterestResponse(BaseModel):
     updated_at: str
 
 
+class UserProfileUpdate(BaseModel):
+    """Request model for updating user profile (all fields optional for partial updates)"""
+    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Full name (minimum 2 characters)")
+    bio: Optional[str] = Field(None, max_length=500, description="User biography")
+    location: Optional[str] = Field(None, max_length=100, description="User location")
+    birth_date: Optional[str] = Field(None, description="Birth date in YYYY-MM-DD format")
+    gender: Optional[str] = Field(None, description="User gender")
+    event_interests: Optional[List[int]] = Field(None, min_items=1, max_items=5, description="List of event interest IDs (1-5 selections)")
+    profile_pictures: Optional[List[str]] = Field(None, min_items=1, max_items=6, description="List of profile picture URLs (1-6 pictures)")
+    
+    @validator('name')
+    def validate_name(cls, v):
+        if v is None:
+            return v
+        if not v or not v.strip():
+            raise ValueError('Name cannot be empty')
+        if len(v.strip()) < 2:
+            raise ValueError('Name must be at least 2 characters long')
+        # Check for valid characters (letters, spaces, hyphens, apostrophes)
+        if not re.match(r"^[a-zA-Z\s\-\']+$", v.strip()):
+            raise ValueError('Name contains invalid characters')
+        return v.strip()
+    
+    @validator('birth_date')
+    def validate_birth_date(cls, v):
+        if v is None:
+            return v
+        try:
+            birth_date = datetime.strptime(v, '%Y-%m-%d').date()
+            today = date.today()
+            age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+            if age < 16:
+                raise ValueError('User must be 16 years or older')
+            return v
+        except ValueError as e:
+            if 'time data' in str(e):
+                raise ValueError('Invalid date format. Use YYYY-MM-DD')
+            raise e
+    
+    @validator('gender')
+    def validate_gender(cls, v):
+        if v is None:
+            return v
+        valid_genders = ['male', 'female', 'other', 'prefer_not_to_say']
+        if v.lower() not in valid_genders:
+            raise ValueError(f'Gender must be one of: {", ".join(valid_genders)}')
+        return v.lower()
+    
+    @validator('profile_pictures')
+    def validate_profile_pictures(cls, v):
+        if v is None:
+            return v
+        if not v:
+            raise ValueError('At least 1 profile picture is required')
+        if len(v) > 6:
+            raise ValueError('Maximum 6 profile pictures allowed')
+        
+        # Validate each picture URL
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        
+        for i, picture_url in enumerate(v):
+            if not url_pattern.match(picture_url):
+                raise ValueError(f'Invalid URL format for profile picture {i+1}')
+        
+        return v
+
+
 class UserProfileResponse(BaseModel):
     """Response model for user profile"""
     id: int

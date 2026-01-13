@@ -417,13 +417,21 @@ services:
   - Cached for performance (1-hour TTL)
   - Automatic cache invalidation on updates
   - Used by all financial calculations (payouts, payments, analytics)
-- **Waitlist System**: Automatic promotion with 3.5-4 hour randomized window
+- **Waitlist System**: Automatic promotion with 1.10-1.35 hour randomized window
   - No admin approval required
   - Promotion happens during normal API traffic
   - Tracked via `waitlist_started_at` and `waitlist_promote_at` fields
 - **Attendance Record Relationship**: Foreign key changed from `User` to `UserProfile`
   - Ensures proper data consistency
   - Migration handles orphaned records automatically
+- **Event Canonical URL System**: Production-grade URL system with SEO and deep linking
+  - Immutable `canonical_id` (Base62, 5-8 chars) ensures links never break
+  - SEO-friendly slugs (max 70 chars, can change) with automatic versioning
+  - GEO-aware URLs: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+  - Automatic 301 redirects when slug/city changes (SEO-preserving)
+  - Server-side SEO metadata generation (OpenGraph, Twitter Cards)
+  - Backend-owned URLs (not frontend routing) for deep linking
+  - Mobile clients use `canonical_id` for API calls (preferred over numeric IDs)
 
 ### External Service Integration
 

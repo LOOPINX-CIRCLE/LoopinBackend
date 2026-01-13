@@ -34,6 +34,7 @@ from django.utils import timezone
 from django.db import transaction
 from asgiref.sync import sync_to_async
 from pydantic import BaseModel, Field, EmailStr
+from users.auth_router import maybe_promote_user_from_waitlist_sync
 import logging
 
 from core.utils.logger import get_logger
@@ -120,10 +121,20 @@ async def get_current_user(
     
     try:
         user = await sync_to_async(User.objects.get)(id=user_id)
+        
+        # Automatic waitlist promotion check before rejecting inactive users
+        try:
+            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+            if promoted:
+                # Refresh user instance to reflect new active state
+                user = await sync_to_async(User.objects.get)(id=user_id)
+        except Exception as promote_error:
+            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
+        
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive",
+                detail="Your account is on the waitlist. You can only access your profile. Please wait 1.10-1.35 hours for activation.",
             )
         return user
     except User.DoesNotExist:

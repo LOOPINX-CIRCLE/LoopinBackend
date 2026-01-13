@@ -133,7 +133,7 @@ erDiagram
         BOOLEAN is_verified "Phone verified status"
         BOOLEAN is_active "Profile active (mirrors AUTH_USER.is_active)"
         DATETIME waitlist_started_at "When user first entered waitlist (nullable)"
-        DATETIME waitlist_promote_at "Scheduled promotion time (3.5-4h window, nullable)"
+        DATETIME waitlist_promote_at "Scheduled promotion time (1.10-1.35h window, nullable)"
         DATETIME created_at "Record creation"
         DATETIME updated_at "Last update"
     }
@@ -252,6 +252,8 @@ erDiagram
         STRING name "Venue name (max 150)"
         TEXT address "Full address"
         STRING city "City name (max 100)"
+        STRING country_code "ISO 3166-1 alpha-2 (e.g., 'in', 'us')"
+        STRING city_slug "URL-safe city slug (auto-generated)"
         STRING venue_type "indoor|outdoor|virtual|hybrid"
         INT capacity "Max capacity (0=unlimited)"
         DECIMAL latitude "Latitude (-90 to 90)"
@@ -267,7 +269,10 @@ erDiagram
         BIGINT host_id FK "Event host (USER_PROFILE)"
         BIGINT venue_id FK "Linked venue (nullable)"
         UUID uuid "Public unique identifier"
-        STRING slug "URL-friendly slug"
+        STRING canonical_id "Immutable Base62 ID (5-8 chars, unique)"
+        STRING slug "SEO-friendly slug (max 70, can change)"
+        INT slug_version "Version number (increments on slug change)"
+        TEXT canonical_url "Full canonical URL path (unique)"
         STRING title "Event title (3-200 chars)"
         TEXT description "Event details (min 10 chars)"
         STRING venue_text "Custom venue text (max 255)"
@@ -604,7 +609,7 @@ The Loopin Backend database is designed for a production-ready event hosting pla
 - **Advanced attendance management** with check-in/check-out and secure ticketing
 - **Host payout management** with bank account management and financial calculations
 - **Configurable platform fee system** with admin-controlled fee percentage
-- **Automatic waitlist promotion** with 3.5-4 hour randomized window
+- **Automatic waitlist promotion** with 1.10-1.35 hour randomized window
 - **Complete audit trail** for security and compliance
 - **Push notification system** with device registration and OneSignal integration
 - **Flexible in-app notification system** for user engagement
@@ -784,11 +789,16 @@ The Loopin Backend database is designed for a production-ready event hosting pla
   - Django `AUTH_USER.is_active = False`
   - `USER_PROFILE.is_active = False`
   - `waitlist_started_at` set to the profile completion time
-  - `waitlist_promote_at` set to a randomized timestamp between **3.5 and 4 hours** (210-240 minutes) in the future
-- **Waitlist Promotion Window**: Random delay between 3.5-4 hours from profile completion
-  - Minimum wait: 3.5 hours (210 minutes)
-  - Maximum wait: 4.0 hours (240 minutes)
+  - `waitlist_promote_at` set to a randomized timestamp between **1.10 and 1.35 hours** (70-81 minutes) in the future
+- **Waitlist Promotion Window**: Random delay between 1.10-1.35 hours from profile completion
+  - Minimum wait: 1.10 hours (70 minutes)
+  - Maximum wait: 1.35 hours (81 minutes)
   - Each user gets a random delay within this window
+- **Waitlist Access Restrictions**: While on waitlist (`is_active = false`), users can only access:
+  - `GET /api/auth/profile` - View profile
+  - `PUT /api/auth/profile` - Update profile
+  - All other endpoints return 403 with waitlist message
+- **Promotion Notification**: When promoted from waitlist, users receive a push notification welcoming them to the platform
 - While `is_active = False`, all endpoints and features that depend on this flag must treat the account as **restricted/waitlisted** and deny core actions.
 - **Automatic Promotion**: During normal API traffic (no Celery/cron required), the backend checks `waitlist_promote_at` and **atomically promotes** the user to active when `now >= waitlist_promote_at`:
   - `AUTH_USER.is_active = True`
@@ -930,12 +940,16 @@ pending → verified (success) OR failed|expired (failure)
 **Location Data:**
 - `latitude` / `longitude` - Decimal(9,6) for precision
 - `address` - Full text address
+- `country_code` - ISO 3166-1 alpha-2 country code (e.g., 'in', 'us') for GEO SEO
+- `city_slug` - URL-safe city name slug (auto-generated from city) for canonical URLs
 - `metadata` - Additional info (accessibility, parking, etc.)
 
 **Business Logic:**
 - Capacity of 0 = unlimited
 - Inactive venues hidden from selections
 - UUID for public API references
+- `city_slug` auto-generated from `city` on save
+- `country_code` and `city_slug` used for GEO-aware canonical URLs
 
 ---
 
@@ -968,9 +982,19 @@ draft → published → completed
 - `cover_images` - Array of 1-3 image URLs
 - Related `EVENT_IMAGE` table for additional images
 
+**Canonical URL System:**
+- `canonical_id` - Immutable Base62 identifier (5-8 chars, unique, generated once at creation)
+- `slug` - SEO-friendly human-readable slug (max 70 chars, can change, not unique)
+- `slug_version` - Version number (increments on slug changes for cache busting)
+- `canonical_url` - Full canonical URL path: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+- URL format example: `/in/bangalore/events/tech-meetup--a9x3k`
+- Backend resolves by `canonical_id` (immutable), redirects if slug mismatch (301)
+- Old links never break - automatic redirects preserve SEO value
+- Mobile clients should use `canonical_id` for API calls (preferred over numeric IDs)
+
 **Search & Discovery:**
 - `title` - 3-200 characters
-- `slug` - Auto-generated, URL-friendly
+- `slug` - Auto-generated from title, SEO-optimized (max 70 chars)
 - `description` - Rich text, minimum 10 characters
 - Links to `EVENT_INTEREST` via `EVENT_INTEREST_MAP`
 
@@ -981,8 +1005,10 @@ draft → published → completed
 
 **Business Rules:**
 - `end_time` must be after `start_time`
-- Slug auto-generated from title
-- UUID for public API access
+- `canonical_id` generated once at creation, never changes
+- Slug auto-generated from title, can be updated (increments `slug_version`)
+- `canonical_url` auto-generated from venue/city data
+- UUID for public API access (legacy, prefer `canonical_id`)
 - Published events visible to users
 - Cancelled events soft-deleted
 

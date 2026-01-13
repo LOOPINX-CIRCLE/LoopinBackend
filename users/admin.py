@@ -5,7 +5,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.db.models import Count
 from django.utils.text import Truncator
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .forms import HostLeadWhatsAppForm
 from .models import (
@@ -172,7 +172,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         """Link to user"""
         if obj.user:
             url = reverse('admin:auth_user_change', args=[obj.user_id])
-            return format_html('<a href="{}">{}</a>', url, obj.user.username)
+            return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
         return '-'
     user_link.short_description = "Auth User"
     
@@ -182,13 +182,8 @@ class UserProfileAdmin(admin.ModelAdmin):
             count = len(obj.profile_pictures)
             status = '✅' if count >= 1 else '⚠️'
             color = '#4caf50' if count >= 1 else '#ff9800'
-            return format_html(
-                '<span style="color: {};">{} {}/6 pictures</span>',
-                color,
-                status,
-                count
-            )
-        return format_html('<span style="color: #f44336;">❌ No pictures</span>')
+            return mark_safe(f'<span style="color: {color};">{status} {count}/6 pictures</span>')
+        return mark_safe('<span style="color: #f44336;">❌ No pictures</span>')
     pictures_count.short_description = 'Profile Pictures'
     
     def interests_count(self, obj):
@@ -196,12 +191,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         count = obj.event_interests.count()
         status = '✅' if count >= 1 else '⚠️'
         color = '#4caf50' if count >= 1 else '#ff9800'
-        return format_html(
-            '<span style="color: {};">{} {}/5 interests</span>',
-            color,
-            status,
-            count
-        )
+        return mark_safe(f'<span style="color: {color};">{status} {count}/5 interests</span>')
     interests_count.short_description = 'Event Interests'
     
     def profile_completion_badge(self, obj):
@@ -228,11 +218,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             color = '#f44336'
             badge_text = f'⚠️ {int(percentage)}%'
         
-        return format_html(
-            '<span style="background: {}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">{}</span>',
-            color,
-            badge_text
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">{badge_text}</span>')
     profile_completion_badge.short_description = "Completion"
     
     def profile_completion_badge_display(self, obj):
@@ -247,15 +233,14 @@ class UserProfileAdmin(admin.ModelAdmin):
                 from django.utils import timezone
                 now = timezone.now()
                 if now >= obj.waitlist_promote_at:
-                    return format_html('<span style="color: #ff9800;">⏳ Promoting Now</span>')
+                    return mark_safe('<span style="color: #ff9800;">⏳ Promoting Now</span>')
                 else:
                     hours_until = (obj.waitlist_promote_at - now).total_seconds() / 3600
-                    return format_html(
-                        '<span style="color: #2196f3;">⏰ In {:.1f}h</span>',
-                        hours_until
+                    return mark_safe(
+                        f'<span style="color: #2196f3;">⏰ In {hours_until:.1f}h</span>'
                     )
-            return format_html('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
-        return format_html('<span style="color: #4caf50;">✅ Active</span>')
+            return mark_safe('<span style="color: #9e9e9e;">📋 On Waitlist</span>')
+        return mark_safe('<span style="color: #4caf50;">✅ Active</span>')
     waitlist_status.short_description = "Waitlist Status"
     
     def waitlist_status_display(self, obj):
@@ -274,17 +259,17 @@ class UserProfileAdmin(admin.ModelAdmin):
                     hours = (obj.waitlist_promote_at - now).total_seconds() / 3600
                     html += f'<p style="color: #2196f3;"><strong>Status:</strong> Will be promoted in {hours:.1f} hours</p>'
             html += '</div>'
-            return format_html(html)
-        return format_html('<span style="color: gray;">Not on waitlist</span>')
+            return mark_safe(html)
+        return mark_safe('<span style="color: gray;">Not on waitlist</span>')
     waitlist_status_display.short_description = "Waitlist Details"
     
     def is_verified_badge(self, obj):
         """Display verification status badge"""
         if obj.is_verified:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Verified</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #ff9800; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">⚠️ Unverified</span>'
         )
     is_verified_badge.short_description = "Verification"
@@ -297,10 +282,10 @@ class UserProfileAdmin(admin.ModelAdmin):
     def is_active_badge(self, obj):
         """Display active status badge"""
         if obj.is_active:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #f44336; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">❌ Inactive</span>'
         )
     is_active_badge.short_description = "Status"
@@ -315,7 +300,26 @@ class UserProfileAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.select_related('user').prefetch_related('event_interests').order_by('-created_at')
     
-    actions = ['verify_profiles', 'activate_profiles', 'deactivate_profiles']
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        """Override to automatically promote users from waitlist when viewing their profile"""
+        if object_id:
+            # Import here to avoid circular imports
+            from users.auth_router import maybe_promote_user_from_waitlist_sync
+            try:
+                profile = self.get_object(request, object_id)
+                if profile and profile.user:
+                    # Trigger automatic promotion if user is ready
+                    promoted = maybe_promote_user_from_waitlist_sync(profile.user.id)
+                    if promoted:
+                        # Refresh the object after promotion
+                        from django.contrib import messages
+                        messages.info(request, f'User {profile.name} has been automatically promoted from waitlist and activated.')
+            except Exception as e:
+                # Silently handle errors to avoid breaking admin
+                pass
+        return super().changeform_view(request, object_id, form_url, extra_context)
+    
+    actions = ['verify_profiles', 'activate_profiles', 'deactivate_profiles', 'promote_from_waitlist']
     
     def verify_profiles(self, request, queryset):
         """Bulk verify profiles"""
@@ -344,6 +348,23 @@ class UserProfileAdmin(admin.ModelAdmin):
                 profile.user.save()
         self.message_user(request, f'❌ {count} profile(s) deactivated.')
     deactivate_profiles.short_description = "Deactivate selected profiles"
+    
+    def promote_from_waitlist(self, request, queryset):
+        """Promote selected users from waitlist if their promotion time has arrived"""
+        from users.auth_router import maybe_promote_user_from_waitlist_sync
+        
+        promoted_count = 0
+        for profile in queryset:
+            if profile.user and not profile.is_active:
+                promoted = maybe_promote_user_from_waitlist_sync(profile.user.id)
+                if promoted:
+                    promoted_count += 1
+        
+        if promoted_count > 0:
+            self.message_user(request, f'✅ {promoted_count} user(s) promoted from waitlist and activated.')
+        else:
+            self.message_user(request, 'No users were ready for promotion. Users are only promoted if their waitlist_promote_at time has passed.')
+    promote_from_waitlist.short_description = "Promote selected users from waitlist (if ready)"
 
 @admin.register(EventInterest)
 class EventInterestAdmin(admin.ModelAdmin):
@@ -412,10 +433,7 @@ class EventInterestAdmin(admin.ModelAdmin):
         if count is None:
             count = obj.userprofile_set.count() if hasattr(obj, 'userprofile_set') else 0
         count_formatted = f"{count:,}"  # Format number with commas first
-        return format_html(
-            '<span style="background: #e3f2fd; color: #1976d2; padding: 4px 10px; border-radius: 4px; font-weight: bold;">👥 {} users</span>',
-            count_formatted
-        )
+        return mark_safe(f'<span style="background: #e3f2fd; color: #1976d2; padding: 4px 10px; border-radius: 4px; font-weight: bold;">👥 {count_formatted} users</span>')
     users_count_display.short_description = 'Users'
     users_count_display.admin_order_field = 'user_count'
     
@@ -429,20 +447,17 @@ class EventInterestAdmin(admin.ModelAdmin):
             # Fallback: count through event_maps relation
             count = obj.event_maps.count() if hasattr(obj, 'event_maps') else 0
         count_formatted = f"{count:,}"  # Format number with commas first
-        return format_html(
-            '<span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 4px; font-weight: bold;">🎉 {} events</span>',
-            count_formatted
-        )
+        return mark_safe(f'<span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 4px; font-weight: bold;">🎉 {count_formatted} events</span>')
     events_count_display.short_description = 'Events'
     events_count_display.admin_order_field = 'event_count'
     
     def is_active_badge(self, obj):
         """Display active status badge"""
         if obj.is_active:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✓ Active</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #9e9e9e; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">✗ Inactive</span>'
         )
     is_active_badge.short_description = "Status"
@@ -532,11 +547,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
             'transaction': '#f44336',
         }
         color = type_colors.get(obj.otp_type, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_otp_type_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.get_otp_type_display()}</span>')
     otp_type_badge.short_description = 'OTP Type'
     otp_type_badge.admin_order_field = 'otp_type'
     
@@ -548,19 +559,19 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     def verification_status_badge(self, obj):
         """Display verification status with badge"""
         if obj.is_verified:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #4caf50; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">✅ Verified</span>'
             )
         elif obj.status == 'expired':
-            return format_html(
+            return mark_safe(
                 '<span style="background: #9e9e9e; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">⏰ Expired</span>'
             )
         elif obj.status == 'failed':
-            return format_html(
+            return mark_safe(
                 '<span style="background: #f44336; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">❌ Failed</span>'
             )
         else:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #ff9800; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">📞 Pending</span>'
             )
     verification_status_badge.short_description = 'Status'
@@ -573,11 +584,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     def attempts_display(self, obj):
         """Display attempts with color coding"""
         color = '#f44336' if obj.attempts >= 3 else '#ff9800' if obj.attempts >= 2 else '#4caf50'
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}/3</span>',
-            color,
-            obj.attempts
-        )
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{obj.attempts}/3</span>')
     attempts_display.short_description = 'Attempts'
     attempts_display.admin_order_field = 'attempts'
     
@@ -589,13 +596,10 @@ class PhoneOTPAdmin(admin.ModelAdmin):
         now = timezone.now()
         is_expired = now > obj.expires_at
         if is_expired:
-            return format_html('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
+            return mark_safe('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
         else:
             minutes_left = (obj.expires_at - now).total_seconds() / 60
-            return format_html(
-                '<span style="color: #4caf50;">✓ Valid ({:.0f}m left)</span>',
-                minutes_left
-            )
+            return mark_safe(f'<span style="color: #4caf50;">✓ Valid ({minutes_left:.0f}m left)</span>')
     expiration_status.short_description = 'Expiration'
     
     def expiration_status_display(self, obj):
@@ -887,7 +891,7 @@ class HostLeadAdmin(admin.ModelAdmin):
     def send_whatsapp_action(self, obj):
         """Button that routes to the change page WhatsApp composer"""
         url = reverse('admin:users_hostlead_change', args=[obj.pk])
-        return format_html('<a class="button" href="{}#whatsapp">Compose WhatsApp</a>', url)
+        return mark_safe(f'<a class="button" href="{url}#whatsapp">Compose WhatsApp</a>')
     send_whatsapp_action.short_description = 'Send WhatsApp'
 
     def _recommendation_queryset(self):
@@ -1139,7 +1143,7 @@ class HostPayoutRequestAdmin(admin.ModelAdmin):
         """Display event name with link"""
         if obj.event:
             url = reverse('admin:events_event_change', args=[obj.event.pk])
-            return format_html('<a href="{}">{}</a>', url, obj.event_name)
+            return mark_safe(f'<a href="{url}">{obj.event_name}</a>')
         return obj.event_name
     event_name_display.short_description = 'Event'
     
@@ -1166,7 +1170,7 @@ class HostPayoutRequestAdmin(admin.ModelAdmin):
             contact = attendee.get('contact', 'N/A')
             html += f"<li><strong>{name}</strong> - {contact}</li>"
         html += "</ul>"
-        return format_html(html)
+        return mark_safe(html)
     attendees_details_display.short_description = 'Attendees'
     
     def approve_payout(self, request, queryset):
