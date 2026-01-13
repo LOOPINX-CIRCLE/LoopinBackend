@@ -222,13 +222,27 @@ class Event(TimeStampedModel):
         is_new = self.pk is None
         title_changed = False
         slug_changed = False
+        venue_changed = False
         
-        # Track if title changed (to detect slug update needs)
+        # Track if title, slug, or venue changed (to detect slug/canonical_url update needs)
+        old_slug_was_manual = False
         if not is_new:
             try:
                 old_instance = Event.objects.get(pk=self.pk)
                 title_changed = old_instance.title != self.title
                 slug_changed = old_instance.slug != self.slug
+                # Check if venue changed (either venue_id or venue_text)
+                venue_changed = (
+                    old_instance.venue_id != self.venue_id or
+                    old_instance.venue_text != self.venue_text
+                )
+                
+                # Detect if old slug was manually edited (doesn't match auto-generated from old title)
+                if old_instance.slug and old_instance.title:
+                    from core.utils.slug_generator import generate_slug
+                    expected_slug = generate_slug(old_instance.title, max_length=70)
+                    # If slug doesn't match what would be auto-generated, it was likely manually edited
+                    old_slug_was_manual = (old_instance.slug != expected_slug)
             except Event.DoesNotExist:
                 pass
         
@@ -238,7 +252,10 @@ class Event(TimeStampedModel):
             self.canonical_id = generate_canonical_id(length=6)
         
         # Generate/update slug from title
-        if is_new or title_changed:
+        # Only regenerate if:
+        # 1. It's a new event (always generate)
+        # 2. Title changed AND slug wasn't manually edited (preserve manual edits)
+        if is_new or (title_changed and not old_slug_was_manual):
             from core.utils.slug_generator import generate_slug, generate_unique_slug
             
             # Generate base slug from title
@@ -254,12 +271,21 @@ class Event(TimeStampedModel):
                 self.slug = generate_unique_slug(base_slug, existing_slugs)
             else:
                 # For existing events, update slug and increment version
+                # Only if we're regenerating (not preserving manual edit)
                 self.slug = base_slug
+                self.slug_version += 1
+                slug_changed = True
+        elif title_changed and old_slug_was_manual:
+            # Title changed but slug was manually edited - preserve manual slug, but update version
+            # This allows canonical_url to update if needed, but keeps the custom slug
+            if not slug_changed:
+                # Slug wasn't changed in this save, but we detected it was manual
+                # Increment version to indicate title changed (for cache busting)
                 self.slug_version += 1
                 slug_changed = True
         
         # Update canonical_url if slug, venue, or canonical_id changed
-        if is_new or slug_changed or not self.canonical_url:
+        if is_new or slug_changed or venue_changed or not self.canonical_url:
             self._update_canonical_url()
         
         super().save(*args, **kwargs)
