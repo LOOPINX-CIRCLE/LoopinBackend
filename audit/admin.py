@@ -4,7 +4,6 @@ CEO-level admin interface for security, compliance, and audit trail management.
 """
 from django.contrib import admin
 from django.db.models import Count, Q
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
@@ -157,11 +156,7 @@ class AuditLogAdmin(admin.ModelAdmin):
             'campaign_execute': '#607d8b',
         }
         color = action_colors.get(obj.action, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_action_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">{obj.get_action_display()}</span>')
     action_badge.short_description = "Action"
     action_badge.admin_order_field = 'action'
     
@@ -175,11 +170,7 @@ class AuditLogAdmin(admin.ModelAdmin):
         user = obj.actor_user or obj.user
         if user:
             url = reverse('admin:auth_user_change', args=[user.pk])
-            return format_html(
-                '<a href="{}">{}</a>',
-                url,
-                user.username
-            )
+            return mark_safe(f'<a href="{url}">{user.username}</a>')
         return mark_safe('<span style="color: gray;">System</span>')
     actor_display.short_description = "Actor"
     actor_display.admin_order_field = 'actor_user__username'
@@ -205,16 +196,11 @@ class AuditLogAdmin(admin.ModelAdmin):
             if model_name.lower() in url_mappings:
                 app, model = url_mappings[model_name.lower()]
                 url = reverse(f'admin:{app}_{model}_change', args=[obj.object_id])
-                return format_html(
-                    '<a href="{}">{} #{}</a>',
-                    url,
-                    obj.object_type,
-                    obj.object_id
-                )
+                return mark_safe(f'<a href="{url}">{obj.object_type} #{obj.object_id}</a>')
         except Exception:
             pass
         
-        return format_html('<span>{}</span>', obj.object_type)
+        return mark_safe(f'<span>{obj.object_type}</span>')
     object_link.short_description = "Object"
     
     def object_link_display(self, obj):
@@ -231,11 +217,7 @@ class AuditLogAdmin(admin.ModelAdmin):
             'critical': '#e91e63',
         }
         color = colors.get(obj.severity, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">{}</span>',
-            color,
-            obj.get_severity_display().upper()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">{obj.get_severity_display().upper()}</span>')
     severity_badge.short_description = "Severity"
     severity_badge.admin_order_field = 'severity'
     
@@ -249,13 +231,9 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj:
             return mark_safe('<span style="color: gray;">Not set</span>')
         if obj.is_successful:
-            return format_html(
-                '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Success</span>'
-            )
+            return mark_safe('<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✓ Success</span>')
         else:
-            return format_html(
-                '<span style="background: #f44336; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✗ Failed</span>'
-            )
+            return mark_safe('<span style="background: #f44336; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px;">✗ Failed</span>')
     success_badge.short_description = "Status"
     success_badge.admin_order_field = 'is_successful'
     # Note: boolean = True removed - this returns HTML, not a boolean
@@ -268,7 +246,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def ip_address_short(self, obj):
         """Display IP address"""
         if obj.ip_address:
-            return format_html('<code style="font-size: 11px;">{}</code>', obj.ip_address)
+            return mark_safe(f'<code style="font-size: 11px;">{obj.ip_address}</code>')
         return '-'
     ip_address_short.short_description = "IP Address"
     
@@ -277,11 +255,9 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj:
             return mark_safe('<span style="color: gray;">-</span>')
         has_changes = obj.has_changes
-        return format_html(
-            '<span style="color: {};">{}</span>',
-            '#4caf50' if has_changes else '#9e9e9e',
-            '✓' if has_changes else '-'
-        )
+        color = '#4caf50' if has_changes else '#9e9e9e'
+        symbol = '✓' if has_changes else '-'
+        return mark_safe(f'<span style="color: {color};">{symbol}</span>')
     has_changes_indicator.short_description = "Changes"
     # Note: boolean = True removed - this returns HTML, not a boolean
     
@@ -290,10 +266,7 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj.payload:
             return mark_safe('<span style="color: gray;">No payload</span>')
         
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.payload, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.payload, indent=2)}</pre>')
     payload_display.short_description = "Payload"
     
     def old_values_display(self, obj):
@@ -301,10 +274,7 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj.old_values:
             return mark_safe('<span style="color: gray;">No old values</span>')
         
-        return format_html(
-            '<pre style="background: #ffebee; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.old_values, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #ffebee; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.old_values, indent=2)}</pre>')
     old_values_display.short_description = "Old Values"
     
     def new_values_display(self, obj):
@@ -312,10 +282,7 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj.new_values:
             return mark_safe('<span style="color: gray;">No new values</span>')
         
-        return format_html(
-            '<pre style="background: #e8f5e9; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.new_values, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #e8f5e9; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.new_values, indent=2)}</pre>')
     new_values_display.short_description = "New Values"
     
     def change_diff_display(self, obj):
@@ -336,20 +303,17 @@ class AuditLogAdmin(admin.ModelAdmin):
             old_val = old_vals.get(field, '<em>None</em>')
             new_val = new_vals.get(field, '<em>None</em>')
             
-            html += format_html(
-                '<tr style="border-bottom: 1px solid #ddd;">'
-                '<td style="padding: 5px; font-weight: bold; width: 30%;">{}</td>'
-                '<td style="padding: 5px; background: #ffebee; width: 35%;">{}</td>'
-                '<td style="padding: 5px; text-align: center; width: 5%;">→</td>'
-                '<td style="padding: 5px; background: #e8f5e9; width: 35%;">{}</td>'
-                '</tr>',
-                field,
-                old_val if isinstance(old_val, str) else json.dumps(old_val),
-                new_val if isinstance(new_val, str) else json.dumps(new_val)
-            )
+            old_val_str = old_val if isinstance(old_val, str) else json.dumps(old_val)
+            new_val_str = new_val if isinstance(new_val, str) else json.dumps(new_val)
+            html += f'<tr style="border-bottom: 1px solid #ddd;">'
+            html += f'<td style="padding: 5px; font-weight: bold; width: 30%;">{field}</td>'
+            html += f'<td style="padding: 5px; background: #ffebee; width: 35%;">{old_val_str}</td>'
+            html += f'<td style="padding: 5px; text-align: center; width: 5%;">→</td>'
+            html += f'<td style="padding: 5px; background: #e8f5e9; width: 35%;">{new_val_str}</td>'
+            html += '</tr>'
         
         html += '</table></div>'
-        return format_html(html)
+        return mark_safe(html)
     change_diff_display.short_description = "Change Diff"
     
     def metadata_display(self, obj):
@@ -357,10 +321,7 @@ class AuditLogAdmin(admin.ModelAdmin):
         if not obj.metadata:
             return mark_safe('<span style="color: gray;">No metadata</span>')
         
-        return format_html(
-            '<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{}</pre>',
-            json.dumps(obj.metadata, indent=2)
-        )
+        return mark_safe(f'<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 11px;">{json.dumps(obj.metadata, indent=2)}</pre>')
     metadata_display.short_description = "Metadata"
     
     def has_add_permission(self, request):
@@ -488,7 +449,7 @@ class AuditLogSummaryAdmin(admin.ModelAdmin):
         """Link to user"""
         if obj.user:
             url = reverse('admin:auth_user_change', args=[obj.user.pk])
-            return format_html('<a href="{}">{}</a>', url, obj.user.username)
+            return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
         return mark_safe('<span style="color: gray;">All Users</span>')
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
@@ -504,11 +465,7 @@ class AuditLogSummaryAdmin(admin.ModelAdmin):
             'password_change': '#e91e63',
         }
         color = action_colors.get(obj.action, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.action
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.action}</span>')
     action_badge.short_description = "Action"
     action_badge.admin_order_field = 'action'
     
@@ -516,11 +473,7 @@ class AuditLogSummaryAdmin(admin.ModelAdmin):
         """Display success rate with color"""
         rate = obj.success_rate
         color = '#4caf50' if rate >= 90 else '#ff9800' if rate >= 70 else '#f44336'
-        return format_html(
-            '<span style="color: {}; font-weight: bold; font-size: 14px;">{:.1f}%</span>',
-            color,
-            rate
-        )
+        return mark_safe(f'<span style="color: {color}; font-weight: bold; font-size: 14px;">{rate:.1f}%</span>')
     success_rate_display.short_description = "Success Rate"
     
     def has_add_permission(self, request):
