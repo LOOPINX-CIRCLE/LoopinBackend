@@ -688,8 +688,10 @@ class NotificationAdmin(admin.ModelAdmin):
     
     def title_short(self, obj):
         """Display shortened title"""
+        from html import escape
         if len(obj.title) > 50:
-            return mark_safe(f'<span title="{obj.title}">{obj.title[:47]}...</span>')
+            escaped_title = escape(obj.title)
+            return mark_safe(f'<span title="{escaped_title}">{escape(obj.title[:47])}...</span>')
         return obj.title
     title_short.short_description = "Title"
     title_short.admin_order_field = 'title'
@@ -697,9 +699,11 @@ class NotificationAdmin(admin.ModelAdmin):
     def campaign_link(self, obj):
         """Display campaign link if exists"""
         if obj.campaign:
+            from html import escape
             url = reverse('admin:notifications_campaign_change', args=[obj.campaign_id])
             campaign_name = obj.campaign.name[:30] + '...' if len(obj.campaign.name) > 30 else obj.campaign.name
-            return mark_safe(f'<a href="{url}" style="color: #9c27b0;">📢 {campaign_name}</a>')
+            escaped_name = escape(campaign_name)
+            return mark_safe(f'<a href="{url}" style="color: #9c27b0;">📢 {escaped_name}</a>')
         return mark_safe('<span style="color: gray;">-</span>')
     campaign_link.short_description = "Campaign"
     campaign_link.admin_order_field = 'campaign__name'
@@ -915,8 +919,10 @@ class CampaignAdmin(admin.ModelAdmin):
     def template_display(self, obj):
         """Display template with badge and link"""
         if obj.template:
+            from html import escape
             url = reverse('admin:notifications_notificationtemplate_change', args=[obj.template.pk])
-            return mark_safe(f'<a href="{url}" style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; color: #1976d2;">{obj.template.name}</a>')
+            escaped_name = escape(obj.template.name)
+            return mark_safe(f'<a href="{url}" style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; color: #1976d2;">{escaped_name}</a>')
         return "-"
     template_display.short_description = "Template"
     template_display.admin_order_field = 'template__name'
@@ -1020,10 +1026,13 @@ class CampaignAdmin(admin.ModelAdmin):
                         f'⚠️ Missing variables: {missing_vars_str}</div>'
                     )
                 
+                from html import escape
+                escaped_title = escape(preview_title)
+                escaped_body = escape(preview_body)
                 return mark_safe(
                     f'<div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: white;">'
-                    f'<div style="font-weight: bold; margin-bottom: 8px; color: #333;">{preview_title}</div>'
-                    f'<div style="color: #666; font-size: 13px;">{preview_body}</div>'
+                    f'<div style="font-weight: bold; margin-bottom: 8px; color: #333;">{escaped_title}</div>'
+                    f'<div style="color: #666; font-size: 13px;">{escaped_body}</div>'
                     f'<div style="margin-top: 8px; font-size: 11px; color: #999;">Target Screen: {obj.template.target_screen}</div>'
                     f'{warning}'
                     f'</div>'
