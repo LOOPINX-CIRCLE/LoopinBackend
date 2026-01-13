@@ -31,6 +31,7 @@ from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 from asgiref.sync import sync_to_async
+from users.auth_router import maybe_promote_user_from_waitlist_sync
 from pydantic import BaseModel, Field, validator
 import logging
 
@@ -169,6 +170,16 @@ def get_current_user_from_token(token: str) -> User:
             )
         
         user = User.objects.get(id=user_id)
+        
+        # Automatic waitlist promotion check before rejecting inactive users
+        try:
+            promoted = maybe_promote_user_from_waitlist_sync(user_id)
+            if promoted:
+                # Refresh user instance to reflect new active state
+                user = User.objects.get(id=user_id)
+        except Exception as promote_error:
+            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
+        
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
