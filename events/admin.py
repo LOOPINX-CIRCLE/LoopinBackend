@@ -9,7 +9,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from django import forms
 import uuid
+import json
 
 from .models import (
     Venue,
@@ -41,13 +43,23 @@ class EventInterestMapInline(admin.TabularInline):
 
 
 class EventImageInline(admin.TabularInline):
-    """Inline for managing event images"""
+    """Inline for managing event images with preview"""
     model = EventImage
     extra = 1
-    fields = ('image_url', 'position')
+    fields = ('image_preview', 'image_url', 'position')
+    readonly_fields = ('image_preview',)
     ordering = ('position',)
     verbose_name = "Event Image"
     verbose_name_plural = "Event Images"
+    
+    def image_preview(self, obj):
+        """Display image preview in inline"""
+        if obj and obj.image_url:
+            from html import escape
+            escaped_url = escape(obj.image_url)
+            return mark_safe(f'<img src="{escaped_url}" style="max-width: 100px; max-height: 100px; object-fit: cover; border-radius: 4px;" />')
+        return mark_safe('<span style="color: #999;">No image</span>')
+    image_preview.short_description = "Preview"
 
 
 class EventAttendeeInline(admin.TabularInline):
@@ -230,12 +242,85 @@ class VenueAdmin(admin.ModelAdmin):
 
 
 # ============================================================================
+# EVENT ADMIN FORMS
+# ============================================================================
+
+class EventAdminForm(forms.ModelForm):
+    """Custom form for Event admin with user-friendly cover images fields"""
+    
+    cover_image_1 = forms.URLField(
+        required=False,
+        label="Cover Image 1 (URL)",
+        help_text="Enter the full URL of the first cover image (e.g., https://example.com/image1.jpg)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image1.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    cover_image_2 = forms.URLField(
+        required=False,
+        label="Cover Image 2 (URL)",
+        help_text="Enter the full URL of the second cover image (optional)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image2.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    cover_image_3 = forms.URLField(
+        required=False,
+        label="Cover Image 3 (URL)",
+        help_text="Enter the full URL of the third cover image (optional)",
+        widget=forms.URLInput(attrs={
+            'placeholder': 'https://example.com/image3.jpg',
+            'style': 'width: 100%; padding: 8px;',
+        })
+    )
+    
+    class Meta:
+        model = Event
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Populate the individual image fields from the cover_images JSONField
+        if self.instance and self.instance.pk:
+            cover_images = self.instance.cover_images or []
+            if isinstance(cover_images, list):
+                if len(cover_images) > 0:
+                    self.fields['cover_image_1'].initial = cover_images[0]
+                if len(cover_images) > 1:
+                    self.fields['cover_image_2'].initial = cover_images[1]
+                if len(cover_images) > 2:
+                    self.fields['cover_image_3'].initial = cover_images[2]
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        # Collect non-empty image URLs
+        cover_images = []
+        for i in range(1, 4):
+            image_url = cleaned_data.get(f'cover_image_{i}', '').strip()
+            if image_url:
+                cover_images.append(image_url)
+        
+        # Validate: at least 1 image, max 3 images
+        if len(cover_images) == 0:
+            raise ValidationError("At least one cover image URL is required.")
+        if len(cover_images) > 3:
+            raise ValidationError("Maximum 3 cover images allowed.")
+        
+        # Store in the cover_images JSONField
+        cleaned_data['cover_images'] = cover_images
+        return cleaned_data
+
+
+# ============================================================================
 # EVENT ADMIN
 # ============================================================================
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
     """Comprehensive admin configuration for Event model"""
+    form = EventAdminForm
     
     list_display = [
         'title',
@@ -262,8 +347,10 @@ class EventAdmin(admin.ModelAdmin):
         'description',
         'slug',
         'uuid',
-        'host__username',
-        'host__email',
+        'host__name',
+        'host__phone_number',
+        'host__user__username',
+        'host__user__email',
         'venue__name',
     ]
     readonly_fields = [
@@ -278,6 +365,7 @@ class EventAdmin(admin.ModelAdmin):
         'capacity_status',
         'revenue_display',
         'duration_display',
+        'cover_images_preview',
     ]
     fieldsets = (
         (_('Basic Information'), {
@@ -306,7 +394,8 @@ class EventAdmin(admin.ModelAdmin):
             'fields': ('allowed_genders',)
         }),
         (_('Media'), {
-            'fields': ('cover_images',)
+            'fields': ('cover_image_1', 'cover_image_2', 'cover_image_3', 'cover_images_preview'),
+            'description': 'Add 1-3 cover image URLs. Images will be displayed in the order you enter them.',
         }),
         (_('Status & Visibility'), {
             'fields': ('status', 'is_public', 'is_active')
@@ -350,10 +439,11 @@ class EventAdmin(admin.ModelAdmin):
     
     def host_link(self, obj):
         """Link to host's profile"""
-        url = reverse('admin:auth_user_change', args=[obj.host_id])
-        return mark_safe(f'<a href="{url}">{obj.host.username}</a>')
+        url = reverse('admin:users_userprofile_change', args=[obj.host_id])
+        name = obj.host.name if obj.host.name else (obj.host.user.username if obj.host.user else f'Profile #{obj.host_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     host_link.short_description = "Host"
-    host_link.admin_order_field = 'host__username'
+    host_link.admin_order_field = 'host__name'
     
     def venue_link(self, obj):
         """Link to venue with fallback to venue_text"""
@@ -423,6 +513,43 @@ class EventAdmin(admin.ModelAdmin):
         text = 'Past Event' if is_past else 'Upcoming/Current'
         return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_past_display.short_description = "Timing Status"
+    
+    def cover_images_preview(self, obj):
+        """Display preview of cover images with thumbnails"""
+        if not obj or not obj.cover_images:
+            return mark_safe('<p style="color: #999; font-style: italic; padding: 10px; background: #f5f5f5; border-radius: 4px;">No cover images added yet. Add image URLs above and save to see previews.</p>')
+        
+        cover_images = obj.cover_images if isinstance(obj.cover_images, list) else []
+        if not cover_images:
+            return mark_safe('<p style="color: #999; font-style: italic; padding: 10px; background: #f5f5f5; border-radius: 4px;">No cover images added yet.</p>')
+        
+        from html import escape
+        preview_html = '<div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px;">'
+        
+        for i, image_url in enumerate(cover_images, 1):
+            if image_url:
+                escaped_url = escape(image_url)
+                preview_html += f'''
+                    <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #f9f9f9; text-align: center;">
+                        <div style="font-weight: bold; margin-bottom: 8px; color: #417690;">Image {i}</div>
+                        <img src="{escaped_url}" 
+                             style="max-width: 200px; max-height: 200px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd;"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                        <div style="display: none; color: #f44336; padding: 10px; font-size: 12px;">
+                            ❌ Image failed to load<br/>
+                            <small style="word-break: break-all;">{escaped_url}</small>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 11px; color: #666; word-break: break-all; max-width: 200px;">
+                            {escaped_url}
+                        </div>
+                    </div>
+                '''
+        
+        preview_html += '</div>'
+        preview_html += f'<p style="margin-top: 15px; color: #666; font-size: 12px;"><strong>Total:</strong> {len(cover_images)} image(s) added</p>'
+        
+        return mark_safe(preview_html)
+    cover_images_preview.short_description = "Image Previews"
     
     def is_full_display(self, obj):
         """Display if event is full"""
@@ -517,8 +644,10 @@ class EventRequestAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'requester__username',
-        'requester__email',
+        'requester__name',
+        'requester__phone_number',
+        'requester__user__username',
+        'requester__user__email',
         'message',
         'host_message',
         'uuid',
@@ -558,10 +687,11 @@ class EventRequestAdmin(admin.ModelAdmin):
     
     def requester_link(self, obj):
         """Link to requester's profile"""
-        url = reverse('admin:auth_user_change', args=[obj.requester_id])
-        return mark_safe(f'<a href="{url}">{obj.requester.username}</a>')
+        url = reverse('admin:users_userprofile_change', args=[obj.requester_id])
+        name = obj.requester.name if obj.requester.name else (obj.requester.user.username if obj.requester.user else f'Profile #{obj.requester_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     requester_link.short_description = "Requester"
-    requester_link.admin_order_field = 'requester__username'
+    requester_link.admin_order_field = 'requester__name'
     
     def status_display(self, obj):
         """Display status with color"""
@@ -625,9 +755,13 @@ class EventInviteAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'host__username',
-        'invited_user__username',
-        'invited_user__email',
+        'host__name',
+        'host__phone_number',
+        'host__user__username',
+        'invited_user__name',
+        'invited_user__phone_number',
+        'invited_user__user__username',
+        'invited_user__user__email',
         'uuid',
     ]
     readonly_fields = [
@@ -667,18 +801,20 @@ class EventInviteAdmin(admin.ModelAdmin):
     def host_link(self, obj):
         """Link to host"""
         if obj.host:
-            url = reverse('admin:auth_user_change', args=[obj.host_id])
-            return mark_safe(f'<a href="{url}">{obj.host.username}</a>')
+            url = reverse('admin:users_userprofile_change', args=[obj.host_id])
+            name = obj.host.name if obj.host.name else (obj.host.user.username if obj.host.user else f'Profile #{obj.host_id}')
+            return mark_safe(f'<a href="{url}">{name}</a>')
         return '-'
     host_link.short_description = "Host"
-    host_link.admin_order_field = 'host__username'
+    host_link.admin_order_field = 'host__name'
     
     def invited_user_link(self, obj):
         """Link to invited user"""
-        url = reverse('admin:auth_user_change', args=[obj.invited_user_id])
-        return mark_safe(f'<a href="{url}">{obj.invited_user.username}</a>')
+        url = reverse('admin:users_userprofile_change', args=[obj.invited_user_id])
+        name = obj.invited_user.name if obj.invited_user.name else (obj.invited_user.user.username if obj.invited_user.user else f'Profile #{obj.invited_user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     invited_user_link.short_description = "Invited User"
-    invited_user_link.admin_order_field = 'invited_user__username'
+    invited_user_link.admin_order_field = 'invited_user__name'
     
     def status_display(self, obj):
         """Display status with color"""
@@ -746,8 +882,10 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'event__title',
-        'user__username',
-        'user__email',
+        'user__name',
+        'user__phone_number',
+        'user__user__username',
+        'user__user__email',
         'uuid',
     ]
     readonly_fields = [
@@ -790,10 +928,11 @@ class EventAttendeeAdmin(admin.ModelAdmin):
     
     def user_link(self, obj):
         """Link to user"""
-        url = reverse('admin:auth_user_change', args=[obj.user_id])
-        return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
+        url = reverse('admin:users_userprofile_change', args=[obj.user_id])
+        name = obj.user.name if obj.user.name else (obj.user.user.username if obj.user.user else f'Profile #{obj.user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     user_link.short_description = "User"
-    user_link.admin_order_field = 'user__username'
+    user_link.admin_order_field = 'user__name'
     
     def origin_display(self, obj):
         """Display origin (request or invite)"""
@@ -918,8 +1057,10 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     search_fields = [
         'reservation_key',
         'event__title',
-        'user__username',
-        'user__email',
+        'user__name',
+        'user__phone_number',
+        'user__user__username',
+        'user__user__email',
     ]
     readonly_fields = [
         'reservation_key',
@@ -954,10 +1095,11 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     
     def user_link(self, obj):
         """Link to user"""
-        url = reverse('admin:auth_user_change', args=[obj.user_id])
-        return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
+        url = reverse('admin:users_userprofile_change', args=[obj.user_id])
+        name = obj.user.name if obj.user.name else (obj.user.user.username if obj.user.user else f'Profile #{obj.user_id}')
+        return mark_safe(f'<a href="{url}">{name}</a>')
     user_link.short_description = "User"
-    user_link.admin_order_field = 'user__username'
+    user_link.admin_order_field = 'user__name'
     
     def consumed_display(self, obj):
         """Display if reservation is consumed"""
