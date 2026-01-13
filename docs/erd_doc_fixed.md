@@ -76,6 +76,7 @@ erDiagram
     USER_PROFILE ||--o{ BANK_ACCOUNT : "owns bank accounts (host)"
     BANK_ACCOUNT ||--o{ HOST_PAYOUT_REQUEST : "receives payouts"
     EVENT ||--o{ HOST_PAYOUT_REQUEST : "has payout requests"
+    HOST_PAYOUT_REQUEST }o--o{ PAYMENT_ORDER : "linked to payment orders (M-to-M for reconciliation)"
     
     %% Host Lead Module Relationships
     AUTH_USER ||--o{ HOST_LEAD_WHATSAPP_MESSAGE : "sends messages"
@@ -297,7 +298,7 @@ erDiagram
     EVENT_INTEREST_MAP {
         BIGINT id PK "Primary key"
         BIGINT event_id FK "Event"
-        BIGINT eventinterest_id FK "Interest"
+        BIGINT event_interest_id FK "Interest (EVENT_INTEREST)"
         DATETIME created_at "Creation"
         DATETIME updated_at "Update"
     }
@@ -419,7 +420,7 @@ erDiagram
         TEXT failure_reason "Failure details"
         BIGINT parent_order_id FK "Parent order if retry attempt (nullable)"
         BOOLEAN is_final "True if final successful payment (not retry)"
-        INDEX unique_final_per_user_event "(user_id, event_id) WHERE is_final = true (UNIQUE)"
+        INDEX idx_event_user_final "(event_id, user_id, is_final) for querying final payments"
         DECIMAL refund_amount "Refund amount"
         TEXT refund_reason "Refund reason"
         DATETIME refunded_at "Refund time"
@@ -1216,14 +1217,14 @@ created → pending → paid/completed OR failed/cancelled
 
 **Business Rules:**
 - `order_reference` auto-generated if not provided
-- Expires after 10 minutes (configurable) if unpaid
+- `expires_at` defaults to 24 hours from creation (model default), but PaymentFlowService sets it to 10 minutes when creating orders via the service
 - Refunds tracked with reason
 - Financial snapshot captured when payment succeeds
 - Previous orders marked as non-final when new payment succeeds
 
 **SECURITY ENFORCEMENT:**
 - **Identity Model**: Only `USER_PROFILE` (customers) can create payment orders. `AUTH_USER` (admin/staff) accounts are blocked from creating payments via service-level guards.
-- **DB-Level Unique Constraint**: Partial unique index `(user_id, event_id) WHERE is_final = true` ensures only ONE final payment per user per event (prevents race conditions).
+- **Application-Level Uniqueness**: Application logic ensures only ONE final payment per user per event (prevents race conditions). Index on `(event_id, user_id, is_final)` supports efficient querying.
 - **Race Condition Protection**: Application-level double-check prevents duplicate final payments even under concurrent requests.
 - **Transactional Guarantees**: All payment finalization operations (order update, transaction creation, attendee fulfillment, reservation consumption) are atomic via `@transaction.atomic`.
 
@@ -1952,6 +1953,7 @@ final_price = PlatformFeeConfig.calculate_final_price(
 
 | **Many-to-Many** | `USER_PROFILE` ↔ `EVENT_INTEREST` | Users have many interests |
 | **Many-to-Many** | `EVENT` ↔ `EVENT_INTEREST` | Events in many categories |
+| **Many-to-Many** | `HOST_PAYOUT_REQUEST` ↔ `PAYMENT_ORDER` | Payout requests linked to payment orders (for reconciliation) |
 
 ---
 
