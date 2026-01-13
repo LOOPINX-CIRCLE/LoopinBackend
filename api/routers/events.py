@@ -1316,7 +1316,7 @@ async def get_event_by_canonical_id(
 @router.get("/{event_id}/share-url", response_model=Dict[str, str])
 async def get_event_share_url(
     event_id: int = Path(..., description="Event ID"),
-    user: Optional[User] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """
     Get canonical share URL for an event.
