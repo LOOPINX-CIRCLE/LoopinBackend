@@ -1037,8 +1037,328 @@ async def _get_my_tickets_DUPLICATE(
 
 
 # ============================================================================
-# Event Detail Endpoints
+# GEO-First SEO Endpoints (Web Discovery & Funnel)
 # ============================================================================
+
+@router.get("/seo/cities/{country_code}/{city_slug}/events", response_model=Dict[str, Any])
+async def get_city_events_seo(
+    country_code: str = Path(..., description="Country code (e.g., 'in')"),
+    city_slug: str = Path(..., description="City slug (e.g., 'bangalore')"),
+    event_interest_slug: Optional[str] = Query(None, description="Optional interest filter by slug (e.g., 'tech')"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    status: Optional[str] = Query("published", description="Event status filter"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    """
+    GEO-first SEO endpoint: City events listing page.
+    
+    This is the primary SEO landing page for city-based event discovery.
+    Returns events with full SEO metadata for server-side rendering.
+    
+    URL Format: `/in/{city_slug}/events` or `/in/{city_slug}/events/{interest_slug}`
+    
+    - **SEO Optimized**: Returns schema markup, meta tags, breadcrumbs
+    - **Public Access**: No authentication required (public events only)
+    - **Pagination**: Page-based (not offset) with rel="next"/"prev" metadata
+    - **Interest Filter**: Optional interest slug for filtered pages
+    - **Performance**: Optimized queries with select_related
+    
+    Example:
+    - `/in/bangalore/events` - All events in Bangalore
+    - `/in/bangalore/events/tech` - Tech events in Bangalore
+    """
+    # Optional authentication (for private event filtering)
+    user = None
+    if credentials:
+        try:
+            user = await get_current_user(credentials)
+        except Exception:
+            pass
+    
+    @sync_to_async
+    def get_city_events():
+        from events.utils.city_metadata import get_city_metadata, generate_city_seo_metadata
+        from events.utils.schema_markup import generate_city_page_schema, generate_breadcrumb_schema
+        from users.models import EventInterest
+        from django.conf import settings
+        
+        # Get city metadata
+        city_metadata = get_city_metadata(city_slug)
+        base_url = getattr(settings, 'SITE_URL', '')
+        
+        # Build queryset
+        queryset = Event.objects.select_related("host", "host__user", "venue").filter(
+            is_active=True,
+            is_public=True,
+            status=status or "published"
+        )
+        
+        # Filter by city (via venue.city_slug or venue.city)
+        from django.db.models import Q
+        queryset = queryset.filter(
+            Q(venue__city_slug=city_slug) | Q(venue__city__iexact=city_slug.replace('-', ' '))
+        )
+        
+        # Filter by interest if provided
+        interest = None
+        if event_interest_slug:
+            try:
+                interest = EventInterest.objects.get(slug=event_interest_slug, is_active=True)
+                queryset = queryset.filter(interest_maps__event_interest=interest)
+            except EventInterest.DoesNotExist:
+                raise NotFoundError(
+                    f"Interest '{event_interest_slug}' not found.",
+                    code="INTEREST_NOT_FOUND"
+                )
+        
+        # Get total count
+        total = queryset.count()
+        
+        # Calculate pagination
+        offset = (page - 1) * limit
+        total_pages = (total + limit - 1) // limit if total > 0 else 1
+        
+        # Apply pagination and ordering
+        events = list(queryset.order_by("-start_time")[offset:offset + limit])
+        
+        # Generate SEO metadata
+        seo_metadata = generate_city_seo_metadata(city_slug, total, base_url)
+        
+        # Build breadcrumbs
+        breadcrumb_items = [
+            {"name": "Home", "url": "/"},
+            {"name": country_code.upper(), "url": f"/{country_code}"},
+            {"name": city_metadata["display_name"] if city_metadata else city_slug.replace('-', ' ').title(), "url": f"/{country_code}/{city_slug}"},
+            {"name": "Events", "url": f"/{country_code}/{city_slug}/events"},
+        ]
+        if interest:
+            breadcrumb_items.append({"name": interest.name, "url": f"/{country_code}/{city_slug}/events/{interest.slug}"})
+        breadcrumb_schema = generate_breadcrumb_schema(breadcrumb_items, base_url)
+        
+        # City page schema
+        city_schema = generate_city_page_schema(
+            city_metadata["display_name"] if city_metadata else city_slug.replace('-', ' ').title(),
+            country_code,
+            total,
+            base_url
+        )
+        
+        # Pagination metadata
+        pagination = {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+            "next_page": page + 1 if page < total_pages else None,
+            "prev_page": page - 1 if page > 1 else None,
+        }
+        
+        # Build URLs for rel="next"/"prev"
+        path_base = f"/{country_code}/{city_slug}/events"
+        if interest:
+            path_base += f"/{interest.slug}"
+        
+        pagination["next_url"] = f"{path_base}?page={pagination['next_page']}" if pagination["has_next"] else None
+        pagination["prev_url"] = f"{path_base}?page={pagination['prev_page']}" if pagination["has_prev"] else None
+        
+        return {
+            "seo": seo_metadata,
+            "schema": {
+                "breadcrumb": breadcrumb_schema,
+                "city_page": city_schema,
+            },
+            "pagination": pagination,
+            "events": [EventResponse.from_orm(e, include_interests=True).model_dump() for e in events],
+            "interest": {
+                "id": interest.id,
+                "name": interest.name,
+                "slug": interest.slug,
+            } if interest else None,
+        }
+    
+    return await get_city_events()
+
+
+@router.get("/seo/canonical/{canonical_id}/metadata", response_model=Dict[str, Any])
+async def get_event_seo_metadata(
+    canonical_id: str = Path(..., description="Event canonical ID"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    """
+    Get comprehensive SEO metadata for event detail page.
+    
+    Returns all SEO data needed for server-side rendering:
+    - Meta tags (title, description, OpenGraph, Twitter Cards)
+    - Schema.org Event markup (JSON-LD)
+    - Breadcrumb schema
+    - Canonical URL
+    
+    - **Public Access**: No authentication required for public events
+    - **SEO Optimized**: Full metadata for search engines and social sharing
+    - **WhatsApp Ready**: OpenGraph tags optimized for WhatsApp previews
+    """
+    # Optional authentication
+    user = None
+    if credentials:
+        try:
+            user = await get_current_user(credentials)
+        except Exception:
+            pass
+    
+    @sync_to_async
+    def get_event_seo():
+        from events.utils.url_resolution import get_event_by_canonical_id
+        from events.utils.seo_metadata import generate_event_seo_metadata
+        from events.utils.schema_markup import generate_event_schema, generate_breadcrumb_schema
+        from django.conf import settings
+        
+        event = get_event_by_canonical_id(canonical_id)
+        if not event:
+            raise NotFoundError(
+                f"Event with canonical ID '{canonical_id}' not found.",
+                code="EVENT_NOT_FOUND"
+            )
+        
+        # Check permissions for private events
+        if not event.is_public and (not user or event.host.user != user):
+            raise AuthorizationError(
+                "This is a private event. You don't have permission to view it.",
+                code="PERMISSION_DENIED"
+            )
+        
+        base_url = getattr(settings, 'SITE_URL', '')
+        
+        # Generate SEO metadata
+        seo_metadata = generate_event_seo_metadata(event, base_url)
+        
+        # Generate schema markup
+        event_schema = generate_event_schema(event, base_url)
+        
+        # Build breadcrumbs
+        country_code = event.venue.country_code if event.venue else 'in'
+        city_slug = event.venue.city_slug if event.venue and event.venue.city_slug else 'unknown'
+        breadcrumb_items = [
+            {"name": "Home", "url": "/"},
+            {"name": country_code.upper(), "url": f"/{country_code}"},
+            {"name": event.venue.city if event.venue else "Unknown", "url": f"/{country_code}/{city_slug}"},
+            {"name": "Events", "url": f"/{country_code}/{city_slug}/events"},
+            {"name": event.title, "url": event.canonical_url or f"/events/{canonical_id}"},
+        ]
+        breadcrumb_schema = generate_breadcrumb_schema(breadcrumb_items, base_url)
+        
+        return {
+            "seo": seo_metadata,
+            "schema": {
+                "event": event_schema,
+                "breadcrumb": breadcrumb_schema,
+            },
+            "event": EventResponse.from_orm(event, include_interests=True).model_dump(),
+        }
+    
+    return await get_event_seo()
+
+
+# ============================================================================
+# Event Detail Endpoints (Canonical URL Support)
+# ============================================================================
+
+@router.get("/canonical/{canonical_id}", response_model=EventResponse)
+async def get_event_by_canonical_id(
+    canonical_id: str = Path(..., description="Event canonical ID (Base62)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    """
+    Get event details by canonical_id (immutable identifier).
+    
+    This is the preferred method for fetching events in production.
+    Canonical IDs are immutable and never change, ensuring links never break.
+    
+    - **Performance**: Optimized with select_related and prefetch_related
+    - **Security**: Public events visible to all, private events to host only
+    - **Fields**: Includes all ERD fields plus canonical URL fields
+    - **Mobile-friendly**: Mobile clients should use canonical_id instead of numeric IDs
+    - **Auth**: Optional - public events accessible without auth
+    """
+    # Optional authentication
+    user = None
+    if credentials:
+        try:
+            user = await get_current_user(credentials)
+        except Exception:
+            pass  # Allow unauthenticated access for public events
+    
+    @sync_to_async
+    def get_event_by_canonical():
+        from events.utils.url_resolution import get_event_by_canonical_id
+        event = get_event_by_canonical_id(canonical_id)
+        if not event:
+            raise NotFoundError(
+                f"Event with canonical ID '{canonical_id}' not found.",
+                code="EVENT_NOT_FOUND"
+            )
+        return event
+    
+    event = await get_event_by_canonical()
+    
+    # Check permissions for private events (only host can view)
+    if not event.is_public and (not user or event.host.user != user):
+        raise AuthorizationError(
+            "This is a private event. You don't have permission to view it.",
+            code="PERMISSION_DENIED"
+        )
+    
+    return EventResponse.from_orm(event, include_interests=True)
+
+
+@router.get("/{event_id}/share-url", response_model=Dict[str, str])
+async def get_event_share_url(
+    event_id: int = Path(..., description="Event ID"),
+    user: Optional[User] = Depends(get_current_user),
+):
+    """
+    Get canonical share URL for an event.
+    
+    Returns the canonical URL that should be used for sharing.
+    This URL format is: /{country_code}/{city_slug}/events/{slug}--{canonical_id}
+    
+    - **Canonical**: URL never changes even if slug, title, or city changes
+    - **SEO-friendly**: Includes country, city, and human-readable slug
+    - **Deep linking**: Works for both web and mobile deep links
+    """
+    @sync_to_async
+    def get_share_url():
+        try:
+            event = Event.objects.select_related("venue").get(id=event_id, is_active=True)
+        except Event.DoesNotExist:
+            raise NotFoundError(
+                f"Event {event_id} not found.",
+                code="EVENT_NOT_FOUND"
+            )
+        
+        # Check permissions for private events
+        if not event.is_public and (not user or event.host.user != user):
+            raise AuthorizationError(
+                "This is a private event. You don't have permission to view it.",
+                code="PERMISSION_DENIED"
+            )
+        
+        # Get base URL from settings
+        base_url = getattr(settings, 'SITE_URL', '')
+        canonical_path = event.canonical_url or f"/events/{event.canonical_id}"
+        full_url = f"{base_url}{canonical_path}" if base_url else canonical_path
+        
+        return {
+            "canonical_id": event.canonical_id,
+            "canonical_url": full_url,
+            "canonical_path": canonical_path,
+            "slug": event.slug,
+        }
+    
+    return await get_share_url()
+
 
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(

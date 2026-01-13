@@ -424,6 +424,14 @@ services:
 - **Attendance Record Relationship**: Foreign key changed from `User` to `UserProfile`
   - Ensures proper data consistency
   - Migration handles orphaned records automatically
+- **Event Canonical URL System**: Production-grade URL system with SEO and deep linking
+  - Immutable `canonical_id` (Base62, 5-8 chars) ensures links never break
+  - SEO-friendly slugs (max 70 chars, can change) with automatic versioning
+  - GEO-aware URLs: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+  - Automatic 301 redirects when slug/city changes (SEO-preserving)
+  - Server-side SEO metadata generation (OpenGraph, Twitter Cards)
+  - Backend-owned URLs (not frontend routing) for deep linking
+  - Mobile clients use `canonical_id` for API calls (preferred over numeric IDs)
 
 ### External Service Integration
 

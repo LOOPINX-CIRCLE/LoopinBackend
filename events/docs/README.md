@@ -237,7 +237,10 @@ sequenceDiagram
 
 ### Venue
 - **Purpose**: Reference data for physical locations to avoid duplicating location details
-- **Key Fields**: uuid, name, address, city, venue_type, capacity, latitude, longitude, metadata
+- **Key Fields**: uuid, name, address, city, country_code, city_slug, venue_type, capacity, latitude, longitude, metadata
+- **GEO SEO Fields**:
+  - `country_code`: ISO 3166-1 alpha-2 country code (e.g., 'in', 'us') for canonical URLs
+  - `city_slug`: URL-safe city name slug (auto-generated from city) for canonical URLs
 - **Relationships**: One-to-many with Event
 - **Soft Delete**: is_active flag
 - **Important Notes**:
@@ -245,22 +248,29 @@ sequenceDiagram
   - The `capacity` field in Venue is informational only; the actual capacity for an event is stored in `Event.max_capacity`
   - Multiple events can use the same venue simultaneously—there are no booking restrictions or conflicts
   - The venue table exists solely to avoid duplicating location details when multiple events share the same physical location
+  - `country_code` and `city_slug` are used for GEO-aware canonical URLs
 
 ### Event
 - **Purpose**: Core event model with comprehensive hosting features
 - **Key Fields**: 
-  - Identity: uuid, slug, title, description
+  - Identity: uuid, canonical_id, slug, slug_version, canonical_url, title, description
   - Scheduling: start_time, end_time (derived from duration_hours)
   - Venue: venue (FK) or venue_text
   - Capacity & Pricing: max_capacity, going_count, requests_count, is_paid, ticket_price, gst_number
   - Restrictions: allowed_genders, allow_plus_one
   - Media: cover_images (1-3 image URLs stored after upload to Supabase Storage)
   - Status: status, is_public, is_active
+- **Canonical URL System**:
+  - `canonical_id`: Immutable Base62 identifier (5-8 chars, generated once, never changes)
+  - `slug`: SEO-friendly human-readable slug (max 70 chars, can change)
+  - `slug_version`: Increments on every slug change for cache busting
+  - `canonical_url`: Full canonical URL path: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+  - URL format: `/in/bangalore/events/tech-meetup--a9x3k`
+  - Backend resolves by `canonical_id` (immutable), redirects if slug mismatch (301)
 - **Status Options**: draft, published, cancelled, completed, postponed
 - **Gender Options**: all, male, female, non_binary
 - **Relationships**: 
   - Many-to-one with User (host)
-  - Many-to-one with Venue
   - Many-to-many with EventInterest (via EventInterestMap)
   - One-to-many with EventRequest, EventInvite, EventAttendee
 
@@ -317,11 +327,25 @@ sequenceDiagram
 - **Auth**: Required (JWT)
 - **Returns**: Paginated list with total count
 
+**GET** `/api/events/canonical/{canonical_id}`
+- Get event details by canonical_id (immutable identifier)
+- **Auth**: Optional (JWT) - public events accessible without auth
+- **Permissions**: Public events visible to all, private to host only
+- **Returns**: EventResponse with all fields including canonical URL fields
+- **Recommended**: Use this endpoint instead of numeric ID for production (links never break)
+
+**GET** `/api/events/{event_id}/share-url`
+- Get canonical share URL for an event
+- **Auth**: Optional (JWT) - public events accessible without auth
+- **Returns**: `{canonical_id, canonical_url, canonical_path, slug}`
+- **Use Case**: Generate shareable URLs that never break
+
 **GET** `/api/events/{event_id}`
-- Get event details by ID
+- Get event details by ID (legacy endpoint, still supported)
 - **Auth**: Required (JWT)
 - **Permissions**: Public events visible to all, private to host only
 - **Returns**: EventResponse with all fields
+- **Note**: Prefer `/canonical/{canonical_id}` for new implementations
 
 **PUT** `/api/events/{event_id}`
 - Update event fields
@@ -1002,7 +1026,9 @@ sequenceDiagram
 |--------|----------|------|---------|
 | POST | `/api/events` | ✅ Required | Create event with duration_hours |
 | GET | `/api/events` | ✅ Required | List events with filters |
-| GET | `/api/events/{id}` | ✅ Required | Get single event |
+| GET | `/api/events/canonical/{canonical_id}` | ⚪ Optional | Get event by canonical ID (recommended) |
+| GET | `/api/events/{id}/share-url` | ⚪ Optional | Get canonical share URL |
+| GET | `/api/events/{id}` | ✅ Required | Get single event (legacy) |
 | PUT | `/api/events/{id}` | ✅ Required | Update event (host only) |
 | DELETE | `/api/events/{id}` | ✅ Required | Soft delete (host only) |
 

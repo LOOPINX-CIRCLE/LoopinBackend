@@ -252,6 +252,8 @@ erDiagram
         STRING name "Venue name (max 150)"
         TEXT address "Full address"
         STRING city "City name (max 100)"
+        STRING country_code "ISO 3166-1 alpha-2 (e.g., 'in', 'us')"
+        STRING city_slug "URL-safe city slug (auto-generated)"
         STRING venue_type "indoor|outdoor|virtual|hybrid"
         INT capacity "Max capacity (0=unlimited)"
         DECIMAL latitude "Latitude (-90 to 90)"
@@ -267,7 +269,10 @@ erDiagram
         BIGINT host_id FK "Event host (USER_PROFILE)"
         BIGINT venue_id FK "Linked venue (nullable)"
         UUID uuid "Public unique identifier"
-        STRING slug "URL-friendly slug"
+        STRING canonical_id "Immutable Base62 ID (5-8 chars, unique)"
+        STRING slug "SEO-friendly slug (max 70, can change)"
+        INT slug_version "Version number (increments on slug change)"
+        TEXT canonical_url "Full canonical URL path (unique)"
         STRING title "Event title (3-200 chars)"
         TEXT description "Event details (min 10 chars)"
         STRING venue_text "Custom venue text (max 255)"
@@ -935,12 +940,16 @@ pending → verified (success) OR failed|expired (failure)
 **Location Data:**
 - `latitude` / `longitude` - Decimal(9,6) for precision
 - `address` - Full text address
+- `country_code` - ISO 3166-1 alpha-2 country code (e.g., 'in', 'us') for GEO SEO
+- `city_slug` - URL-safe city name slug (auto-generated from city) for canonical URLs
 - `metadata` - Additional info (accessibility, parking, etc.)
 
 **Business Logic:**
 - Capacity of 0 = unlimited
 - Inactive venues hidden from selections
 - UUID for public API references
+- `city_slug` auto-generated from `city` on save
+- `country_code` and `city_slug` used for GEO-aware canonical URLs
 
 ---
 
@@ -973,9 +982,19 @@ draft → published → completed
 - `cover_images` - Array of 1-3 image URLs
 - Related `EVENT_IMAGE` table for additional images
 
+**Canonical URL System:**
+- `canonical_id` - Immutable Base62 identifier (5-8 chars, unique, generated once at creation)
+- `slug` - SEO-friendly human-readable slug (max 70 chars, can change, not unique)
+- `slug_version` - Version number (increments on slug changes for cache busting)
+- `canonical_url` - Full canonical URL path: `/{country_code}/{city_slug}/events/{slug}--{canonical_id}`
+- URL format example: `/in/bangalore/events/tech-meetup--a9x3k`
+- Backend resolves by `canonical_id` (immutable), redirects if slug mismatch (301)
+- Old links never break - automatic redirects preserve SEO value
+- Mobile clients should use `canonical_id` for API calls (preferred over numeric IDs)
+
 **Search & Discovery:**
 - `title` - 3-200 characters
-- `slug` - Auto-generated, URL-friendly
+- `slug` - Auto-generated from title, SEO-optimized (max 70 chars)
 - `description` - Rich text, minimum 10 characters
 - Links to `EVENT_INTEREST` via `EVENT_INTEREST_MAP`
 
@@ -986,8 +1005,10 @@ draft → published → completed
 
 **Business Rules:**
 - `end_time` must be after `start_time`
-- Slug auto-generated from title
-- UUID for public API access
+- `canonical_id` generated once at creation, never changes
+- Slug auto-generated from title, can be updated (increments `slug_version`)
+- `canonical_url` auto-generated from venue/city data
+- UUID for public API access (legacy, prefer `canonical_id`)
 - Published events visible to users
 - Cancelled events soft-deleted
 
