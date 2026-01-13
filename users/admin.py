@@ -300,7 +300,26 @@ class UserProfileAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.select_related('user').prefetch_related('event_interests').order_by('-created_at')
     
-    actions = ['verify_profiles', 'activate_profiles', 'deactivate_profiles']
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        """Override to automatically promote users from waitlist when viewing their profile"""
+        if object_id:
+            # Import here to avoid circular imports
+            from users.auth_router import maybe_promote_user_from_waitlist_sync
+            try:
+                profile = self.get_object(request, object_id)
+                if profile and profile.user:
+                    # Trigger automatic promotion if user is ready
+                    promoted = maybe_promote_user_from_waitlist_sync(profile.user.id)
+                    if promoted:
+                        # Refresh the object after promotion
+                        from django.contrib import messages
+                        messages.info(request, f'User {profile.name} has been automatically promoted from waitlist and activated.')
+            except Exception as e:
+                # Silently handle errors to avoid breaking admin
+                pass
+        return super().changeform_view(request, object_id, form_url, extra_context)
+    
+    actions = ['verify_profiles', 'activate_profiles', 'deactivate_profiles', 'promote_from_waitlist']
     
     def verify_profiles(self, request, queryset):
         """Bulk verify profiles"""
@@ -329,6 +348,23 @@ class UserProfileAdmin(admin.ModelAdmin):
                 profile.user.save()
         self.message_user(request, f'❌ {count} profile(s) deactivated.')
     deactivate_profiles.short_description = "Deactivate selected profiles"
+    
+    def promote_from_waitlist(self, request, queryset):
+        """Promote selected users from waitlist if their promotion time has arrived"""
+        from users.auth_router import maybe_promote_user_from_waitlist_sync
+        
+        promoted_count = 0
+        for profile in queryset:
+            if profile.user and not profile.is_active:
+                promoted = maybe_promote_user_from_waitlist_sync(profile.user.id)
+                if promoted:
+                    promoted_count += 1
+        
+        if promoted_count > 0:
+            self.message_user(request, f'✅ {promoted_count} user(s) promoted from waitlist and activated.')
+        else:
+            self.message_user(request, 'No users were ready for promotion. Users are only promoted if their waitlist_promote_at time has passed.')
+    promote_from_waitlist.short_description = "Promote selected users from waitlist (if ready)"
 
 @admin.register(EventInterest)
 class EventInterestAdmin(admin.ModelAdmin):
