@@ -6,7 +6,7 @@ from django.contrib import admin
 from django.contrib.auth import authenticate
 from django.core.exceptions import PermissionDenied
 from django import forms
-from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.core.cache import cache
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -236,10 +236,7 @@ class PlatformFeeConfigAdmin(admin.ModelAdmin):
     def fee_percentage_display(self, obj):
         """Display formatted fee percentage"""
         if obj.pk:
-            return format_html(
-                '<strong style="color: #417690; font-size: 16px;">{}</strong>',
-                obj.get_fee_percentage_display()
-            )
+            return mark_safe(f'<strong style="color: #417690; font-size: 16px;">{obj.get_fee_percentage_display()}</strong>')
         return '-'
     fee_percentage_display.short_description = 'Fee Percentage'
     fee_percentage_display.admin_order_field = 'fee_percentage'
@@ -247,10 +244,7 @@ class PlatformFeeConfigAdmin(admin.ModelAdmin):
     def fee_decimal_display(self, obj):
         """Display fee as decimal multiplier"""
         if obj.pk:
-            return format_html(
-                '<code>{}</code>',
-                obj.get_fee_decimal_display()
-            )
+            return mark_safe(f'<code>{obj.get_fee_decimal_display()}</code>')
         return '-'
     fee_decimal_display.short_description = 'Fee Decimal'
     

@@ -5,7 +5,6 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.db.models import Count
 from django.utils.text import Truncator
 from django.urls import reverse
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from .forms import HostLeadWhatsAppForm
@@ -173,7 +172,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         """Link to user"""
         if obj.user:
             url = reverse('admin:auth_user_change', args=[obj.user_id])
-            return format_html('<a href="{}">{}</a>', url, obj.user.username)
+            return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
         return '-'
     user_link.short_description = "Auth User"
     
@@ -183,12 +182,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             count = len(obj.profile_pictures)
             status = '✅' if count >= 1 else '⚠️'
             color = '#4caf50' if count >= 1 else '#ff9800'
-            return format_html(
-                '<span style="color: {};">{} {}/6 pictures</span>',
-                color,
-                status,
-                count
-            )
+            return mark_safe(f'<span style="color: {color};">{status} {count}/6 pictures</span>')
         return mark_safe('<span style="color: #f44336;">❌ No pictures</span>')
     pictures_count.short_description = 'Profile Pictures'
     
@@ -197,12 +191,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         count = obj.event_interests.count()
         status = '✅' if count >= 1 else '⚠️'
         color = '#4caf50' if count >= 1 else '#ff9800'
-        return format_html(
-            '<span style="color: {};">{} {}/5 interests</span>',
-            color,
-            status,
-            count
-        )
+        return mark_safe(f'<span style="color: {color};">{status} {count}/5 interests</span>')
     interests_count.short_description = 'Event Interests'
     
     def profile_completion_badge(self, obj):
@@ -229,11 +218,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             color = '#f44336'
             badge_text = f'⚠️ {int(percentage)}%'
         
-        return format_html(
-            '<span style="background: {}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">{}</span>',
-            color,
-            badge_text
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold;">{badge_text}</span>')
     profile_completion_badge.short_description = "Completion"
     
     def profile_completion_badge_display(self, obj):
@@ -412,10 +397,7 @@ class EventInterestAdmin(admin.ModelAdmin):
         if count is None:
             count = obj.userprofile_set.count() if hasattr(obj, 'userprofile_set') else 0
         count_formatted = f"{count:,}"  # Format number with commas first
-        return format_html(
-            '<span style="background: #e3f2fd; color: #1976d2; padding: 4px 10px; border-radius: 4px; font-weight: bold;">👥 {} users</span>',
-            count_formatted
-        )
+        return mark_safe(f'<span style="background: #e3f2fd; color: #1976d2; padding: 4px 10px; border-radius: 4px; font-weight: bold;">👥 {count_formatted} users</span>')
     users_count_display.short_description = 'Users'
     users_count_display.admin_order_field = 'user_count'
     
@@ -429,10 +411,7 @@ class EventInterestAdmin(admin.ModelAdmin):
             # Fallback: count through event_maps relation
             count = obj.event_maps.count() if hasattr(obj, 'event_maps') else 0
         count_formatted = f"{count:,}"  # Format number with commas first
-        return format_html(
-            '<span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 4px; font-weight: bold;">🎉 {} events</span>',
-            count_formatted
-        )
+        return mark_safe(f'<span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 4px; font-weight: bold;">🎉 {count_formatted} events</span>')
     events_count_display.short_description = 'Events'
     events_count_display.admin_order_field = 'event_count'
     
@@ -532,11 +511,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
             'transaction': '#f44336',
         }
         color = type_colors.get(obj.otp_type, '#9e9e9e')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{}</span>',
-            color,
-            obj.get_otp_type_display()
-        )
+        return mark_safe(f'<span style="background: {color}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase;">{obj.get_otp_type_display()}</span>')
     otp_type_badge.short_description = 'OTP Type'
     otp_type_badge.admin_order_field = 'otp_type'
     
@@ -573,11 +548,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
     def attempts_display(self, obj):
         """Display attempts with color coding"""
         color = '#f44336' if obj.attempts >= 3 else '#ff9800' if obj.attempts >= 2 else '#4caf50'
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}/3</span>',
-            color,
-            obj.attempts
-        )
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{obj.attempts}/3</span>')
     attempts_display.short_description = 'Attempts'
     attempts_display.admin_order_field = 'attempts'
     
@@ -592,10 +563,7 @@ class PhoneOTPAdmin(admin.ModelAdmin):
             return mark_safe('<span style="color: #f44336; font-weight: bold;">⚠️ Expired</span>')
         else:
             minutes_left = (obj.expires_at - now).total_seconds() / 60
-            return format_html(
-                '<span style="color: #4caf50;">✓ Valid ({:.0f}m left)</span>',
-                minutes_left
-            )
+            return mark_safe(f'<span style="color: #4caf50;">✓ Valid ({minutes_left:.0f}m left)</span>')
     expiration_status.short_description = 'Expiration'
     
     def expiration_status_display(self, obj):
@@ -887,7 +855,7 @@ class HostLeadAdmin(admin.ModelAdmin):
     def send_whatsapp_action(self, obj):
         """Button that routes to the change page WhatsApp composer"""
         url = reverse('admin:users_hostlead_change', args=[obj.pk])
-        return format_html('<a class="button" href="{}#whatsapp">Compose WhatsApp</a>', url)
+        return mark_safe(f'<a class="button" href="{url}#whatsapp">Compose WhatsApp</a>')
     send_whatsapp_action.short_description = 'Send WhatsApp'
 
     def _recommendation_queryset(self):
@@ -1139,7 +1107,7 @@ class HostPayoutRequestAdmin(admin.ModelAdmin):
         """Display event name with link"""
         if obj.event:
             url = reverse('admin:events_event_change', args=[obj.event.pk])
-            return format_html('<a href="{}">{}</a>', url, obj.event_name)
+            return mark_safe(f'<a href="{url}">{obj.event_name}</a>')
         return obj.event_name
     event_name_display.short_description = 'Event'
     

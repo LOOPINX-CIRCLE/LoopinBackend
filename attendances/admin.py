@@ -4,8 +4,6 @@ Modern admin interface with optimized queries, rich displays, and bulk actions.
 """
 from django.contrib import admin
 from django.db.models import Count, Q, Sum
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
@@ -108,14 +106,14 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
     def event_link(self, obj):
         """Link to event"""
         url = reverse('admin:events_event_change', args=[obj.event_id])
-        return format_html('<a href="{}">{}</a>', url, obj.event.title)
+        return mark_safe(f'<a href="{url}">{obj.event.title}</a>')
     event_link.short_description = "Event"
     event_link.admin_order_field = 'event__title'
     
     def user_link(self, obj):
         """Link to user"""
         url = reverse('admin:auth_user_change', args=[obj.user_id])
-        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+        return mark_safe(f'<a href="{url}">{obj.user.username}</a>')
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
     
@@ -129,11 +127,7 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
             'cancelled': 'gray',
         }
         color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_status_display()}</span>')
     status_display.short_description = "Status"
     status_display.admin_order_field = 'status'
     
@@ -147,21 +141,15 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
             'failed': 'red',
         }
         color = colors.get(obj.payment_status, 'black')
-        return format_html(
-            '<span style="font-weight: bold; color: {};">{}</span>',
-            color,
-            obj.get_payment_status_display()
-        )
+        return mark_safe(f'<span style="font-weight: bold; color: {color};">{obj.get_payment_status_display()}</span>')
     payment_status_display.short_description = "Payment"
     payment_status_display.admin_order_field = 'payment_status'
     
     def ticket_secret_short(self, obj):
         """Display shortened ticket secret"""
         if obj.ticket_secret:
-            return format_html(
-                '<code style="font-size: 11px;">{}</code>',
-                obj.ticket_secret[:16] + '...' if len(obj.ticket_secret) > 16 else obj.ticket_secret
-            )
+            secret_display = obj.ticket_secret[:16] + '...' if len(obj.ticket_secret) > 16 else obj.ticket_secret
+            return mark_safe(f'<code style="font-size: 11px;">{secret_display}</code>')
         return '-'
     ticket_secret_short.short_description = "Ticket Secret"
     
@@ -169,17 +157,11 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
         """Display check-in status"""
         if obj.checked_in_at:
             if obj.checked_out_at:
-                return format_html(
-                    '<span style="color: gray;">Checked Out</span><br>'
-                    '<small style="color: gray;">In: {}, Out: {}</small>',
-                    obj.checked_in_at.strftime('%Y-%m-%d %H:%M'),
-                    obj.checked_out_at.strftime('%Y-%m-%d %H:%M')
-                )
-            return format_html(
-                '<span style="color: green; font-weight: bold;">✓ Checked In</span><br>'
-                '<small style="color: gray;">{}</small>',
-                obj.checked_in_at.strftime('%Y-%m-%d %H:%M')
-            )
+                in_time = obj.checked_in_at.strftime('%Y-%m-%d %H:%M')
+                out_time = obj.checked_out_at.strftime('%Y-%m-%d %H:%M')
+                return mark_safe(f'<span style="color: gray;">Checked Out</span><br><small style="color: gray;">In: {in_time}, Out: {out_time}</small>')
+            in_time = obj.checked_in_at.strftime('%Y-%m-%d %H:%M')
+            return mark_safe(f'<span style="color: green; font-weight: bold;">✓ Checked In</span><br><small style="color: gray;">{in_time}</small>')
         return mark_safe('<span style="color: orange;">Not Checked In</span>')
     check_in_status.short_description = "Check-in Status"
     
@@ -203,11 +185,9 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
         if not obj:
             return mark_safe('<span style="color: gray;">Not set</span>')
         is_checked = obj.is_checked_in
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'green' if is_checked else 'gray',
-            'Yes' if is_checked else 'No'
-        )
+        color = 'green' if is_checked else 'gray'
+        text = 'Yes' if is_checked else 'No'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_checked_in_display.short_description = "Currently Checked In"
     # Note: boolean = True removed - this returns HTML, not a boolean
     
@@ -320,12 +300,7 @@ class TicketSecretAdmin(admin.ModelAdmin):
         url = reverse('admin:attendances_attendancerecord_change', args=[obj.attendance_record_id])
         event_title = obj.attendance_record.event.title
         user_name = obj.attendance_record.user.username
-        return format_html(
-            '<a href="{}">{} - {}</a>',
-            url,
-            event_title,
-            user_name
-        )
+        return mark_safe(f'<a href="{url}">{event_title} - {user_name}</a>')
     attendance_record_link.short_description = "Attendance Record"
     attendance_record_link.admin_order_field = 'attendance_record__event__title'
     
@@ -333,11 +308,9 @@ class TicketSecretAdmin(admin.ModelAdmin):
         """Display redemption status"""
         if not obj:
             return mark_safe('<span style="color: gray;">Not set</span>')
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            'red' if obj.is_redeemed else 'green',
-            'Redeemed' if obj.is_redeemed else 'Not Redeemed'
-        )
+        color = 'red' if obj.is_redeemed else 'green'
+        text = 'Redeemed' if obj.is_redeemed else 'Not Redeemed'
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{text}</span>')
     is_redeemed_display.short_description = "Status"
     # Note: boolean = True removed - this returns HTML, not a boolean
     
