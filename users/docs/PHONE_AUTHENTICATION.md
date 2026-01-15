@@ -112,6 +112,8 @@ The LoopinBackend implements a **unified phone number-based authentication syste
 - ✅ **4-digit SMS OTP**: Sent via Twilio for verification
 - ✅ **JWT Token Authentication**: Secure, stateless sessions
 - ✅ **Profile Completion Flag**: Tells app if profile needs completing
+- ✅ **Automatic Waitlist System**: New users placed on waitlist after first profile completion
+- ✅ **Waitlist Promotion**: Automatic activation after 1.10-1.35 hours (no manual approval needed)
 - ✅ **Comprehensive Validation**: All fields validated with clear error messages
 - ✅ **Lead Tracking**: Unverified OTP requests stored for business analytics
 - ✅ **Event Interests**: Dynamic interest categories (12 available)
@@ -516,8 +518,13 @@ sequenceDiagram
    - Event interests: 1-5 valid IDs
    - Profile pictures: 1-6 valid URLs
 5. Saves profile data
-6. Returns success
-7. For users completing their profile for the first time, the backend then places the account into a short **waitlist window** by setting `User.is_active = false` and scheduling an automatic promotion 1.10–1.35 hours in the future.
+6. **Waitlist Placement (First-Time Profile Completion Only):**
+   - If this is the user's first time completing their profile, the backend automatically places them on a waitlist
+   - Sets `User.is_active = False` and `UserProfile.is_active = False`
+   - Schedules automatic promotion: `waitlist_promote_at = now + random(66-81 minutes)`
+   - User can only access profile endpoints until promotion
+   - Promotion happens automatically during normal API requests (no background workers needed)
+7. Returns success response
 
 **Request:**
 ```json
@@ -553,6 +560,14 @@ sequenceDiagram
   }
 }
 ```
+
+**⚠️ Important Waitlist Note:**
+- After first-time profile completion, users are automatically placed on a waitlist
+- The user's account will have `is_active = false` until automatic promotion (1.10-1.35 hours later)
+- Users can only access profile endpoints (`GET /api/auth/profile`, `PUT /api/auth/profile`) while on waitlist
+- All other endpoints will return `403 FORBIDDEN` with message: "Your account is on the waitlist. You can only access your profile. Please wait 1.10-1.35 hours for activation."
+- Check `is_active` field in `GET /api/auth/profile` response to determine waitlist status
+- Promotion happens automatically during normal API requests - no manual action required
 
 ### Lead Tracking Flow (Business Intelligence)
 
@@ -811,6 +826,8 @@ graph TD
 
 **Description:** Completes user profile with name, birth date, gender, interests, and pictures. Requires JWT token from `/verify-otp`. Accepts actual image files (multipart/form-data) which are uploaded to Supabase Storage.
 
+**⚠️ Waitlist Note:** After first-time profile completion, users are automatically placed on a waitlist for 1.10-1.35 hours. During this time, `is_active` will be `false` and users can only access profile endpoints. Check `GET /api/auth/profile` to determine waitlist status.
+
 **Headers:**
 ```
 Authorization: Bearer <JWT_TOKEN>
@@ -888,6 +905,16 @@ curl -X POST "http://localhost:8000/api/auth/complete-profile" \
   "token": null
 }
 ```
+
+**⚠️ Waitlist Status Check Required:**
+After successful profile completion, immediately call `GET /api/auth/profile` to check the `is_active` field:
+- **`is_active = false`**: User is on waitlist (1.10-1.35 hours until automatic activation)
+  - Show waitlist screen in your app
+  - Allow profile editing only
+  - Block access to events, payments, and other core features
+- **`is_active = true`**: User is fully active (already promoted or not on waitlist)
+  - Enable all app features
+  - Navigate to home screen
 
 **Error Responses:**
 ```json
@@ -1207,6 +1234,215 @@ Returns the same structure as `GET /api/auth/profile` with updated fields.
   "message": "Logged out successfully"
 }
 ```
+
+---
+
+## ⏳ Waitlist System
+
+### Overview
+
+The Loopin Backend implements an **automatic waitlist system** for new users who complete their profile for the first time. This system ensures a smooth onboarding experience while managing platform growth.
+
+### How It Works
+
+#### 1. Waitlist Placement
+
+**When:** Immediately after a user completes their profile for the **first time**
+
+**What Happens:**
+- User's account is placed on waitlist: `User.is_active = False` and `UserProfile.is_active = False`
+- Waitlist timestamps are set:
+  - `waitlist_started_at`: Current timestamp
+  - `waitlist_promote_at`: Current timestamp + random(66-81 minutes)
+- User can only access profile endpoints while on waitlist
+- All other endpoints return `403 FORBIDDEN` with waitlist message
+
+#### 2. Waitlist Duration
+
+**Promotion Window:** Random delay between **1.10-1.35 hours** (66-81 minutes)
+- Each user gets a unique random delay within this window
+- Prevents predictable patterns and system load spikes
+- Example: User A might wait 70 minutes, User B might wait 78 minutes
+
+#### 3. Automatic Promotion
+
+**No Manual Approval Required:**
+- Promotion happens automatically based on scheduled time
+- No background workers, cron jobs, or Celery tasks needed
+- Promotion check occurs during normal API requests
+
+**How Promotion Works:**
+1. User makes any API request (e.g., `GET /api/auth/profile`)
+2. Backend checks if `waitlist_promote_at` exists and `now >= waitlist_promote_at`
+3. If conditions met:
+   - Sets `User.is_active = True` and `UserProfile.is_active = True`
+   - Clears `waitlist_started_at` and `waitlist_promote_at` (sets to NULL)
+   - Sends push notification: "Welcome to Loopin! Your account is now active."
+   - User can now access all app features
+
+**Promotion is Atomic:**
+- Uses database transactions with row-level locking
+- Prevents race conditions and ensures data consistency
+- Multiple simultaneous requests won't cause duplicate promotions
+
+#### 4. Access Restrictions
+
+**While on Waitlist (`is_active = false`):**
+
+**✅ Allowed Endpoints:**
+- `GET /api/auth/profile` - View profile
+- `PUT /api/auth/profile` - Update profile
+
+**❌ Blocked Endpoints:**
+- All event endpoints (`/api/events/*`)
+- All payment endpoints (`/api/payments/*`)
+- All payout endpoints (`/api/payouts/*`)
+- All attendance endpoints (`/api/events-attendance/*`)
+- All other authenticated endpoints
+
+**Error Response for Blocked Endpoints:**
+```json
+{
+  "detail": "Your account is on the waitlist. You can only access your profile. Please wait 1.10-1.35 hours for activation."
+}
+```
+Status Code: `403 FORBIDDEN`
+
+#### 5. Client-Side Detection
+
+**Primary Method:** Check `is_active` field in `GET /api/auth/profile` response
+
+**Response When on Waitlist:**
+```json
+{
+  "id": 456,
+  "name": "John Doe",
+  "is_active": false,  // ← User is on waitlist
+  ...
+}
+```
+
+**Response When Active:**
+```json
+{
+  "id": 456,
+  "name": "John Doe",
+  "is_active": true,  // ← User is fully active
+  ...
+}
+```
+
+**Client Implementation:**
+1. After profile completion, call `GET /api/auth/profile`
+2. Check `is_active` field
+3. If `false`: Show waitlist screen, allow profile editing only
+4. If `true`: Enable all app features, navigate to home
+5. Periodically check `is_active` status (every 5-10 minutes) to detect promotion
+
+#### 6. Promotion Notification
+
+When a user is automatically promoted from waitlist, they receive a push notification:
+
+**Notification Details:**
+- **Title:** "Welcome to Loopin!"
+- **Message:** "Your account is now active. Start exploring events and connecting with your community!"
+- **Type:** System notification
+- **Data:** Includes `target_screen: 'home'` and `type: 'account_activated'`
+
+**Note:** Notification is non-blocking. Promotion succeeds even if notification fails.
+
+### Waitlist Flow Diagram
+
+```mermaid
+graph TD
+    A[User completes profile] --> B{First time?}
+    B -->|Yes| C[Place on waitlist]
+    B -->|No| D[Profile update only]
+    
+    C --> E[Set is_active = false]
+    E --> F[Set waitlist_started_at = now]
+    F --> G[Set waitlist_promote_at = now + random 66-81 min]
+    G --> H[User can only access profile endpoints]
+    
+    H --> I[User makes API request]
+    I --> J{waitlist_promote_at <= now?}
+    J -->|No| K[Return 403 for blocked endpoints]
+    J -->|Yes| L[Promote to active]
+    
+    L --> M[Set is_active = true]
+    M --> N[Clear waitlist fields]
+    N --> O[Send welcome notification]
+    O --> P[User can access all features]
+    
+    K --> I
+    
+    style C fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style E fill:#ffebee,stroke:#d32f2f,stroke-width:2px
+    style L fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style P fill:#c8e6c9,stroke:#388e3c,stroke-width:3px
+```
+
+### Best Practices for Mobile Apps
+
+#### 1. Waitlist Screen Design
+
+**Show:**
+- Clear message: "Your account is being activated. This usually takes 1-2 hours."
+- Progress indicator or estimated time remaining
+- Option to edit profile
+- Periodic status check indicator
+
+**Don't Show:**
+- Exact promotion time (it's randomized)
+- Confusing error messages
+- Blocked features without explanation
+
+#### 2. Status Checking
+
+**Recommended Frequency:**
+- Every 5-10 minutes while app is active
+- On app foreground/background transitions
+- When user navigates to profile screen
+- After profile updates
+
+**Implementation:**
+```javascript
+// Pseudo-code example
+function checkWaitlistStatus() {
+  const profile = await getProfile();
+  if (!profile.is_active) {
+    showWaitlistScreen();
+    // Check again in 5 minutes
+    setTimeout(checkWaitlistStatus, 5 * 60 * 1000);
+  } else {
+    hideWaitlistScreen();
+    enableAllFeatures();
+  }
+}
+```
+
+#### 3. User Experience
+
+**Do:**
+- Allow profile editing during waitlist
+- Show clear messaging about what they can/can't do
+- Celebrate when account becomes active
+
+**Don't:**
+- Block profile editing
+- Show technical error messages
+- Make users feel like they did something wrong
+- Require manual refresh to check status
+
+### Waitlist Metrics (Admin)
+
+Admins can view waitlist metrics in the Django admin panel:
+- Total waitlisted users
+- Users scheduled for promotion
+- Average waitlist duration
+- Promotion trends over time
+
+Access via: Django Admin → Analytics → Waitlist Metrics
 
 ---
 
@@ -2141,8 +2377,15 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 8. Parse JSON response
 9. Check `success` field:
    - If `false`: Show specific error message, highlight problematic field
-   - If `true`: Show success message, navigate to home screen
-10. Update local user state with profile data
+   - If `true`: Proceed to step 10
+10. **After successful profile completion:**
+    - Call `GET /api/auth/profile` to check waitlist status
+    - Check `is_active` field in response:
+      - If `false`: User is on waitlist → Show waitlist screen with message: "Your account is being activated. This usually takes 1-2 hours. You can update your profile in the meantime."
+      - If `true`: User is active → Navigate to home screen
+    - Store `is_active` status in app state
+    - Set up periodic check (every 5-10 minutes) to detect automatic promotion
+11. Update local user state with profile data
 
 **Image Upload Flow:**
 1. User selects pictures from gallery/camera
@@ -2231,13 +2474,27 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 - `event_interests` (array): Full interest objects with details
 - `profile_pictures` (array): List of picture URLs
 - `is_verified` (boolean): Phone verification status
-- `is_active` (boolean): **Account active status from Django `User.is_active`**  
-  - `false` immediately after first-time profile completion → user is in **waitlist state** and must not be allowed to use core app features yet  
-  - `true` after automatic promotion → user is **fully active** and can use all app features  
-  - The backend automatically promotes users from waitlist to active once the current time passes the scheduled `waitlist_promote_at` timestamp (1.10-1.35 hours after profile completion), using normal request flow (no background workers, cron, or Celery).
-  - When a user is promoted from waitlist, they receive a push notification: "Welcome to Loopin! Your account is now active."
+- `is_active` (boolean): **Account active status - CRITICAL for waitlist detection**  
+  - **`false`** → User is on **waitlist** (placed after first-time profile completion)
+    - User can only access profile endpoints (`GET /api/auth/profile`, `PUT /api/auth/profile`)
+    - All other endpoints return `403 FORBIDDEN` with waitlist message
+    - Automatic promotion scheduled for 1.10-1.35 hours after profile completion
+    - Promotion happens automatically during normal API requests (no background workers)
+    - Check this field on app launch and before allowing access to core features
+  - **`true`** → User is **fully active** and can use all app features
+    - User has been automatically promoted from waitlist
+    - Full access to events, payments, attendance, and all other endpoints
+    - User received push notification: "Welcome to Loopin! Your account is now active."
 - `created_at` (string): Account creation timestamp
 - `updated_at` (string): Last update timestamp
+
+**Waitlist Promotion Details:**
+- **Promotion Window**: Random delay between 1.10-1.35 hours (66-81 minutes) from profile completion
+- **Automatic Promotion**: No manual approval or background workers needed
+- **Promotion Trigger**: Happens automatically when user makes any API request after `waitlist_promote_at` time has passed
+- **Promotion Check**: Backend checks `waitlist_promote_at` timestamp during normal request flow
+- **Notification**: User receives push notification when promoted: "Welcome to Loopin! Your account is now active. Start exploring events and connecting with your community!"
+- **Client Action**: Always check `is_active` field before allowing access to core features
 
 **Error Responses:**
 
@@ -2277,10 +2534,21 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 5. Handle errors (401/404):
    - If token expired: Navigate to login
    - If user not found: Clear data, navigate to signup
-6. On success: Update local user state
-7. Display profile data in UI
-8. Cache profile data locally
-9. Refresh periodically or on pull-to-refresh
+6. On success: Check `is_active` field
+7. **Waitlist Status Handling:**
+   - If `is_active = false`: User is on waitlist
+     - Show waitlist screen/banner: "Your account is being activated. This usually takes 1-2 hours."
+     - Allow access to profile editing only
+     - Block access to events, payments, and other core features
+     - Set up periodic refresh (every 5-10 minutes) to check for promotion
+     - When `is_active` becomes `true`, show success message and enable all features
+   - If `is_active = true`: User is fully active
+     - Enable all app features
+     - Navigate to home screen if coming from waitlist
+8. Update local user state with profile data and `is_active` status
+9. Display profile data in UI
+10. Cache profile data locally
+11. Refresh periodically or on pull-to-refresh
 
 ---
 
@@ -2399,7 +2667,15 @@ The JWT token contains:
 - Upload pictures to your storage first
 - Call: `POST /api/auth/complete-profile` with Bearer token
 - Response: `success: true, profile_complete: true`
-- Navigate to: Home screen (user is fully authenticated)
+- **Check Waitlist Status:**
+  - Call: `GET /api/auth/profile` to check `is_active` field
+  - If `is_active = false`: Show waitlist screen (user on waitlist)
+  - If `is_active = true`: Navigate to home screen (user fully active)
+- **Waitlist Handling:**
+  - Show message: "Your account is being activated. This usually takes 1-2 hours."
+  - Allow profile editing only
+  - Periodically check `is_active` status (every 5-10 minutes)
+  - When `is_active = true`, show success and navigate to home
 
 #### For Existing Users (Login):
 
@@ -2483,13 +2759,15 @@ The JWT token contains:
 **Authentication State:**
 - `NOT_AUTHENTICATED`: No token, show login
 - `AUTHENTICATED_INCOMPLETE`: Has token, needs profile
-- `AUTHENTICATED_COMPLETE`: Has token, profile complete
+- `AUTHENTICATED_WAITLISTED`: Has token, profile complete, but `is_active = false` (on waitlist)
+- `AUTHENTICATED_ACTIVE`: Has token, profile complete, `is_active = true` (fully active)
 
 **User Data State:**
 - `user_id`: Store after Step 2
 - `phone_number`: Store after Step 1
 - `jwt_token`: Store after Step 2 (secure storage)
 - `profile_complete`: Boolean flag
+- `is_active`: Boolean flag (CRITICAL - determines waitlist vs active status)
 - `profile_data`: Full profile object (after Step 5)
 
 #### Navigation Logic
@@ -2509,8 +2787,11 @@ The JWT token contains:
 3. If `false`: Navigate to home screen
 
 **After Profile Completion:**
-1. Always navigate to home screen
-2. User is now fully authenticated
+1. Call `GET /api/auth/profile` to check `is_active` status
+2. If `is_active = false`: Show waitlist screen, allow profile editing only
+3. If `is_active = true`: Navigate to home screen, enable all features
+4. Set up periodic check for waitlist promotion (every 5-10 minutes)
+5. When `is_active` becomes `true`, show success message and enable all features
 
 ---
 
@@ -2670,6 +2951,18 @@ The JWT token contains:
 - Verify profile completion API was called successfully
 - Check if pictures array is not empty
 - Call `GET /api/auth/profile` to verify profile state
+
+#### 6. User Stuck on Waitlist Screen
+
+**Symptom:** User sees waitlist message but `is_active` never becomes `true`
+
+**Solution:**
+- Waitlist promotion happens automatically after 1.10-1.35 hours
+- Promotion is triggered during normal API requests (no background workers)
+- Ensure app periodically calls `GET /api/auth/profile` to check status
+- Check `is_active` field in profile response, not just waitlist message
+- If more than 2 hours have passed, user should be automatically promoted
+- Verify user is making API requests (promotion check happens during requests)
 
 ---
 
