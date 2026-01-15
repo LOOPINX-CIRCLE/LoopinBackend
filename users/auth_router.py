@@ -815,27 +815,53 @@ async def verify_login_otp(request: LoginRequest):
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_user_profile(token: str = Depends(security)):
     """
-    Get current user's profile
+    Get current user's profile.
+    
+    Security: Always extracts user_id from JWT token and verifies profile ownership.
     """
     try:
-        # Verify JWT token
+        # STEP 1: ALWAYS extract user_id from JWT token before querying
         payload = verify_jwt_token(token.credentials)
-        user_id = payload['user_id']
+        token_user_id = payload.get('user_id')
         
-        # Get user and profile
-        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
-        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
-
+        if not token_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
+        
+        # STEP 2: ALWAYS use WHERE id = :user_id in query (never generic queries)
+        # Get user by exact ID match from token
+        user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
+        
+        # STEP 3: Get profile using explicit user_id filter (never LIMIT 1 without WHERE)
+        # Use user_id directly to ensure we get the correct profile
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
+        
+        # STEP 4: ALWAYS verify profile.user.id == token user_id before returning (defense-in-depth)
+        if profile.user.id != token_user_id:
+            logger.error(
+                f"Security violation: Profile {profile.id} belongs to user {profile.user.id}, "
+                f"but token claims user_id {token_user_id}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="Profile ownership mismatch. Please contact support."
+            )
+        
         # Automatic waitlist promotion check based on waitlist_promote_at.
         # This allows users to be promoted during normal request flow without background workers.
         try:
-            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(token_user_id)
             if promoted:
                 # Refresh instances to reflect new active state
-                user = await sync_to_async(lambda: User.objects.get(id=user_id))()
-                profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+                user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
+                profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
+                # Re-verify after refresh
+                if profile.user.id != token_user_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Profile ownership mismatch after refresh."
+                    )
         except Exception as promote_error:
-            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
+            logger.error(f"Waitlist promotion check failed for user {token_user_id}: {promote_error}")
         
         # Fetch event interests
         event_interests_qs = await sync_to_async(lambda: list(profile.event_interests.filter(is_active=True).order_by('name')))()
@@ -849,8 +875,11 @@ async def get_user_profile(token: str = Depends(security)):
             ) for interest in event_interests_qs
         ]
         
+        # STEP 5: Final verification before returning
+        # Ensure user_id in response matches token user_id
         return UserProfileResponse(
-            id=profile.id,
+            id=profile.id,  # UserProfile.id
+            user_id=user.id,  # User.id (must match token_user_id)
             name=profile.name,
             phone_number=profile.phone_number,
             gender=profile.gender,
@@ -867,11 +896,16 @@ async def get_user_profile(token: str = Depends(security)):
         )
         
     except User.DoesNotExist:
+        # STEP 6: Return 404 if no user exists for that user_id
         raise HTTPException(status_code=404, detail="User not found")
     except UserProfile.DoesNotExist:
+        # STEP 6: Return 404 if no profile exists for that user_id
         raise HTTPException(status_code=404, detail="User profile not found")
+    except HTTPException:
+        # Re-raise HTTP exceptions (401, 403, 404)
+        raise
     except Exception as e:
-        logger.error(f"Profile retrieval error: {e}")
+        logger.error(f"Profile retrieval error for user_id {token_user_id if 'token_user_id' in locals() else 'unknown'}: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving profile")
 
 
@@ -884,26 +918,52 @@ async def update_user_profile(
     Update current user's profile information.
     
     All fields are optional for partial updates. Only provided fields will be updated.
+    
+    Security: Always extracts user_id from JWT token and verifies profile ownership.
     """
     try:
-        # Verify JWT token
+        # STEP 1: ALWAYS extract user_id from JWT token before querying
         payload = verify_jwt_token(token.credentials)
-        user_id = payload['user_id']
+        token_user_id = payload.get('user_id')
         
-        # Get user and profile
-        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
-        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        if not token_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
+        
+        # STEP 2: ALWAYS use WHERE id = :user_id in query (never generic queries)
+        # Get user by exact ID match from token
+        user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
+        
+        # STEP 3: Get profile using explicit user_id filter (never LIMIT 1 without WHERE)
+        # Use user_id directly to ensure we get the correct profile
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
+        
+        # STEP 4: ALWAYS verify profile.user.id == token user_id before proceeding (defense-in-depth)
+        if profile.user.id != token_user_id:
+            logger.error(
+                f"Security violation: Profile {profile.id} belongs to user {profile.user.id}, "
+                f"but token claims user_id {token_user_id}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="Profile ownership mismatch. Please contact support."
+            )
         
         # Automatic waitlist promotion check based on waitlist_promote_at.
         # This allows users to be promoted during normal request flow without background workers.
         try:
-            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(user_id)
+            promoted = await sync_to_async(maybe_promote_user_from_waitlist_sync)(token_user_id)
             if promoted:
                 # Refresh instances to reflect new active state
-                user = await sync_to_async(lambda: User.objects.get(id=user_id))()
-                profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+                user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
+                profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
+                # Re-verify after refresh
+                if profile.user.id != token_user_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Profile ownership mismatch after refresh."
+                    )
         except Exception as promote_error:
-            logger.error(f"Waitlist promotion check failed for user {user_id}: {promote_error}")
+            logger.error(f"Waitlist promotion check failed for user {token_user_id}: {promote_error}")
         
         # Update fields if provided
         update_dict = update_data.dict(exclude_unset=True)
@@ -938,10 +998,17 @@ async def update_user_profile(
         
         # Save profile
         await sync_to_async(lambda: profile.save())()
-        logger.info(f"Profile updated for user {user_id}")
+        logger.info(f"Profile updated for user {token_user_id}")
         
-        # Refresh profile to get updated timestamp
-        profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+        # Refresh profile to get updated timestamp (using explicit user_id)
+        profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
+        
+        # Final verification before returning
+        if profile.user.id != token_user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Profile ownership mismatch after update."
+            )
         
         # Fetch event interests for response
         event_interests_qs = await sync_to_async(lambda: list(profile.event_interests.filter(is_active=True).order_by('name')))()
@@ -955,8 +1022,11 @@ async def update_user_profile(
             ) for interest in event_interests_qs
         ]
         
+        # STEP 5: Final verification before returning
+        # Ensure user_id in response matches token user_id
         return UserProfileResponse(
-            id=profile.id,
+            id=profile.id,  # UserProfile.id
+            user_id=user.id,  # User.id (must match token_user_id)
             name=profile.name,
             phone_number=profile.phone_number,
             gender=profile.gender,
@@ -976,13 +1046,16 @@ async def update_user_profile(
         logger.error(f"Validation error in profile update: {ve}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except HTTPException:
+        # Re-raise HTTP exceptions (401, 403, 404)
         raise
     except User.DoesNotExist:
+        # STEP 6: Return 404 if no user exists for that user_id
         raise HTTPException(status_code=404, detail="User not found")
     except UserProfile.DoesNotExist:
+        # STEP 6: Return 404 if no profile exists for that user_id
         raise HTTPException(status_code=404, detail="User profile not found")
     except Exception as e:
-        logger.error(f"Profile update error: {e}")
+        logger.error(f"Profile update error for user_id {token_user_id if 'token_user_id' in locals() else 'unknown'}: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while updating profile")
 
 
