@@ -210,7 +210,8 @@ class UserProfileUpdate(BaseModel):
 
 class UserProfileResponse(BaseModel):
     """Response model for user profile"""
-    id: int
+    id: int  # UserProfile.id (profile database ID)
+    user_id: int  # User.id (Django User ID, matches token user_id)
     name: str
     phone_number: str
     gender: Optional[str] = None
