@@ -1112,7 +1112,8 @@ Authorization: Bearer <JWT_TOKEN>
 **Success Response:**
 ```json
 {
-  "id": 456,
+  "id": 456, // ← Profile ID (don't use for token validation)
+  "user_id": 123,  // ← User ID (use this for token validation)
   "name": "John Doe",
   "phone_number": "+1234567890",
   "gender": "male",
@@ -1316,6 +1317,7 @@ Status Code: `403 FORBIDDEN`
 ```json
 {
   "id": 456,
+  "user_id": 123,
   "name": "John Doe",
   "is_active": false,  // ← User is on waitlist
   ...
@@ -1325,7 +1327,8 @@ Status Code: `403 FORBIDDEN`
 **Response When Active:**
 ```json
 {
-  "id": 456,
+  "id": 456, // ← Profile ID (don't use for token validation)
+  "user_id": 123, // ← User ID (use this for token validation)
   "name": "John Doe",
   "is_active": true,  // ← User is fully active
   ...
@@ -2428,6 +2431,7 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 ```json
 {
   "id": 456,
+  "user_id": 123,
   "name": "John Doe",
   "phone_number": "+1234567890",
   "gender": "male",
@@ -2464,7 +2468,8 @@ fetch('http://localhost:8000/api/auth/complete-profile', {
 ```
 
 **Response Fields Explained:**
-- `id` (integer): Profile unique ID
+- `id` (integer): Profile unique ID (UserProfile.id)
+- `user_id` (integer): **User ID (Django User.id) - matches token user_id for validation**
 - `name` (string): User's full name
 - `phone_number` (string): Verified phone number
 - `gender` (string): User's gender
