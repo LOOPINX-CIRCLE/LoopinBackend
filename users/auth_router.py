@@ -562,7 +562,8 @@ async def complete_user_profile(
             )
         
         try:
-            profile = await sync_to_async(lambda: UserProfile.objects.get(user=user))()
+            # Use explicit user_id for consistency and security
+            profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=user_id))()
         except UserProfile.DoesNotExist:
             return AuthResponse(
                 success=False,
@@ -827,6 +828,12 @@ async def get_user_profile(token: str = Depends(security)):
         if not token_user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
         
+        # Validate user_id is an integer
+        try:
+            token_user_id = int(token_user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid token: user_id must be an integer")
+        
         # STEP 2: ALWAYS use WHERE id = :user_id in query (never generic queries)
         # Get user by exact ID match from token
         user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
@@ -854,8 +861,8 @@ async def get_user_profile(token: str = Depends(security)):
                 # Refresh instances to reflect new active state
                 user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
                 profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
-                # Re-verify after refresh
-                if profile.user.id != token_user_id:
+                # Re-verify after refresh (verify both user and profile)
+                if user.id != token_user_id or profile.user.id != token_user_id:
                     raise HTTPException(
                         status_code=403,
                         detail="Profile ownership mismatch after refresh."
@@ -929,6 +936,12 @@ async def update_user_profile(
         if not token_user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
         
+        # Validate user_id is an integer
+        try:
+            token_user_id = int(token_user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid token: user_id must be an integer")
+        
         # STEP 2: ALWAYS use WHERE id = :user_id in query (never generic queries)
         # Get user by exact ID match from token
         user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
@@ -956,8 +969,8 @@ async def update_user_profile(
                 # Refresh instances to reflect new active state
                 user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
                 profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
-                # Re-verify after refresh
-                if profile.user.id != token_user_id:
+                # Re-verify after refresh (verify both user and profile)
+                if user.id != token_user_id or profile.user.id != token_user_id:
                     raise HTTPException(
                         status_code=403,
                         detail="Profile ownership mismatch after refresh."
@@ -1003,8 +1016,8 @@ async def update_user_profile(
         # Refresh profile to get updated timestamp (using explicit user_id)
         profile = await sync_to_async(lambda: UserProfile.objects.get(user_id=token_user_id))()
         
-        # Final verification before returning
-        if profile.user.id != token_user_id:
+        # Final verification before returning (verify both user and profile)
+        if user.id != token_user_id or profile.user.id != token_user_id:
             raise HTTPException(
                 status_code=403,
                 detail="Profile ownership mismatch after update."
@@ -1067,12 +1080,22 @@ async def get_event_interests(token: str = Depends(security)):
     **Authentication Required**: JWT token must be provided.
     """
     try:
-        # Verify JWT token
+        # STEP 1: ALWAYS extract user_id from JWT token before querying
         payload = verify_jwt_token(token.credentials)
-        user_id = payload['user_id']
+        token_user_id = payload.get('user_id')
         
+        if not token_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
+        
+        # Validate user_id is an integer
+        try:
+            token_user_id = int(token_user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid token: user_id must be an integer")
+        
+        # STEP 2: ALWAYS use WHERE id = :user_id in query
         # Verify user exists and is active
-        user = await sync_to_async(lambda: User.objects.get(id=user_id))()
+        user = await sync_to_async(lambda: User.objects.get(id=token_user_id))()
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
